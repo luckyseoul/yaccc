@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: tests (python ${{ matrix.python }}, ${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Differential tests against the recorded GnuCOBOL baselines
+        env:
+          CC: ${{ matrix.cc }}
+        run: make test
+      - name: Examples
+        env:
+          CC: ${{ matrix.cc }}
+        run: make examples
+
+  nist:
+    name: NIST CCVS85 suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run the suite (fails on any failed test, compile error or crash)
+        run: make nist
