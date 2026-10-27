@@ -1,0 +1,88 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RW1.
+      * Report Writer: control breaks, two DETAIL groups, SUM UPON,
+      * RESET ON FINAL, rolling forward, GROUP INDICATE and a USE
+      * BEFORE REPORTING procedure that suppresses one footing.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT RPT ASSIGN TO "rw1.txt".
+       DATA DIVISION.
+       FILE SECTION.
+       FD  RPT REPORT IS EMPRPT.
+       WORKING-STORAGE SECTION.
+       01  EMP.
+           05 DEPT       PIC X(4).
+           05 ENAME      PIC X(10).
+           05 SALARY     PIC 9(5).
+           05 BONUS      PIC 9(4).
+       01  ONE           PIC 9 VALUE 1.
+       01  ROWS.
+           05 FILLER PIC X(23) VALUE "ENG Ada       050000500".
+           05 FILLER PIC X(23) VALUE "ENG Bob       040000000".
+           05 FILLER PIC X(23) VALUE "HR  Cyd       030000100".
+           05 FILLER PIC X(23) VALUE "OPS Dee       045000250".
+           05 FILLER PIC X(23) VALUE "OPS Eve       035000000".
+           05 FILLER PIC X(23) VALUE "OPS Fay       025000075".
+       01  RT REDEFINES ROWS.
+           05 ROW PIC X(23) OCCURS 6.
+       01  I             PIC 9.
+       REPORT SECTION.
+       RD  EMPRPT
+           CONTROLS ARE FINAL DEPT
+           PAGE LIMIT 40 HEADING 1 FIRST DETAIL 5 LAST DETAIL 36
+           FOOTING 38.
+       01  TYPE RH LINE 1.
+           05 COLUMN 1 PIC X(15) VALUE "EMPLOYEE REPORT".
+       01  TYPE PH LINE PLUS 1.
+           05 COLUMN 1 PIC X(4) VALUE "DEPT".
+           05 COLUMN 7 PIC X(4) VALUE "NAME".
+           05 COLUMN 20 PIC X(6) VALUE "SALARY".
+       01  TYPE CH FINAL LINE PLUS 1.
+           05 COLUMN 1 PIC X(15) VALUE "ALL DEPARTMENTS".
+       01  TYPE CH DEPT LINE PLUS 2.
+           05 COLUMN 1 PIC X(5) VALUE "DEPT ".
+           05 COLUMN 6 PIC X(4) SOURCE DEPT.
+       01  EMP-LINE TYPE DE LINE PLUS 1.
+           05 COLUMN 1 PIC X(4) SOURCE DEPT GROUP INDICATE.
+           05 COLUMN 7 PIC X(10) SOURCE ENAME.
+           05 COLUMN 18 PIC ZZ,ZZ9 SOURCE SALARY.
+       01  BONUS-LINE TYPE DE LINE PLUS 1.
+           05 COLUMN 7 PIC X(6) VALUE "BONUS ".
+           05 COLUMN 20 PIC Z,ZZ9 SOURCE BONUS.
+       01  DEPT-FOOT TYPE CF DEPT LINE PLUS 1 NEXT GROUP PLUS 1.
+           05 COLUMN 3 PIC X(5) VALUE "TOTAL".
+           05 HEADS COLUMN 9 PIC Z9 SUM ONE UPON EMP-LINE.
+           05 DEPT-SAL COLUMN 16 PIC ZZZ,ZZ9 SUM SALARY UPON EMP-LINE.
+           05 DEPT-BON COLUMN 25 PIC Z,ZZ9 SUM BONUS UPON BONUS-LINE.
+           05 RUN-SAL COLUMN 32 PIC ZZZ,ZZ9 SUM SALARY UPON EMP-LINE
+              RESET ON FINAL.
+       01  TYPE CF FINAL LINE PLUS 2.
+           05 COLUMN 1 PIC X(11) VALUE "GRAND TOTAL".
+           05 COLUMN 16 PIC ZZZ,ZZ9 SUM DEPT-SAL.
+           05 COLUMN 25 PIC Z,ZZ9 SUM DEPT-BON.
+           05 COLUMN 32 PIC Z9 SUM HEADS.
+       PROCEDURE DIVISION.
+       DECLARATIVES.
+       HR-FOOT SECTION.
+           USE BEFORE REPORTING DEPT-FOOT.
+       HR-1.
+           IF DEPT = "HR"
+               SUPPRESS PRINTING
+           END-IF.
+       END DECLARATIVES.
+       MAIN SECTION.
+       M-1.
+           OPEN OUTPUT RPT
+           INITIATE EMPRPT
+           PERFORM VARYING I FROM 1 BY 1 UNTIL I > 6
+               MOVE ROW (I) TO EMP
+               GENERATE EMP-LINE
+               IF BONUS > 0
+                   GENERATE BONUS-LINE
+               END-IF
+           END-PERFORM
+           TERMINATE EMPRPT
+           CLOSE RPT
+           DISPLAY "HEADS=" HEADS " RUN-SAL=" RUN-SAL
+           STOP RUN.

@@ -540,4 +540,54 @@ int cob_sort_return(cob_file *sd);
 void cob_sort_end(cob_file *sd);
 void cob_table_sort(unsigned char *base, size_t n, size_t elem, int nkeys, const cob_sort_key *keys);
 
+/* ---------------------------------------------------------------- Report Writer */
+enum { COB_RW_RH = 1, COB_RW_PH, COB_RW_CH, COB_RW_DE, COB_RW_CF, COB_RW_PF, COB_RW_RF };
+enum { COB_RW_ABS = 1, COB_RW_REL, COB_RW_ABSNP, COB_RW_NP };   /* LINE / NEXT GROUP kinds */
+#define COB_RW_MAX_LINES 256
+
+typedef struct {
+	short kind;
+	short num;
+} cob_rw_lspec;
+
+typedef struct {
+	int type;                  /* COB_RW_RH ... COB_RW_RF */
+	int level;                 /* CH/CF: 0 = FINAL, 1..n = CONTROL data items */
+	int nlines;
+	const cob_rw_lspec *lines;
+	short ng_kind, ng_num;     /* NEXT GROUP */
+	int has_decl;              /* USE BEFORE REPORTING */
+} cob_rw_group;
+
+typedef struct cob_report {
+	const char *name;
+	cob_file *file;
+	int pl, h, fd, ld, ft;     /* PAGE LIMIT (0: no PAGE clause), HEADING ... FOOTING */
+	int width;                 /* print line width including CODE */
+	const unsigned char *code;
+	int code_len;
+	int ngroups;
+	const cob_rw_group *groups;
+	int ncontrols;
+	cob_field *line_counter;
+	cob_field *page_counter;
+	void (*fmt)(int group, int line, unsigned char *buf, int gi);
+	void (*sum)(int op, int arg);
+	int (*ctl)(int op);
+	void (*decl)(int group);
+	/* state */
+	int initiated, generated, terminating;
+	int page_start, pos, open;
+	int next_page, body_on_page;
+	unsigned char *buf;
+	unsigned char *gi;
+	int *ch, *cf;
+	int rh, ph, pf, rf;
+} cob_report;
+
+extern int cob_rw_suppress;
+void cob_rw_initiate(cob_report *r, const char *loc);
+void cob_rw_generate(cob_report *r, int group, const char *loc);
+void cob_rw_terminate(cob_report *r, const char *loc);
+
 #endif

@@ -8,7 +8,14 @@ from .nodes import *
 from .words import FIGURATIVES, FIG_BYTES, FUNCTIONS, RESERVED, USAGES, VERBS
 
 SPECIAL_REGISTERS = {'RETURN-CODE', 'TALLY', 'SORT-RETURN', 'WHEN-COMPILED',
-                     'NUMBER-OF-CALL-PARAMETERS'}
+                     'NUMBER-OF-CALL-PARAMETERS', 'LINE-COUNTER', 'PAGE-COUNTER'}
+
+# words that begin a clause in a REPORT SECTION entry (never a data-name there)
+RW_CLAUSE_WORDS = {'LINE', 'LINES', 'NEXT', 'TYPE', 'COLUMN', 'COL', 'SOURCE', 'SUM', 'GROUP',
+                   'RESET', 'UPON', 'PIC', 'PICTURE', 'VALUE', 'USAGE', 'SIGN', 'JUST',
+                   'JUSTIFIED', 'BLANK', 'IS', 'DISPLAY', 'PRESENT'}
+RW_TYPES = {'RH': 'RH', 'PH': 'PH', 'CH': 'CH', 'DE': 'DE', 'CF': 'CF', 'PF': 'PF', 'RF': 'RF',
+            'DETAIL': 'DE'}
 
 RELOP_SYM = {'=': 'EQ', '<': 'LT', '>': 'GT', '<=': 'LE', '>=': 'GE', '<>': 'NE'}
 NEGATE = {'EQ': 'NE', 'NE': 'EQ', 'LT': 'GE', 'GE': 'LT', 'GT': 'LE', 'LE': 'GT'}
@@ -513,7 +520,11 @@ class Parser:
             elif self.is_word('LINKAGE'):
                 self.next(); self.expect('SECTION'); self.expect_period()
                 prog.linkage.extend(self.parse_entries())
-            elif self.is_word('SCREEN', 'REPORT', 'COMMUNICATION') and self.is_word('SECTION', k=1):
+            elif self.is_word('REPORT') and self.is_word('SECTION', k=1):
+                self.next(); self.next(); self.expect_period()
+                while self.is_word('RD'):
+                    prog.reports.append(self.parse_rd())
+            elif self.is_word('SCREEN', 'COMMUNICATION') and self.is_word('SECTION', k=1):
                 raise self.err(f"{self.peek().up} SECTION is not supported")
             else:
                 break
@@ -556,7 +567,9 @@ class Parser:
             elif self.accept('LABEL', 'DATA'):
                 self.accept('RECORD', 'RECORDS')
                 self.accept('IS', 'ARE')
-                while self.peek().kind == 'WORD' and (self.is_user_word() or self.is_word('STANDARD', 'OMITTED')):
+                while self.peek().kind == 'WORD' and (self.is_user_word() or self.is_word('STANDARD', 'OMITTED')) \
+                        and not self.is_word('REPORT', 'REPORTS', 'RECORD', 'BLOCK', 'LABEL', 'DATA', 'VALUE',
+                                             'CODE-SET', 'LINAGE', 'RECORDING', 'EXTERNAL', 'GLOBAL'):
                     self.next()
             elif self.accept('VALUE'):
                 self.accept('OF')
@@ -591,6 +604,11 @@ class Parser:
                         fd.bottom = self.parse_operand()
                         continue
                     break
+            elif self.is_word('REPORT', 'REPORTS'):
+                self.next()
+                self.accept('IS', 'ARE')
+                while self.is_user_word():
+                    fd.reports.append(self.next().up)
             elif self.accept('IS'):
                 pass
             elif self.accept('EXTERNAL'):
@@ -602,6 +620,144 @@ class Parser:
         self.expect_period()
         fd.records = self.parse_entries()
         return fd
+
+    def parse_rd(self):
+        loc = self.expect('RD').loc
+        rd = ReportDesc(name=self.user_word('report name'), loc=loc)
+        while self.peek().kind not in ('.', 'EOF'):
+            if self.accept('IS'):
+                continue
+            if self.accept('GLOBAL'):
+                rd.is_global = True
+            elif self.accept('CODE'):
+                self.accept('IS')
+                rd.code = self.expect_kind('STR', 'CODE literal').val
+            elif self.accept('CONTROL', 'CONTROLS'):
+                self.accept('IS', 'ARE')
+                while True:
+                    if self.accept('FINAL'):
+                        rd.has_final = True
+                    elif self.is_user_word():
+                        rd.controls.append(self.parse_identifier())
+                    else:
+                        break
+            elif self.accept('PAGE'):
+                self.accept('LIMIT', 'LIMITS')
+                self.accept('IS', 'ARE')
+                rd.page_limit = int(self.expect_kind('NUM', 'page limit').val)
+                self.accept('LINE', 'LINES')
+                while True:
+                    if self.accept('HEADING'):
+                        self.accept('IS')
+                        rd.heading = int(self.expect_kind('NUM', 'integer').val)
+                    elif self.is_word('FIRST') and self.is_word('DETAIL', k=1):
+                        self.next(); self.next(); self.accept('IS')
+                        rd.first_detail = int(self.expect_kind('NUM', 'integer').val)
+                    elif self.is_word('LAST') and self.is_word('DETAIL', k=1):
+                        self.next(); self.next(); self.accept('IS')
+                        rd.last_detail = int(self.expect_kind('NUM', 'integer').val)
+                    elif self.accept('FOOTING'):
+                        self.accept('IS')
+                        rd.footing = int(self.expect_kind('NUM', 'integer').val)
+                    else:
+                        break
+            else:
+                raise self.err("unexpected clause in report description")
+        self.expect_period()
+        self.in_report = True
+        try:
+            rd.groups = self.parse_entries()
+        finally:
+            self.in_report = False
+        return rd
+
+    def _rw_clause(self, item, w):
+        """Report Writer clauses of a REPORT SECTION entry; returns False if w is not one."""
+        if w in ('LINE', 'LINES'):
+            self.next()
+            self.accept('NUMBER')
+            self.accept('IS', 'ARE')
+            if self.is_word('NEXT') and self.is_word('PAGE', k=1):
+                self.next(); self.next()
+                item.rw_line = ('NP', 0)
+            elif self.accept('PLUS'):
+                item.rw_line = ('REL', int(self.expect_kind('NUM', 'integer').val))
+            else:
+                t = self.expect_kind('NUM', 'line number')
+                if t.val.startswith('+'):
+                    item.rw_line = ('REL', int(t.val))
+                elif self.is_word('ON') or (self.is_word('NEXT') and self.is_word('PAGE', k=1)):
+                    self.accept('ON')
+                    self.expect('NEXT')
+                    self.expect('PAGE')
+                    item.rw_line = ('ABSNP', int(t.val))
+                else:
+                    item.rw_line = ('ABS', int(t.val))
+        elif w == 'NEXT':
+            self.next()
+            self.expect('GROUP')
+            self.accept('IS')
+            if self.accept('NEXT'):
+                self.expect('PAGE')
+                item.rw_next_group = ('NP', 0)
+            elif self.accept('PLUS'):
+                item.rw_next_group = ('REL', int(self.expect_kind('NUM', 'integer').val))
+            else:
+                t = self.expect_kind('NUM', 'line number')
+                item.rw_next_group = ('REL' if t.val.startswith('+') else 'ABS', int(t.val))
+        elif w == 'TYPE':
+            self.next()
+            self.accept('IS')
+            t = self.next()
+            u = t.up
+            kind = None
+            if u in RW_TYPES:
+                kind = RW_TYPES[u]
+            elif u in ('REPORT', 'PAGE', 'CONTROL'):
+                h = self.expect('HEADING', 'FOOTING').up
+                kind = {('REPORT', 'HEADING'): 'RH', ('REPORT', 'FOOTING'): 'RF',
+                        ('PAGE', 'HEADING'): 'PH', ('PAGE', 'FOOTING'): 'PF',
+                        ('CONTROL', 'HEADING'): 'CH', ('CONTROL', 'FOOTING'): 'CF'}[(u, h)]
+            else:
+                raise ParseError(f"invalid report group TYPE '{t.up}'", t.loc)
+            ctl = None
+            if kind in ('CH', 'CF'):
+                self.accept('ON', 'FOR')
+                if self.accept('FINAL'):
+                    ctl = 'FINAL'
+                else:
+                    ctl = self.user_word('control name')
+            item.rw_type = (kind, ctl)
+        elif w in ('COLUMN', 'COL'):
+            self.next()
+            self.accept('NUMBER')
+            self.accept('IS')
+            item.rw_column = int(self.expect_kind('NUM', 'column number').val)
+        elif w == 'SOURCE':
+            self.next()
+            self.accept('IS')
+            item.rw_source = self.parse_operand()
+        elif w == 'SUM':
+            self.next()
+            ops = []
+            while self.is_operand_start() and self.peek().up not in RW_CLAUSE_WORDS:
+                ops.append(self.parse_identifier())
+            upon = []
+            if self.accept('UPON'):
+                while self.is_user_word() and self.peek().up not in RW_CLAUSE_WORDS:
+                    upon.append(self.next().up)
+            item.rw_sums.append((ops, upon))
+        elif w == 'RESET':
+            self.next()
+            self.accept('ON')
+            item.rw_reset = 'FINAL' if self.accept('FINAL') else self.user_word('control name')
+        elif w == 'GROUP':
+            self.next()
+            self.accept('INDICATE')
+            item.rw_group_indicate = True
+        else:
+            return False
+        return True
 
     def parse_entries(self):
         flat = []
@@ -616,9 +772,11 @@ class Parser:
         if not (1 <= level <= 49 or level in (66, 77, 78, 88)):
             raise CompileError(f"invalid level number {lt.val}", loc)
         name = None
+        in_report = getattr(self, 'in_report', False)
         if self.accept('FILLER'):
             name = None
-        elif self.is_user_word() and self.peek().kind == 'WORD':
+        elif self.is_user_word() and self.peek().kind == 'WORD' and \
+                not (in_report and self.peek().up in RW_CLAUSE_WORDS):
             name = self.next().up
         item = DataItem(level, name, loc)
         prog = self.prog
@@ -633,6 +791,9 @@ class Parser:
                     raise self.err("constant expressions are not supported")
                 raise self.err("unexpected token in data description")
             w = t.up
+            if in_report and w not in ('PIC', 'PICTURE', 'VALUE', 'VALUES', 'IS', 'USAGE') \
+                    and self._rw_clause(item, w):
+                continue
             if w in ('PIC', 'PICTURE'):
                 self.next()
                 self.accept('IS')
@@ -887,6 +1048,10 @@ class Parser:
                     sec.use_global = bool(self.accept('GLOBAL'))
                     if self.accept('FOR'):
                         self.skip_to_period()
+                    elif self.accept('BEFORE'):
+                        self.expect('REPORTING')
+                        sec.use_reporting = self.user_word('report group name')
+                        self.expect_period()
                     else:
                         self.accept('AFTER')
                         self.accept('STANDARD')
@@ -1944,6 +2109,29 @@ class Parser:
         if not st.using and not st.input_proc and not st.giving and not st.output_proc:
             st.table = target
         return st
+
+    def p_INITIATE(self, loc):
+        names = []
+        while self.is_user_word():
+            names.append(self.next().up)
+        if not names:
+            raise self.err("report name expected")
+        return Initiate(loc, names)
+
+    def p_GENERATE(self, loc):
+        return Generate(loc, self.parse_identifier())
+
+    def p_TERMINATE(self, loc):
+        names = []
+        while self.is_user_word():
+            names.append(self.next().up)
+        if not names:
+            raise self.err("report name expected")
+        return Terminate(loc, names)
+
+    def p_SUPPRESS(self, loc):
+        self.accept('PRINTING')
+        return Suppress(loc)
 
     def p_RELEASE(self, loc):
         rec = self.parse_identifier()

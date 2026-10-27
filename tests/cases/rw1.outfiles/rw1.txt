@@ -1,0 +1,40 @@
+EMPLOYEE REPORT
+DEPT  NAME         SALARY
+
+
+ALL DEPARTMENTS
+
+DEPT ENG
+ENG   Ada         5,000
+      BONUS          500
+      Bob         4,000
+  TOTAL  2       9,000    500    9,000
+
+
+DEPT HR
+HR    Cyd         3,000
+      BONUS          100
+
+DEPT OPS
+OPS   Dee         4,500
+      BONUS          250
+      Eve         3,500
+      Fay         2,500
+      BONUS           75
+  TOTAL  3      10,500    325   22,500
+
+GRAND TOTAL     22,500    925   6
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -31,7 +31,9 @@
   IF401M     skipped
   IF402M     skipped
   IF403M     skipped
-
+===== RW
+  RW301M     skipped
+  RW302M     skipped
 Module Programs Executed Error Crash   Pass Fail Deleted Inspect Total
 ------ -------- -------- ----- -----  ----- ---- ------- ------- -----
 NC           92       92     0     0   4363    0       6      11  4380
@@ -44,4 +46,5 @@ ST           39       39     0     0    278    0       0       0   278
 SG           10       10     0     0    310    0       0       0   310
 OB            7        7     0     0     38    1       0       0    39
 IF           42       42     0     0    732    0       0       0   732
-Total       382      382     0     0   9103    1      25     101  9230
+RW            4        4     0     0     40    0       0       0    40
+Total       386      386     0     0   9143    1      25     101  9270

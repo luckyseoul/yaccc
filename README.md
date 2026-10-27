@@ -7,8 +7,9 @@ runtime library.
 
 It passes the NIST CCVS85 conformance suite as packaged by opensource COBOL.
 Every module matches the suite's reference summary exactly, with zero
-failures. On its own differential test programs, its output matches GnuCOBOL
-3.1.2 apart from the deliberate differences listed below.
+failures, and it also passes the suite's Report Writer module. On its own
+differential test programs, its output matches GnuCOBOL 3.1.2 apart from the
+deliberate differences listed below.
 
 ```
 $ ./cobolc examples/mandelbrot.cbl --run
@@ -18,8 +19,8 @@ $ ./cobolc examples/mandelbrot.cbl --run
 
 ### NIST CCVS85 conformance suite
 
-Run with `make nist`, which uses the same program set as the suite's reference
-`summary.txt`:
+Run with `make nist`. The first ten modules use the same program set as the
+suite's reference `summary.txt`:
 
 ```
 Module Programs Executed Error Crash   Pass Fail Deleted Inspect Total
@@ -34,10 +35,12 @@ ST           39       39     0     0    278    0       0       0   278
 SG            5        5     0     0    193    0       0       0   193
 OB            5        5     0     0     16    0       0       0    16
 IF           42       42     0     0    732    0       0       0   732
-Total       374      374     0     0   8964    0      25      93  9082
+RW            4        4     0     0     40    0       0       0    40
+Total       378      378     0     0   9004    0      25      93  9122
 ```
 
-This table matches the reference summary line for line. "Deleted" tests are
+NC through IF match the reference summary line for line. RW (Report Writer)
+isn't part of the reference summary; GnuCOBOL 3.1.2 passes the same 40 tests. "Deleted" tests are
 removed by the suite itself. "Inspect" tests have no automatic pass/fail check:
 their printed output has to be reviewed by eye, as for any compiler.
 
@@ -54,7 +57,7 @@ eight:
 
 | | Programs | Pass | Fail | Deleted | Inspect | Total |
 |---|---|---|---|---|---|---|
-| `make nist-all` | 382 | 9103 | 1 | 25 | 101 | 9230 |
+| `make nist-all` | 386 | 9143 | 1 | 25 | 101 | 9270 |
 
 The NIST programs are module-split by opensource COBOL's `expand.pl`. They're
 tracked in the opensourcecobol4j repository under `tests/cobol85`. `make nist`
@@ -62,17 +65,18 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 27 programs covering moves, editing, arithmetic, PERFORM,
+`tests/cases/` holds 30 programs covering moves, editing, arithmetic, PERFORM,
 EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH, intrinsic functions, COPY
 and REPLACING, free format, ACCEPT, CALL and CANCEL, ALTER, declaratives,
-sequential, relative and indexed files, and SORT.
+sequential, relative and indexed files, SORT, and Report Writer.
 
 - `make test` compares each program's output and every file it writes against
-  recorded GnuCOBOL 3.1.2 baselines. The exception is `advmix`, which tests a
-  deliberate difference and has its own baseline.
+  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix` and the three
+  Report Writer tests (`rw1`–`rw3`). They cover cases where cobolc deliberately
+  differs from GnuCOBOL, so their baselines were verified by hand.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 27 pass in both modes, built with gcc and with clang.
+All 30 pass in both modes, built with gcc and with clang.
 
 ### Performance
 
@@ -162,7 +166,22 @@ identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF.
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),
   REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
 - VALUE clauses, GLOBAL and EXTERNAL items and files.
-- FD: RECORD VARYING ... DEPENDING ON, LINAGE (FOOTING, TOP, BOTTOM, LINAGE-COUNTER).
+- FD: RECORD VARYING ... DEPENDING ON, LINAGE (FOOTING, TOP, BOTTOM, LINAGE-COUNTER),
+  REPORT IS.
+
+**Report Writer.**
+- RD entries: CONTROLS (with FINAL), PAGE LIMIT with HEADING, FIRST DETAIL,
+  LAST DETAIL and FOOTING, and CODE.
+- Report groups: REPORT HEADING, PAGE HEADING, CONTROL HEADING, DETAIL,
+  CONTROL FOOTING, PAGE FOOTING and REPORT FOOTING, with:
+  - LINE (absolute, PLUS, ON NEXT PAGE), NEXT GROUP, COLUMN, SOURCE, VALUE;
+  - SUM ... UPON ... RESET ON, with subtotaling, crossfooting and rolling
+    forward;
+  - GROUP INDICATE.
+- Statements: INITIATE, GENERATE (detail or summary reporting), TERMINATE,
+  USE BEFORE REPORTING with SUPPRESS PRINTING.
+- LINE-COUNTER and PAGE-COUNTER, qualified by report name when several
+  reports are active.
 
 **Procedure division.**
 - Arithmetic and data movement: MOVE (incl. CORRESPONDING), ADD, SUBTRACT,
@@ -208,7 +227,10 @@ UPPER-CASE, VARIANCE, WHEN-COMPILED, YEAR-TO-YYYY.
 
 ### Not implemented
 
-- REPORT SECTION (Report Writer), SCREEN SECTION and COMMUNICATION SECTION.
+- SCREEN SECTION and COMMUNICATION SECTION, and the Debug module (USE FOR
+  DEBUGGING).
+- Report Writer features added by the 2002 standard, such as PRESENT WHEN,
+  COLUMN RIGHT/CENTER and LINE LIMIT.
 - Pointers: ADDRESS OF, BASED, SET ADDRESS OF.
 - READ PREVIOUS, START FIRST/LAST, split keys, the EBCDIC alphabet, ENTRY,
   object-oriented COBOL, EXEC SQL/CICS.
@@ -234,6 +256,18 @@ All of these were checked against GnuCOBOL 3.1.2:
 4. **DISPLAY of a numeric intrinsic function result** prints the value in its
    shortest form (`3`, `1.4142135623730950472`). GnuCOBOL prints a fixed width
    or up to 96 digits.
+5. **Report Writer.** cobolc follows the standard's presentation rules. Each page
+   of a report with a PAGE clause occupies exactly PAGE LIMIT lines of the file.
+   GnuCOBOL 3.1.2 differs in these ways:
+   - it loses a line at each page break when the report has no page footing;
+   - it prints the last page footing one line too low;
+   - it doesn't present CONTROL HEADING FINAL;
+   - it ignores `SUM ... UPON` and `RESET ON`.
+
+   At TERMINATE, cobolc presents the control footings with the control values
+   of the last GENERATE, as the standard requires. GnuCOBOL uses whatever the
+   program has moved into those fields since, which defeats the usual
+   end-of-file HIGH-VALUES idiom.
 
 ## How it works
 
@@ -248,14 +282,16 @@ source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─�
 |---|---|---|
 | `compiler/source.py` | 238 | reference formats, continuations, directives, comment-entries |
 | `compiler/lexer.py` | 507 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `compiler/parser.py` | 2,312 | recursive-descent parser to the AST (`nodes.py`, 582) |
-| `compiler/data.py` | 486 | PICTURE analysis, USAGE resolution, storage layout |
-| `compiler/codegen.py` | 3,161 | name resolution, C generation, typed fast paths |
+| `compiler/parser.py` | 2,500 | recursive-descent parser to the AST (`nodes.py`, 621) |
+| `compiler/data.py` | 495 | PICTURE analysis, USAGE resolution, storage layout |
+| `compiler/codegen.py` | 3,170 | name resolution, C generation, typed fast paths |
+| `compiler/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
 | `runtime/cobrt_core.c` | 2,065 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL |
 | `runtime/cobrt_io.c` | 1,457 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_rw.c` | 417 | Report Writer control system: paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 424 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 734 | intrinsic functions |
-| `runtime/cobrt.h` | 543 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 593 | runtime interface and inline fast paths |
 
 Design choices:
 

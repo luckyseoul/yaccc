@@ -236,6 +236,15 @@ class DataItem:
         self.is_global = False
         self.renames = None         # (DataRef, DataRef|None)
         self.based = False
+        # Report Writer (REPORT SECTION entries)
+        self.rw_line = None         # ('ABS', n) ('REL', n) ('ABSNP', n) ('NP', 0)
+        self.rw_next_group = None   # ('ABS', n) ('REL', n) ('NP', 0)
+        self.rw_type = None         # (kind, control-name|'FINAL'|None)
+        self.rw_column = None
+        self.rw_source = None
+        self.rw_sums = []           # [(operands, upon-names)]
+        self.rw_reset = None        # control name or 'FINAL'
+        self.rw_group_indicate = False
         # computed
         self.type = None
         self.digits = 0

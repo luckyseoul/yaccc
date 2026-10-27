@@ -1,0 +1,3 @@
+Report Writer: compared with a hand-verified baseline. GnuCOBOL 3.1.2 omits the
+CH FINAL group, ignores SUM ... UPON and RESET ON FINAL, so it is not used as the
+oracle here (see README, Differences from GnuCOBOL).

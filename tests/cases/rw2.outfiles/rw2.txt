@@ -1,0 +1,100 @@
+
+
+         INVENTORY REPORT
+
+         TITLE PAGE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+INVENTORY                    PAGE  2
+------------------------------------
+
+WAREHOUSE A
+  A    PART-01     1  06
+       PART-02     2  07
+       PART-03     3  08
+       PART-04     4  09
+       PART-05     5  10
+       PART-06     6  11
+       PART-07     7  12
+       PART-08     8  13
+       PART-09     9  14
+       PART-10    10  15
+
+
+
+END OF PAGE  2
+
+
+INVENTORY                    PAGE  3
+------------------------------------
+
+  A    PART-11    11  05
+       PART-12    12  06
+  SUBTOTAL        78
+
+
+
+
+
+
+
+
+
+
+
+END OF PAGE  3
+
+
+INVENTORY                    PAGE  4
+------------------------------------
+
+WAREHOUSE B
+  B    PART-01    10  06
+       PART-02    20  07
+       PART-03    30  08
+  SUBTOTAL        60
+
+
+
+
+
+
+
+
+
+END OF PAGE  4
+
+
+
+
+
+
+
+
+
+
+TOTAL PARTS:  138
+
+
+
+
+
+
+
+
+
+

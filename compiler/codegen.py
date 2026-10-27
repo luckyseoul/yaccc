@@ -8,6 +8,7 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA)
 from .errors import CompileError, DIAG
 from .nodes import *
+from .rwgen import ReportWriterGen
 from .words import FIG_BYTES, FUNCTIONS
 
 CMP_OP = {'EQ': '==', 'NE': '!=', 'LT': '<', 'LE': '<=', 'GT': '>', 'GE': '>='}
@@ -123,7 +124,7 @@ class ProgCtx:
         self.class_tables = {}
 
 
-class CodeGen:
+class CodeGen(ReportWriterGen):
     def __init__(self, programs, opts):
         self.programs = programs
         self.opts = opts
@@ -543,6 +544,8 @@ class CodeGen:
             for k, _ in fi.keys:
                 if getattr(k, 'file', None) is not fi:
                     raise CompileError(f"key '{k.name}' is not part of the record of file '{fc.name}'", fc.loc)
+        # REPORT SECTION
+        self.rw_analyze(prog)
 
     def resolve_renames(self, item, record):
         a, b = item.renames
@@ -618,6 +621,9 @@ class CodeGen:
         fi = getattr(item, 'file', None)
         if fi is not None:
             chain.append(fi.fd.name)
+        rn = getattr(item, 'report_name', None)
+        if rn is not None:
+            chain.append(rn)
         i = 0
         for q in quals:
             while i < len(chain) and chain[i] != q:
@@ -777,6 +783,7 @@ class CodeGen:
     def emit_program(self, prog):
         ctx = self.ctx
         self.prepare_alters(prog)
+        self.rw_emit(prog)
         self.advancing_files = set()
         for st in self.all_stmts(prog):
             if isinstance(st, Write) and st.adv_when:
@@ -795,6 +802,8 @@ class CodeGen:
         self.inline_stack = []
         for var in self.alter_vars:
             em(f"{var} = NULL;")
+        for it in ctx.rw_init:
+            em(f"cob_move(&cob_fig_zero, {self.rw_item_field(it)});")
         for fi in ctx.files.values():
             if fi.external:
                 em(f"if (!{fi.sym}_inited) {{")
@@ -828,7 +837,7 @@ class CodeGen:
         self.fn_locals = []
         self.loc_str = c_string(str(prog.loc))
         body = em
-        gdecls = [sec for sec in prog.declaratives if sec.use_global]
+        gdecls = [sec for sec in prog.declaratives if sec.use_global or sec.use_reporting]
         if gdecls:
             em("if (cob_argc == COB_DECL_ENTRY) goto L_decl_entry;")
         em(f"cob_set_collating({ctx.coll or 'NULL'});")
@@ -970,7 +979,7 @@ class CodeGen:
         em(f"{f}.select_name = {c_string(fc.name)};")
         org = 'SEQUENTIAL' if fi.is_sort else fc.organization
         if org == 'SEQUENTIAL' and (fi.fd.name in self.advancing_files or fc.assign_kind == 'PRINTER'
-                                    or fi.fd.linage is not None):
+                                    or fi.fd.linage is not None or fi.fd.reports):
             org = 'LINE SEQUENTIAL'
             fc.organization = org
         em(f"{f}.organization = {ORG[org]};")

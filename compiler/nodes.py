@@ -513,6 +513,7 @@ class Section:
     use_files: Optional[list] = None   # declaratives USE AFTER ERROR ON ...
     use_mode: Optional[str] = None
     use_global: bool = False
+    use_reporting: Optional[str] = None    # USE BEFORE REPORTING group-name
     segment: int = 0
     id: int = 0
 
@@ -548,6 +549,7 @@ class FileDesc:
     bottom: Any = None
     external: bool = False
     is_global: bool = False
+    reports: list = field(default_factory=list)
 
 
 @dataclass(eq=False)
@@ -564,6 +566,7 @@ class Program:
     switch_conds: dict = field(default_factory=dict)
     alphabets: dict = field(default_factory=dict)
     same_record: list = field(default_factory=list)
+    reports: list = field(default_factory=list)
     collating: Any = None
     classes: dict = field(default_factory=dict)
     symbolic: dict = field(default_factory=dict)
@@ -580,3 +583,39 @@ class Program:
     nested: list = field(default_factory=list)
     parent: Any = None
     debugging: bool = False
+
+
+@dataclass(eq=False)
+class ReportDesc:
+    name: str
+    loc: Loc
+    is_global: bool = False
+    code: Any = None                # bytes
+    controls: list = field(default_factory=list)   # DataRefs, major to minor
+    has_final: bool = False
+    page_limit: int = 0             # 0: no PAGE clause
+    heading: int = 0
+    first_detail: int = 0
+    last_detail: int = 0
+    footing: int = 0
+    groups: list = field(default_factory=list)     # 01-level report groups
+
+
+@dataclass(eq=False)
+class Initiate(Stmt):
+    reports: list
+
+
+@dataclass(eq=False)
+class Generate(Stmt):
+    name: Any                       # DataRef: detail group or report
+
+
+@dataclass(eq=False)
+class Terminate(Stmt):
+    reports: list
+
+
+@dataclass(eq=False)
+class Suppress(Stmt):
+    pass

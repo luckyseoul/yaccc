@@ -134,7 +134,7 @@ def main():
         args.remove('--all')
         SKIP = set()
     suite = os.path.abspath(args[0])   # programs are compiled from inside each module directory
-    mods = args[1:] or ['NC', 'SM', 'IC', 'SQ', 'RL', 'IX', 'ST', 'SG', 'OB', 'IF']
+    mods = args[1:] or ['NC', 'SM', 'IC', 'SQ', 'RL', 'IX', 'ST', 'SG', 'OB', 'IF', 'RW']
     grand = dict(progs=0, ok=0, cerr=0, xerr=0, total=0, passed=0, failed=0, deleted=0, inspect=0)
     summary = []
     for m in mods:
