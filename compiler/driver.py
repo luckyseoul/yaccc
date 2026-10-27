@@ -1,0 +1,169 @@
+"""Command-line driver: parse, generate C, invoke the C compiler."""
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from .codegen import CodeGen, Options
+from .errors import CompileError, DIAG
+from .lexer import SourceSet
+from .parser import Parser
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RUNTIME_DIR = os.path.join(os.path.dirname(HERE), 'runtime')
+RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_io.c']
+VERSION = '1.0'
+
+
+def runtime_lib_dir():
+    """runtime/ next to the sources, or a per-user cache when that is read-only."""
+    if os.access(RUNTIME_DIR, os.W_OK):
+        return RUNTIME_DIR
+    cache = os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache')
+    d = os.path.join(cache, 'cobolc')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def build_runtime(cc, verbose=False, force=False):
+    libdir = runtime_lib_dir()
+    lib = os.path.join(libdir, 'libcobrt.a')
+    srcs = [os.path.join(RUNTIME_DIR, s) for s in RUNTIME_SRC] + [os.path.join(RUNTIME_DIR, 'cobrt.h')]
+    if not force and os.path.exists(lib):
+        lt = os.path.getmtime(lib)
+        if all(os.path.getmtime(s) <= lt for s in srcs):
+            return lib
+    objdir = tempfile.mkdtemp(prefix='cobrt_')
+    objs = []
+    try:
+        for s in RUNTIME_SRC:
+            o = os.path.join(objdir, s[:-2] + '.o')
+            cmd = [cc, '-O2', '-std=gnu11', '-fPIC', '-c', os.path.join(RUNTIME_DIR, s), '-o', o]
+            if verbose:
+                print(' '.join(cmd), file=sys.stderr)
+            subprocess.run(cmd, check=True)
+            objs.append(o)
+        # unique temporary name + atomic rename: concurrent builds never see a partial archive
+        fd, tmp = tempfile.mkstemp(dir=libdir, prefix='libcobrt.', suffix='.tmp')
+        os.close(fd)
+        os.remove(tmp)
+        try:
+            subprocess.run(['ar', 'rcs', tmp] + objs, check=True)
+            os.replace(tmp, lib)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    finally:
+        shutil.rmtree(objdir, ignore_errors=True)
+    return lib
+
+
+def safe_build_runtime(cc, verbose=False, force=False):
+    try:
+        return build_runtime(cc, verbose, force)
+    except FileNotFoundError as e:
+        print(f"cobolc: cannot run '{e.filename or cc}': install gcc or clang, or name one with --cc",
+              file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"cobolc: building the runtime library failed: {' '.join(e.cmd)}", file=sys.stderr)
+    return None
+
+
+def compile_sources(paths, opts, fmt, include_dirs, debugging=False):
+    programs = []
+    for p in paths:
+        ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging)
+        toks = ss.load(p)
+        parser = Parser(toks)
+        programs.extend(parser.parse_unit())
+    opts.source_name = paths[0]
+    gen = CodeGen(programs, opts)
+    return gen.generate(), programs
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog='cobolc', description='COBOL compiler (COBOL -> C -> native executable)')
+    ap.add_argument('sources', nargs='*', help='COBOL source files')
+    ap.add_argument('-o', dest='output', help='output file name')
+    ap.add_argument('-x', action='store_true', help='build an executable (default)')
+    ap.add_argument('-C', dest='emit_c', action='store_true', help='translate only: write C source')
+    ap.add_argument('-free', '--free', dest='fmt', action='store_const', const='free', help='free-format source')
+    ap.add_argument('-fixed', '--fixed', dest='fmt', action='store_const', const='fixed', help='fixed-format source')
+    ap.add_argument('-I', dest='include', action='append', default=[], help='copybook directory')
+    ap.add_argument('-O', dest='opt', default='2', nargs='?', const='2', help='C optimisation level')
+    ap.add_argument('-g', dest='debug', action='store_true', help='include C debug information')
+    ap.add_argument('--no-check', dest='check', action='store_false', help='disable subscript/reference checks')
+    ap.add_argument('--binary-size', default='2-4-8', choices=['2-4-8', '1-2-4-8'],
+                    help='storage size scheme for BINARY/COMP items')
+    ap.add_argument('--debugging-mode', action='store_true', help="compile 'D' debugging lines")
+    ap.add_argument('--keep-c', action='store_true', help='keep the generated C file next to the output')
+    ap.add_argument('--run', action='store_true', help='run the program after building it')
+    ap.add_argument('--cc', default=os.environ.get('CC') or (shutil.which('gcc') and 'gcc') or 'cc',
+                    help='C compiler to use (gcc or clang; default $CC, then gcc, then cc)')
+    ap.add_argument('--build-runtime', action='store_true', help='(re)build the runtime library and exit')
+    ap.add_argument('-v', '--verbose', action='store_true')
+    ap.add_argument('--version', action='version', version=f'cobolc {VERSION}')
+    args, run_args = ap.parse_known_args(argv)
+
+    if args.build_runtime:
+        if safe_build_runtime(args.cc, args.verbose, force=True) is None:
+            return 1
+        print(f"runtime library built: {os.path.join(runtime_lib_dir(), 'libcobrt.a')}")
+        return 0
+    if not args.sources:
+        ap.error('no source files given')
+
+    opts = Options()
+    opts.check = args.check
+    opts.binary_size = args.binary_size
+    fmt = args.fmt or 'auto'
+    try:
+        csrc, programs = compile_sources(args.sources, opts, fmt, args.include, args.debugging_mode)
+    except CompileError as e:
+        DIAG.flush()
+        print(str(e), file=sys.stderr)
+        return 1
+    DIAG.flush()
+
+    base = os.path.splitext(os.path.basename(args.sources[0]))[0]
+    if args.emit_c:
+        out = args.output or base + '.c'
+        with open(out, 'w', encoding='latin-1') as f:
+            f.write(csrc)
+        return 0
+
+    exe = args.output or base
+    lib = safe_build_runtime(args.cc, args.verbose)
+    if lib is None:
+        return 1
+    if args.keep_c:
+        cpath = os.path.splitext(exe)[0] + '.c'
+        tmpdir = None
+    else:
+        tmpdir = tempfile.mkdtemp(prefix='cobolc_')
+        cpath = os.path.join(tmpdir, base + '.c')
+    try:
+        with open(cpath, 'w', encoding='latin-1') as f:
+            f.write(csrc)
+        cmd = [args.cc, '-std=gnu11', f'-O{args.opt}', '-w', '-fwrapv', '-I', RUNTIME_DIR, cpath, '-o', exe, lib, '-lm']
+        if args.debug:
+            cmd.insert(1, '-g')
+        if args.verbose:
+            print(' '.join(cmd), file=sys.stderr)
+        try:
+            r = subprocess.run(cmd)
+        except FileNotFoundError:
+            print(f"cobolc: cannot run '{args.cc}': install gcc or clang, or name one with --cc", file=sys.stderr)
+            return 1
+        if r.returncode != 0:
+            print("cobolc: C compilation failed (generated code error)", file=sys.stderr)
+            return 1
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    if args.run:
+        path = exe if os.path.dirname(exe) else os.path.join('.', exe)
+        return subprocess.run([path] + run_args).returncode
+    return 0

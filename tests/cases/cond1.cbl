@@ -1,0 +1,130 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. COND1.
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       SPECIAL-NAMES.
+           CLASS HEX-DIGIT IS "0" THRU "9" "A" THRU "F".
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 A          PIC 99 VALUE 5.
+       01 B          PIC 99 VALUE 10.
+       01 C          PIC S99 VALUE -3.
+       01 NAME       PIC X(10) VALUE "SMITH".
+       01 CODE-X     PIC X VALUE "B".
+       01 HX         PIC X(4) VALUE "1A9F".
+       01 HX2        PIC X(4) VALUE "1G9F".
+       01 NUMSTR     PIC X(5) VALUE "12345".
+       01 MIXSTR     PIC X(5) VALUE "12A45".
+       01 ALPHA      PIC X(6) VALUE "Hello ".
+       01 STATUS-CODE PIC 9 VALUE 2.
+          88 ST-OK      VALUE 0.
+          88 ST-WARN    VALUE 1 2.
+          88 ST-ERROR   VALUE 3 THRU 9.
+       01 GRADE      PIC X VALUE "C".
+          88 PASSING    VALUE "A" "B" "C".
+          88 FAILING    VALUE "D" "F".
+       01 EOF-FLAG   PIC X VALUE "N".
+          88 AT-EOF     VALUE "Y" FALSE "N".
+       01 I          PIC 9.
+       PROCEDURE DIVISION.
+           IF A < B DISPLAY "A < B" END-IF.
+           IF A > B DISPLAY "A > B" ELSE DISPLAY "NOT A > B" END-IF.
+           IF A = 5 AND B = 10 DISPLAY "AND OK" END-IF.
+           IF A = 6 OR B = 10 DISPLAY "OR OK" END-IF.
+           IF NOT A = 6 DISPLAY "NOT OK" END-IF.
+           IF A NOT = 6 DISPLAY "NOT = OK" END-IF.
+           IF A IS GREATER THAN 4 DISPLAY "GREATER THAN" END-IF.
+           IF A IS LESS THAN OR EQUAL TO 5 DISPLAY "LESS OR EQUAL"
+           END-IF.
+           IF A GREATER OR EQUAL 5 DISPLAY "GREATER OR EQUAL" END-IF.
+           IF A >= 5 AND <= 9 DISPLAY "ABBREV RANGE" END-IF.
+           IF A = 1 OR 3 OR 5 DISPLAY "ABBREV OR LIST" END-IF.
+           IF A = 1 OR 2 OR 3 DISPLAY "WRONG"
+           ELSE DISPLAY "NOT IN 1 2 3"
+           END-IF.
+           IF A > 1 AND NOT > 9 DISPLAY "ABBREV NOT" END-IF.
+           IF A = 5 OR B = 1 AND C = 0 DISPLAY "PRECEDENCE AND"
+           END-IF.
+           IF (A = 5 OR B = 1) AND C = 0 DISPLAY "WRONG" ELSE
+               DISPLAY "PARENS" END-IF.
+           IF (A + 1) * 2 = 12 DISPLAY "ARITH IN COND" END-IF.
+           IF A + B > 14 DISPLAY "SUM > 14" END-IF.
+           IF C IS NEGATIVE DISPLAY "C NEGATIVE" END-IF.
+           IF A IS POSITIVE DISPLAY "A POSITIVE" END-IF.
+           IF A - 5 IS ZERO DISPLAY "A - 5 ZERO" END-IF.
+           IF C IS NOT POSITIVE DISPLAY "C NOT POSITIVE" END-IF.
+           IF NAME = "SMITH" DISPLAY "NAME = SMITH (PADDED)" END-IF.
+           IF NAME > "JONES" DISPLAY "SMITH > JONES" END-IF.
+           IF NAME < "SMITHY" DISPLAY "SMITH < SMITHY" END-IF.
+           IF NUMSTR IS NUMERIC DISPLAY "NUMSTR NUMERIC" END-IF.
+           IF MIXSTR IS NOT NUMERIC DISPLAY "MIXSTR NOT NUMERIC"
+           END-IF.
+           IF ALPHA IS ALPHABETIC DISPLAY "ALPHA ALPHABETIC" END-IF.
+           IF NAME IS ALPHABETIC-UPPER DISPLAY "NAME UPPER" END-IF.
+           IF ALPHA IS NOT ALPHABETIC-LOWER DISPLAY "ALPHA NOT LOWER"
+           END-IF.
+           IF HX IS HEX-DIGIT DISPLAY "HX IS HEX" END-IF.
+           IF HX2 IS NOT HEX-DIGIT DISPLAY "HX2 NOT HEX" END-IF.
+           IF ST-WARN DISPLAY "STATUS WARN" END-IF.
+           IF NOT ST-OK DISPLAY "STATUS NOT OK" END-IF.
+           SET ST-ERROR TO TRUE.
+           DISPLAY "STATUS NOW " STATUS-CODE.
+           IF ST-ERROR DISPLAY "STATUS ERROR" END-IF.
+           IF PASSING DISPLAY "GRADE PASSING" END-IF.
+           SET AT-EOF TO TRUE.
+           DISPLAY "EOF-FLAG=" EOF-FLAG.
+           SET AT-EOF TO FALSE.
+           DISPLAY "EOF-FLAG=" EOF-FLAG.
+           IF A = 5 AND ST-ERROR DISPLAY "MIXED COND" END-IF.
+           IF A = 4 OR PASSING DISPLAY "COND NAME IN ABBREV"
+           END-IF.
+           IF NAME = SPACES DISPLAY "WRONG"
+           ELSE DISPLAY "NAME NOT SPACES"
+           END-IF.
+           IF A = ZERO DISPLAY "WRONG" ELSE DISPLAY "A NOT ZERO" END-IF.
+           IF A NOT EQUAL TO B
+               IF A < B
+                   DISPLAY "NESTED IF"
+               ELSE
+                   DISPLAY "WRONG"
+               END-IF
+           END-IF.
+           PERFORM VARYING I FROM 1 BY 1 UNTIL I > 6
+               EVALUATE I
+                   WHEN 1 DISPLAY "EVAL ONE"
+                   WHEN 2 THRU 3 DISPLAY "EVAL TWO-THREE " I
+                   WHEN 4
+                   WHEN 5 DISPLAY "EVAL FOUR OR FIVE " I
+                   WHEN OTHER DISPLAY "EVAL OTHER " I
+               END-EVALUATE
+           END-PERFORM.
+           EVALUATE TRUE
+               WHEN A > B DISPLAY "WRONG"
+               WHEN A = 5 AND B = 10 DISPLAY "EVAL TRUE AND"
+               WHEN OTHER DISPLAY "WRONG"
+           END-EVALUATE.
+           EVALUATE A ALSO CODE-X
+               WHEN 5 ALSO "A" DISPLAY "WRONG"
+               WHEN 5 ALSO "B" DISPLAY "EVAL ALSO MATCH"
+               WHEN ANY ALSO ANY DISPLAY "WRONG"
+           END-EVALUATE.
+           EVALUATE TRUE ALSO FALSE
+               WHEN A = 5 ALSO B = 1 DISPLAY "TRUE ALSO FALSE OK"
+               WHEN OTHER DISPLAY "WRONG"
+           END-EVALUATE.
+           EVALUATE GRADE
+               WHEN "A" THRU "B" DISPLAY "TOP"
+               WHEN NOT "F" DISPLAY "NOT F: " GRADE
+           END-EVALUATE.
+           EVALUATE A + B
+               WHEN 15 DISPLAY "EVAL EXPR 15"
+               WHEN OTHER DISPLAY "WRONG"
+           END-EVALUATE.
+           EVALUATE TRUE
+               WHEN PASSING DISPLAY "EVAL COND NAME"
+           END-EVALUATE.
+           EVALUATE A > 3
+               WHEN TRUE DISPLAY "EVAL COND SUBJECT TRUE"
+               WHEN FALSE DISPLAY "WRONG"
+           END-EVALUATE.
+           STOP RUN.

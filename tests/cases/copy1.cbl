@@ -1,0 +1,23 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. COPY1.
+       AUTHOR. SOMEBODY'S NAME WITH "QUOTES".
+       DATE-WRITTEN. 2026-10-26.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       COPY CUSTREC REPLACING ==:PFX:== BY ==CUST==
+                              ==LIMIT-VALUE== BY ==2500.00==.
+       COPY "CUSTREC.cpy" REPLACING ==:PFX:== BY ==VEND==
+                                    ==LIMIT-VALUE== BY ==100==.
+       01 MSG-TEXT     PIC X(20) VALUE "HELLO FROM COPY".
+      *> floating comment line
+       01 LONG-LIT     PIC X(70) VALUE "THIS IS A VERY LONG LITERAL THAT
+      -    " CONTINUES ON THE NEXT LINE".
+       PROCEDURE DIVISION.
+           MOVE 1 TO CUST-ID. MOVE "ALPHA INC" TO CUST-NAME.
+           MOVE 2 TO VEND-ID. MOVE "BETA LLC" TO VEND-NAME.
+           DISPLAY "CUST: " CUST-ID " " CUST-NAME " " CUST-LIMIT.
+           DISPLAY "VEND: " VEND-ID " " VEND-NAME " " VEND-LIMIT.
+           COPY PRINTLN.
+           DISPLAY "[" LONG-LIT "]".
+      D    DISPLAY "DEBUG LINE SHOULD NOT APPEAR".
+           STOP RUN.

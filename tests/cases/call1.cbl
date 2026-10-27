@@ -1,0 +1,130 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CALL1.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 A             PIC 9(4) VALUE 10.
+       01 B             PIC 9(4) VALUE 20.
+       01 RESULT        PIC 9(6).
+       01 MSG           PIC X(20) VALUE "ORIGINAL".
+       01 PROG-NAME     PIC X(8) VALUE "COUNTER".
+       01 N             PIC 99.
+       01 FACT          PIC 9(10).
+       PROCEDURE DIVISION.
+           CALL "ADDER" USING A B RESULT.
+           DISPLAY "ADDER RESULT: " RESULT.
+           CALL "MODIFY" USING BY CONTENT MSG.
+           DISPLAY "AFTER BY CONTENT: " MSG.
+           CALL "MODIFY" USING BY REFERENCE MSG.
+           DISPLAY "AFTER BY REFERENCE: " MSG.
+           CALL PROG-NAME.
+           CALL PROG-NAME.
+           CALL "COUNTER".
+           CANCEL "COUNTER".
+           CALL "COUNTER".
+           CALL "SETRC".
+           DISPLAY "RETURN-CODE: " RETURN-CODE.
+           MOVE 0 TO RETURN-CODE.
+           CALL "MISSING-PROG"
+               ON EXCEPTION DISPLAY "MISSING-PROG NOT FOUND"
+               NOT ON EXCEPTION DISPLAY "WRONG"
+           END-CALL.
+           MOVE 10 TO N.
+           CALL "FACTORIAL" USING N FACT.
+           DISPLAY "10! = " FACT.
+           CALL "LOCALS".
+           CALL "LOCALS".
+           CALL "OUTER".
+           STOP RUN.
+       END PROGRAM CALL1.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ADDER.
+       DATA DIVISION.
+       LINKAGE SECTION.
+       01 X             PIC 9(4).
+       01 Y             PIC 9(4).
+       01 Z             PIC 9(6).
+       PROCEDURE DIVISION USING X Y Z.
+           COMPUTE Z = X + Y.
+           GOBACK.
+       END PROGRAM ADDER.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. MODIFY.
+       DATA DIVISION.
+       LINKAGE SECTION.
+       01 TXT           PIC X(20).
+       PROCEDURE DIVISION USING TXT.
+           MOVE "CHANGED BY MODIFY" TO TXT.
+           EXIT PROGRAM.
+       END PROGRAM MODIFY.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. COUNTER.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 CALLS         PIC 99 VALUE 0.
+       PROCEDURE DIVISION.
+           ADD 1 TO CALLS.
+           DISPLAY "COUNTER CALLED " CALLS " TIME(S)".
+           GOBACK.
+       END PROGRAM COUNTER.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. SETRC.
+       PROCEDURE DIVISION.
+           MOVE 42 TO RETURN-CODE.
+           GOBACK.
+       END PROGRAM SETRC.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. FACTORIAL RECURSIVE.
+       DATA DIVISION.
+       LOCAL-STORAGE SECTION.
+       01 M             PIC 99.
+       01 SUB-FACT      PIC 9(10).
+       LINKAGE SECTION.
+       01 K             PIC 99.
+       01 F             PIC 9(10).
+       PROCEDURE DIVISION USING K F.
+           IF K <= 1
+               MOVE 1 TO F
+           ELSE
+               COMPUTE M = K - 1
+               CALL "FACTORIAL" USING M SUB-FACT
+               COMPUTE F = K * SUB-FACT
+           END-IF.
+           GOBACK.
+       END PROGRAM FACTORIAL.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LOCALS.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 WS-CNT        PIC 99 VALUE 0.
+       LOCAL-STORAGE SECTION.
+       01 LS-CNT        PIC 99 VALUE 0.
+       PROCEDURE DIVISION.
+           ADD 1 TO WS-CNT LS-CNT.
+           DISPLAY "WS-CNT=" WS-CNT " LS-CNT=" LS-CNT.
+           GOBACK.
+       END PROGRAM LOCALS.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. OUTER.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 SHARED-VAL    PIC X(10) VALUE "FROM OUTER" GLOBAL.
+       PROCEDURE DIVISION.
+           CALL "INNER".
+           DISPLAY "OUTER SEES: " SHARED-VAL.
+           GOBACK.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. INNER.
+       PROCEDURE DIVISION.
+           DISPLAY "INNER SEES: " SHARED-VAL.
+           MOVE "SET BY IN" TO SHARED-VAL.
+           GOBACK.
+       END PROGRAM INNER.
+       END PROGRAM OUTER.

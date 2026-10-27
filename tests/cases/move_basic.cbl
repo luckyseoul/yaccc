@@ -1,0 +1,36 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. MOVEBASIC.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 A PIC S9(3)V99 VALUE -12.34.
+       01 X10 PIC X(10).
+       01 N5 PIC 9(5).
+       01 SN5 PIC S9(5).
+       01 N3V2 PIC 9(3)V99.
+       01 E1 PIC ZZZ9.99.
+       01 B2 PIC 9(2) COMP.
+       01 B5 PIC S9(4) COMP-5.
+       01 B9 PIC 9(9) COMP-5.
+       01 B18 PIC S9(18) COMP-5.
+       01 B1 PIC 9(1) BINARY.
+       01 XR PIC X(5) JUSTIFIED RIGHT.
+       PROCEDURE DIVISION.
+           MOVE 42 TO X10. DISPLAY "[" X10 "]".
+           MOVE "123" TO N5. DISPLAY N5.
+           MOVE "  -12.5" TO N3V2. DISPLAY N3V2.
+           MOVE "1,234.56" TO N3V2. DISPLAY N3V2.
+           MOVE " 1,234.56" TO E1. DISPLAY "[" E1 "]".
+           MOVE E1 TO N3V2. DISPLAY N3V2.
+           MOVE 123456 TO N3V2. DISPLAY N3V2.
+           MOVE ALL "7" TO N5. DISPLAY N5.
+           MOVE ALL "AB" TO X10. DISPLAY X10.
+           MOVE 7 TO B2. DISPLAY B2.
+           DISPLAY FUNCTION LENGTH(B2) " " FUNCTION LENGTH(B1).
+           MOVE -5 TO B5. DISPLAY B5.
+           MOVE 5 TO B9. DISPLAY B9.
+           MOVE -5 TO B18. DISPLAY B18.
+           MOVE "AB" TO XR. DISPLAY "[" XR "]".
+           MOVE "ABCDEFG" TO XR. DISPLAY "[" XR "]".
+           MOVE 123456 TO B2. DISPLAY B2.
+           MOVE 99999 TO B5. DISPLAY B5.
+           STOP RUN.

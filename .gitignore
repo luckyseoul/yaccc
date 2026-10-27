@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+/build/
+/third_party/
+/runtime/libcobrt.a
+/runtime/*.o
+/runtime/*.tmp

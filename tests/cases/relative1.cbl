@@ -1,0 +1,52 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RELATIVE1.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT REL-FILE ASSIGN TO "slots.rel"
+               ORGANIZATION IS RELATIVE
+               ACCESS MODE IS DYNAMIC
+               RELATIVE KEY IS REL-KEY
+               FILE STATUS IS FS.
+       DATA DIVISION.
+       FILE SECTION.
+       FD REL-FILE.
+       01 REL-REC          PIC X(12).
+       WORKING-STORAGE SECTION.
+       01 FS              PIC XX.
+       01 REL-KEY         PIC 9(4).
+       01 EOF-SW          PIC X VALUE "N".
+          88 EOF          VALUE "Y".
+       PROCEDURE DIVISION.
+           OPEN OUTPUT REL-FILE.
+           MOVE 3 TO REL-KEY. MOVE "THREE" TO REL-REC.
+           WRITE REL-REC INVALID KEY DISPLAY "W3 FAIL".
+           MOVE 1 TO REL-KEY. MOVE "ONE" TO REL-REC.
+           WRITE REL-REC INVALID KEY DISPLAY "W1 FAIL".
+           MOVE 7 TO REL-KEY. MOVE "SEVEN" TO REL-REC.
+           WRITE REL-REC INVALID KEY DISPLAY "W7 FAIL".
+           MOVE 3 TO REL-KEY. MOVE "DUP" TO REL-REC.
+           WRITE REL-REC INVALID KEY DISPLAY "DUPLICATE SLOT, FS=" FS.
+           CLOSE REL-FILE.
+           OPEN I-O REL-FILE.
+           MOVE 7 TO REL-KEY.
+           READ REL-FILE INVALID KEY DISPLAY "R7 FAIL".
+           DISPLAY "SLOT 7: " REL-REC.
+           MOVE 5 TO REL-KEY.
+           READ REL-FILE INVALID KEY DISPLAY "SLOT 5 EMPTY, FS=" FS.
+           MOVE 1 TO REL-KEY.
+           READ REL-FILE.
+           MOVE "UNO" TO REL-REC.
+           REWRITE REL-REC.
+           MOVE 3 TO REL-KEY.
+           DELETE REL-FILE.
+           MOVE 0 TO REL-KEY.
+           START REL-FILE KEY IS GREATER THAN REL-KEY.
+           PERFORM UNTIL EOF
+               READ REL-FILE NEXT
+                   AT END SET EOF TO TRUE
+                   NOT AT END DISPLAY "KEY " REL-KEY ": " REL-REC
+               END-READ
+           END-PERFORM.
+           CLOSE REL-FILE.
+           STOP RUN.

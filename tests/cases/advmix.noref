@@ -1,0 +1,3 @@
+Deliberate deviation from GnuCOBOL: a default WRITE (or BEFORE ADVANCING) after
+WRITE ... AFTER ADVANCING terminates the open line first instead of appending to it.
+Compared only against the recorded baseline (advmix.expected, advmix.outfiles).

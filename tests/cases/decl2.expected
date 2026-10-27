@@ -1,0 +1,6 @@
+open status 05
+declarative: status 10
+read status 10
+declarative: status 46
+second read status 46
+back in main
