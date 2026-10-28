@@ -322,8 +322,8 @@ PASS  run_functions.at:3963        Formatted funcs w/ invalid variable format
 PASS  run_functions.at:4044        FORMATTED-(DATE)TIME with SYSTEM-OFFSET
 SKIP  run_functions.at:4082        Intrinsics without FUNCTION keyword (1)
 SKIP  run_functions.at:4103        Intrinsics without FUNCTION keyword (2)
-CERR  run_functions.at:4126        User-Defined FUNCTION with/without parameter
-CERR  run_functions.at:4177        UDF in COMPUTE
+PASS  run_functions.at:4126        User-Defined FUNCTION with/without parameter
+PASS  run_functions.at:4177        UDF in COMPUTE
 SKIP  run_functions.at:4220        UDF replacing intrinsic function
 SKIP  run_functions.at:4263        UDF with recursion
 PASS  run_fundamental.at:24        DISPLAY literals
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 422  FAIL 26  CERR 46  XERR 0  SKIP 199
+PASS 424  FAIL 26  CERR 44  XERR 0  SKIP 199

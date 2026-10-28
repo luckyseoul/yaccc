@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 58 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 59 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -96,7 +96,7 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 58 pass, built with gcc.
+All 59 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   422    26             46      199
+  693   424    26             44      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -444,6 +444,15 @@ allocated is a runtime error naming the item, not a wild write. `ALLOCATE n
 CHARACTERS` allocates a block that is not bound to any item. `ADDRESS OF item`
 compares against `NULL` or another `ADDRESS OF`, and may be passed to a CALL.
 
+**User-defined functions.** `FUNCTION-ID` declares a program that returns a
+value: its `RETURNING` item is a LINKAGE item, and a caller that names it in
+`REPOSITORY. FUNCTION f.` may write `f(x)` or `f` wherever a value is expected,
+including inside `COMPUTE`. Arguments are converted into temporaries of the
+callee's parameter types before the call, because a BY REFERENCE call passes an
+address and a literal of a different PICTURE would otherwise be read past its
+end. A `FUNCTION-ID` program is not an entry point: the first `PROGRAM-ID` in
+the file is the program that runs.
+
 **XML GENERATE.** Writes the XML document for a data item into an
 alphanumeric field. Groups become elements, `TYPE OF x IS ATTRIBUTE` makes an
 item an attribute of its parent and `WITH ATTRIBUTES` does so for every
@@ -491,7 +500,8 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
   ALLOCATE and FREE are implemented.
 - ANY LENGTH is implemented for LINKAGE items: the size comes from the
   calling program's argument.
-- JSON PARSE and XML PARSE. JSON GENERATE and XML GENERATE are implemented.
+- JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.
+- Split keys on indexed files (a key made of several SOURCE items).
 - Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.
 - Relative and indexed files are held in memory while open and written back on

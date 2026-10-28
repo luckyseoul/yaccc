@@ -627,6 +627,7 @@ class Program:
     is_initial: bool = False
     is_recursive: bool = False
     is_common: bool = False
+    is_function: bool = False
     decimal_comma: bool = False
     currency: str = '$'
     mnemonics: dict = field(default_factory=dict)

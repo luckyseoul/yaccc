@@ -159,6 +159,7 @@ SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_
 class CodeGen(ReportWriterGen, DebugGen):
     def __init__(self, programs, opts):
         self.programs = programs
+        self.udf_names = set()
         self.opts = opts
         self.glob = []
         self.funcs = []
@@ -191,6 +192,8 @@ class CodeGen(ReportWriterGen, DebugGen):
             for q in p.nested:
                 walk(q)
         for p in self.programs:
+            if getattr(p, 'is_function', False):
+                self.udf_names.add(p.ext_name.upper())
             walk(p)
         # program names are unique among separately compiled programs, and
         # within each of them among the programs it contains
@@ -240,7 +243,9 @@ class CodeGen(ReportWriterGen, DebugGen):
             body.append(f"\t{flag} = 0;")
             body.append("}")
             self.funcs.extend(body)
-        main = self.programs[0]
+        # the entry point is the first program that is not a FUNCTION
+        main = next((p for p in self.programs if not getattr(p, 'is_function', False)),
+                    self.programs[0])
         now = self.now
         # FUNCTION WHEN-COMPILED (as CURRENT-DATE) and the WHEN-COMPILED register (IBM format)
         wc = now.strftime('%Y%m%d%H%M%S') + f"{now.microsecond // 10000:02d}" + now.strftime('%z')
@@ -981,10 +986,17 @@ class CodeGen(ReportWriterGen, DebugGen):
                 raise CompileError(f"USING item '{ref.name}' must be a level 01/77 LINKAGE item", ref.loc)
             using_items.append(it.storage)
             em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : {it.storage}_dummy;")
+        ret_item = None
+        if getattr(prog, 'is_function', False) and prog.returning is not None:
+            ret_item = self.resolve(prog.returning)
         for sym, size, r in ctx.link_blocks:
             self.glob.append(f"static unsigned char {sym}_dummy[{size}];")
             if sym not in using_items:
                 em(f"{sym} = {sym}_dummy;")
+        if ret_item is not None:
+            # the caller passes the result storage as the last argument
+            nuse = len(prog.using)
+            em(f"if (cob_argc > {nuse} && cob_argv[{nuse}]) {ret_item.storage} = cob_argv[{nuse}];")
         for i, ref in enumerate(getattr(prog, 'chaining', []) or []):
             it = self.resolve(ref)
             if it.section not in ('WS', 'LS'):
@@ -1182,6 +1194,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             if e.refmod:
                 return False
             return it.type in NUMERIC_TYPES
+        if isinstance(e, FuncCall) and e.name in self.udf_names:
+            # numeric if the function's RETURNING item is
+            prog = self.udf_prog(e.name)
+            it = self.resolve_in_prog(prog.returning, prog) if prog.returning else None
+            return it is not None and getattr(it, 'type', None) in NUMERIC_TYPES
         if isinstance(e, FuncCall):
             k = FUNCTIONS[e.name][0]
             if e.refmod:
@@ -1210,6 +1227,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             return FIG_FIELD[e.kind]
         if isinstance(e, AllLit):
             return self.lit_all(e)
+        if isinstance(e, FuncCall) and e.name in self.udf_names:
+            f = self.udf_field(e)
+            if e.refmod:
+                f = self.apply_refmod(f, e.refmod, e.loc)
+            return f
         if isinstance(e, FuncCall):
             k = FUNCTIONS[e.name][0]
             if k == 'X' or (k == 'M' and not self.is_numeric(FuncCall(e.name, e.args, None, e.loc))):
@@ -1394,6 +1416,8 @@ class CodeGen(ReportWriterGen, DebugGen):
     def fx(self, e, wide=False):
         """Scaled-integer evaluation: (C expr, scale, digit bound) or None."""
         cast = '(cob_s128)' if wide else ''
+        if isinstance(e, FuncCall) and e.name in self.udf_names:
+            return None                 # the general path reads the result
         if isinstance(e, CVar):
             return (f"({cast}{e.text})", 0, 18)
         if isinstance(e, NumLit):
@@ -1543,6 +1567,80 @@ class CodeGen(ReportWriterGen, DebugGen):
     def g_AddressOf_field(self, e):
         return self.address_of(e.ref)
 
+    def udf_field(self, e):
+        """A call to a user-defined FUNCTION as a cob_field*.
+
+        The call has to run before the value is read, and an expression cannot
+        emit statements, so the whole call is one statement expression (a GNU
+        extension this compiler already requires). The callee writes its
+        RETURNING item into storage the caller provides, as an extra final
+        argument."""
+        prog = self.udf_prog(e.name)
+        ret = prog.returning
+        if ret is None:
+            raise CompileError(f"function '{e.name}' has no RETURNING item", e.loc)
+        it = self.resolve_in_prog(ret, prog)
+        if it is None or not hasattr(it, 'storage'):
+            raise CompileError(f"function '{e.name}' must return a LINKAGE item", e.loc)
+        buf = self.sym('udfb_')
+        attr = self.item_attr(it)
+        args = ', '.join(self.field(a) for a in e.args)
+        n = len(e.args)
+        fn = self.prog_syms.get(id(prog))
+        if fn is None:
+            raise CompileError(f"function '{e.name}' is not compiled in", e.loc)
+        # a static field, so that its initialiser needs no compound literal
+        return (f"({{ static unsigned char {buf}[{max(it.size, 1)}];"
+                f" static cob_field cob_udf_f = "
+                f"{{ {it.size}, {buf}, &{attr} }};"
+                f" {{ unsigned char *cob_av[{max(n + 1, 1)}];"
+                f" {self.udf_args(e, n)}"
+                f" {fn}({n + 1}, cob_av); }}"
+                f" &cob_udf_f; }})")
+
+    def udf_prog(self, name):
+        for p in self.all_progs:
+            if p.is_function and p.ext_name.upper() == name.upper():
+                return p
+        raise CompileError(f"'{name}' is not a function in this program", None)
+
+    def udf_args(self, e, n):
+        """Argument setup for a user-defined function call.
+
+        A BY REFERENCE call passes an address, so the argument has to be laid
+        out the way the callee's parameter expects: a literal or a value of a
+        different PICTURE is converted into a temporary of the parameter's own
+        type first. Passing the literal's bytes straight through made the
+        callee read past its one byte as a two-digit field."""
+        prog = self.udf_prog(e.name)
+        params = [self.resolve_in_prog(r, prog) for _m, r in prog.using]
+        parts = []
+        for i, a in enumerate(e.args):
+            f = self.field(a)
+            parts.append(f"const cob_field *cob_f{i} = {f};")
+            p = params[i] if i < len(params) else None
+            if p is None or not hasattr(p, 'storage'):
+                parts.append(f"cob_av[{i}] = cob_f{i}->data;")
+                continue
+            buf = self.sym('udfa_')
+            parts.append(f"static unsigned char {buf}[{max(p.size, 1)}];")
+            parts.append(f"cob_field cob_t{i} = "
+                         f"{{ {p.size}, {buf}, &{self.item_attr(p)} }};")
+            parts.append(f"cob_move(cob_f{i}, &cob_t{i});")
+            parts.append(f"cob_av[{i}] = {buf};")
+        parts.append(f"cob_av[{n}] = cob_udf_f.data;")
+        return ' '.join(parts)
+
+    def resolve_in_prog(self, ref, prog):
+        save = getattr(self, 'prog', None)
+        try:
+            self.prog = prog
+            return self.resolve(ref)
+        except Exception:
+            return None
+        finally:
+            self.prog = save
+
     def length_of(self, e):
         r = e.ref
         if isinstance(r, DataRef):
@@ -1561,6 +1659,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         return f"({self.field(r)})->size"
 
     def dec(self, e):
+        if isinstance(e, FuncCall) and e.name in self.udf_names:
+            return f"cob_d_get({self.udf_field(e)})"
         if isinstance(e, CDec):
             return e.text
         if isinstance(e, CVar):
@@ -1703,6 +1803,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         return f"cob_fn_field({self.dec(a)}, {fl}, 0)"
 
     def func_num(self, e):
+        if e.name in self.udf_names:
+            # a user-defined function: its RETURNING item decides the value
+            return f"cob_d_get({self.udf_field(e)})"
+
         name = e.name
         a = e.args
         D = lambda i: self.dec(a[i])
@@ -2851,7 +2955,9 @@ class CodeGen(ReportWriterGen, DebugGen):
             em("{")
             em.ind += 1
             for i, it in enumerate(s.items):
-                if isinstance(it, FuncCall) and self.is_numeric(it) and not it.refmod:
+                if isinstance(it, FuncCall) and it.name in self.udf_names:
+                    fields[i] = self.udf_field(it)      # the call must run first
+                elif isinstance(it, FuncCall) and self.is_numeric(it) and not it.refmod:
                     fields[i] = self.func_field(it)
                 elif isinstance(it, (DataRef, FuncCall)):
                     fields[i] = self.field(it)

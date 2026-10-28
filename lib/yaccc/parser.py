@@ -111,6 +111,7 @@ class Parser:
         self.toks = toks
         self.compile_vars = compile_vars if compile_vars is not None else {}
         self.pos = 0
+        self.udfs = set()
         self.prog = None
         self.subj = None
         self.relop = None
@@ -221,7 +222,12 @@ class Parser:
         if self.accept('IDENTIFICATION', 'ID'):
             self.expect('DIVISION')
             self.expect_period()
-        self.expect('PROGRAM-ID')
+        is_function = False
+        if self.is_word('FUNCTION-ID'):
+            self.next()
+            is_function = True
+        else:
+            self.expect('PROGRAM-ID')
         self.accept_kind('.')
         t = self.next()
         if t.kind == 'STR':
@@ -231,6 +237,7 @@ class Parser:
         else:
             raise self.err("program name expected", t)
         prog = Program(name=name, loc=loc)
+        prog.is_function = is_function
         prog.ext_name = ext
         prog.parent = parent
         self.prog = prog
@@ -265,10 +272,11 @@ class Parser:
         if self.is_word('PROCEDURE'):
             self.parse_procedure(prog)
         # nested programs: only if our END PROGRAM appears later
-        while self.is_word('IDENTIFICATION', 'ID', 'PROGRAM-ID') and self._end_program_ahead(name):
+        while self.is_word('IDENTIFICATION', 'ID', 'PROGRAM-ID', 'FUNCTION-ID') and \
+                self._end_program_ahead(name):
             prog.nested.append(self.parse_program(prog))
             self.prog = prog
-        if self.is_word('END') and self.is_word('PROGRAM', k=1):
+        if self.is_word('END') and (self.is_word('PROGRAM', k=1) or self.is_word('FUNCTION', k=1)):
             self.next()
             self.next()
             t = self.next()
@@ -301,7 +309,8 @@ class Parser:
         depth = 0
         for i in range(self.pos, len(self.toks) - 2):
             t = self.toks[i]
-            if t.kind == 'WORD' and t.up == 'END' and self.toks[i + 1].kind == 'WORD' and self.toks[i + 1].up == 'PROGRAM':
+            if t.kind == 'WORD' and t.up == 'END' and self.toks[i + 1].kind == 'WORD' and \
+                    self.toks[i + 1].up in ('PROGRAM', 'FUNCTION'):
                 nt = self.toks[i + 2]
                 nm = nt.val.decode('latin-1').strip() if nt.kind == 'STR' else nt.up
                 if nm.upper() == name.upper():
@@ -348,7 +357,15 @@ class Parser:
                 self.parse_special_names(prog)
             elif self.accept('REPOSITORY'):
                 self.accept_kind('.')
+                # REPOSITORY. FUNCTION f1 f2. PROGRAM p1 p2: names a program
+                # may use as functions
                 while not self._para_start() and self.peek().kind != 'EOF':
+                    if self.is_word('FUNCTION', 'PROGRAM', 'CLASS'):
+                        kind = self.next().up
+                        if kind == 'FUNCTION':
+                            while self.is_user_word():
+                                self.udfs.add(self.next().up)
+                            continue
                     self.skip_to_period()
             elif self.accept('FILE-CONTROL'):
                 self.accept_kind('.')
@@ -1309,11 +1326,11 @@ class Parser:
             t = self.peek()
             if t.kind == 'EOF':
                 break
-            if self.is_word('END') and self.is_word('PROGRAM', k=1):
+            if self.is_word('END') and self.is_word('PROGRAM', 'FUNCTION', k=1):
                 break
             if self.is_word('IDENTIFICATION', 'ID') and self.is_word('DIVISION', k=1):
                 break
-            if self.is_word('PROGRAM-ID'):
+            if self.is_word('PROGRAM-ID', 'FUNCTION-ID'):
                 break
             if self._section_start():
                 cur_sec = self._section_header()
@@ -1375,11 +1392,11 @@ class Parser:
             t = self.peek()
             if t.kind == 'EOF':
                 return
-            if self.is_word('END') and self.is_word('PROGRAM', 'DECLARATIVES', k=1):
+            if self.is_word('END') and self.is_word('PROGRAM', 'FUNCTION', 'DECLARATIVES', k=1):
                 return
             if self.is_word('IDENTIFICATION', 'ID') and self.is_word('DIVISION', k=1):
                 return
-            if self.is_word('PROGRAM-ID'):
+            if self.is_word('PROGRAM-ID', 'FUNCTION-ID'):
                 return
             if self._section_start():
                 return
@@ -2685,6 +2702,17 @@ class Parser:
             return make_numlit(t.val + n.val, n.loc)
         if t.kind == 'WORD':
             u = t.up
+            if u in self.udfs:
+                self.next()
+                args = []
+                if self.peek().kind == '(':
+                    self.next()
+                    while self.peek().kind != ')':
+                        args.append(self.parse_operand())
+                        if self.peek().kind == ',':
+                            self.next()
+                    self.next()
+                return FuncCall(u, args, None, t.loc)
             if u in FIGURATIVES:
                 self.next()
                 return Figurative(FIGURATIVES[u])
@@ -2787,8 +2815,19 @@ class Parser:
         if nt.kind != 'WORD':
             raise self.err("function name expected", nt)
         name = nt.up
-        if name not in FUNCTIONS:
+        if name not in FUNCTIONS and name not in getattr(self, 'udfs', set()):
             raise ParseError(f"unknown intrinsic function '{name}'", nt.loc)
+        if name in getattr(self, 'udfs', set()) and name not in FUNCTIONS:
+            # a user-defined function: parsed like a call with arguments
+            args = []
+            if self.peek().kind == '(':
+                self.next()
+                while self.peek().kind != ')':
+                    args.append(self.parse_operand())
+                    if self.peek().kind == ',':
+                        self.next()
+                self.next()
+            return FuncCall(name, args, None, nt.loc)
         args = []
         refmod = None
         if self.peek().kind == '(' and not (FUNCTIONS[name][2] == 0 and self._refmod_ahead()):
@@ -2867,6 +2906,19 @@ class Parser:
 
     def _primary(self):
         t = self.peek()
+        # a REPOSITORY-declared function may be called without the FUNCTION
+        # keyword, with or without arguments
+        if t.kind == 'WORD' and t.up in self.udfs:
+            self.next()
+            args = []
+            if self.peek().kind == '(':
+                self.next()
+                while self.peek().kind != ')':
+                    args.append(self.parse_operand())
+                    if self.peek().kind == ',':
+                        self.next()
+                self.next()
+            return FuncCall(t.up, args, None, t.loc)
         if t.kind == '(':
             self.next()
             e = self.parse_expr()
