@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 53 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 54 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -93,7 +93,7 @@ COLUMN clause.
   which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 53 pass, built with gcc.
+All 54 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -106,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   402    25             63      203
+  693   406    25             59      203
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -121,8 +121,8 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
-  features YACCC doesn't have yet: pointers and BASED items, ANY LENGTH,
-  FUNCTION-ID, CHAINING, ENTRY, TYPEDEF, COMP-6 and Report Writer PRESENT
+  features YACCC doesn't have yet: pointers and BASED items,
+  FUNCTION-ID, CHAINING, ENTRY, TYPEDEF and Report Writer PRESENT
   WHEN, STEP and OCCURS.
 - **Failures** include the deliberate differences listed below (WRITE
   ADVANCING, Debug module, LINAGE, national (UTF-16) data, file sharing between
@@ -299,7 +299,7 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   - `P` scaling in numeric and edited pictures;
   - BLANK WHEN ZERO, JUSTIFIED.
 - USAGE: DISPLAY, BINARY/COMP/COMP-4, COMP-5, COMP-X, PACKED-DECIMAL/COMP-3,
-  COMP-1/COMP-2, INDEX.
+  COMP-6, COMP-1/COMP-2, INDEX.
 - SIGN LEADING/TRAILING [SEPARATE].
 - USAGE ... PIC X(n) COMP-5 / COMP-X: Micro Focus n-byte binary numbers.
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),

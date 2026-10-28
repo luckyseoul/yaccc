@@ -7,7 +7,7 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_NUM_EDITED,
                    T_INDEX, T_ALL, T_POINTER, TYPE_NAMES, NUMERIC_TYPES,
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
-                   F_BINARY_TRUNC)
+                   F_BINARY_TRUNC, F_UNSIGNED_PACKED)
 from .errors import CompileError, DIAG
 from .nodes import *
 from .dbggen import DebugGen
@@ -1354,6 +1354,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         if kind == 'DS':
             return f"cob_disps_get({p}, {it.size})"
         if kind == 'PK':
+            if it.flags & F_UNSIGNED_PACKED:
+                return f"cob_pack6_get({p}, {it.size})"
             return f"cob_pack_get({p}, {it.size})"
         return f"cob_c5_get({p}, 4, 1)"
 
@@ -1468,6 +1470,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 parts.append(f"cob_disp_set({p}, {it.size}, (cob_u64)cob_w);")
             elif kind == 'DS':
                 parts.append(f"cob_disps_set({p}, {it.size}, (cob_s64)cob_w);")
+            elif it.flags & F_UNSIGNED_PACKED:
+                parts.append(f"cob_pack6_set({p}, {it.size}, (cob_s64)cob_w);")
             else:
                 parts.append(f"cob_pack_set({p}, {it.size}, (cob_s64)cob_w, {1 if signed else 0}, {1 if it.digits % 2 == 0 else 0});")
         return '{ ' + ' '.join(parts) + ' }'

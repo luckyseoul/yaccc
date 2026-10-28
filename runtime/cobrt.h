@@ -28,12 +28,13 @@ enum cob_type {
 #define COB_F_DEC_COMMA    0x20
 #define COB_F_BINARY_TRUNC 0x40
 #define COB_F_ZERO         0x80   /* COB_ALL: figurative ZERO */
+#define COB_F_UNSIGNED_PACKED 0x100 /* COMP-6: packed with no sign nibble */
 
 typedef struct {
 	unsigned char type;
 	unsigned char digits;
 	signed char scale;
-	unsigned char flags;
+	unsigned short flags;         /* COB_F_*: more than eight are defined */
 	const char *pic;              /* edited picture (expanded) */
 	unsigned char currency;
 } cob_attr;
@@ -222,6 +223,15 @@ static inline cob_s64 cob_pack_get(const unsigned char *p, int n)
 	return (sg == 0x0D || sg == 0x0B) ? -v : v;
 }
 
+/* COMP-6: every nibble is a digit, so the last byte holds two */
+static inline cob_s64 cob_pack6_get(const unsigned char *p, int n)
+{
+	cob_s64 v = 0;
+	for (int i = 0; i < n; i++)
+		v = v * 100 + (p[i] >> 4) * 10 + (p[i] & 0x0F);
+	return v;
+}
+
 static inline void cob_pack_set(unsigned char *p, int n, cob_s64 v, int sgn, int even)
 {
 	int neg = v < 0;
@@ -237,6 +247,20 @@ static inline void cob_pack_set(unsigned char *p, int n, cob_s64 v, int sgn, int
 	}
 	if (even)
 		p[0] &= 0x0F;
+}
+
+/* COMP-6: the digits fill every nibble and there is no sign nibble, so the
+ * last byte holds two digits rather than a digit and a sign */
+static inline void cob_pack6_set(unsigned char *p, int n, cob_s64 v)
+{
+	cob_u64 u = v < 0 ? (cob_u64)(-v) : (cob_u64)v;
+	for (int i = n; i > 0; i--) {
+		unsigned lo = (unsigned)(u % 10);
+		u /= 10;
+		unsigned hi = (unsigned)(u % 10);
+		u /= 10;
+		p[i - 1] = (unsigned char)((hi << 4) | lo);
+	}
 }
 
 static inline cob_s64 cob_round_div(cob_s128 v, cob_s64 p, int rounded)

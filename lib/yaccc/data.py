@@ -38,6 +38,7 @@ F_JUSTIFIED = 0x08
 F_BLANK_ZERO = 0x10
 F_DEC_COMMA = 0x20
 F_BINARY_TRUNC = 0x40
+F_UNSIGNED_PACKED = 0x100     # COMP-6: packed decimal, no sign nibble
 
 
 class Picture:
@@ -455,6 +456,12 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
     if usage == 'PACKED':
         item.type = T_NUM_PACKED
         item.size = pic.digits // 2 + 1
+    elif usage == 'COMP-6':
+        # packed decimal with no sign nibble: the digits fill every nibble,
+        # so PIC 99 COMP-6 is one byte and PIC 999 is two
+        item.type = T_NUM_PACKED
+        item.size = (pic.digits + 1) // 2
+        item.flags |= F_UNSIGNED_PACKED
     elif usage == 'BINARY':
         item.type = T_NUM_BINARY
         item.size = binary_size(pic.digits, opts.binary_size)

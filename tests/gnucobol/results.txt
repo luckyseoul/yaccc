@@ -21,10 +21,10 @@ PASS  data_packed.at:273           PACKED-DECIMAL used with INITIALIZE
 PASS  data_packed.at:312           PACKED-DECIMAL arithmetic
 FAIL  data_packed.at:348           PACKED-DECIMAL numeric test (1)
 SKIP  data_packed.at:490           PACKED-DECIMAL numeric test (2)
-CERR  data_packed.at:606           COMP-6 used with DISPLAY
-CERR  data_packed.at:643           COMP-6 used with MOVE
-CERR  data_packed.at:690           COMP-6 arithmetic
-CERR  data_packed.at:722           COMP-6 numeric test
+PASS  data_packed.at:606           COMP-6 used with DISPLAY
+PASS  data_packed.at:643           COMP-6 used with MOVE
+PASS  data_packed.at:690           COMP-6 arithmetic
+PASS  data_packed.at:722           COMP-6 numeric test
 SKIP  data_pointer.at:21           POINTER: display
 CERR  run_accept.at:28             ACCEPT OMITTED (simple)
 PASS  run_accept.at:50             ACCEPT FROM TIME / DATE / DAY / DAY-OF-WEEK (1)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 402  FAIL 25  CERR 63  XERR 0  SKIP 203
+PASS 406  FAIL 25  CERR 59  XERR 0  SKIP 203

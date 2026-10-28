@@ -597,6 +597,18 @@ static cob_dec get_packed(const cob_field *f)
 	const unsigned char *p = f->data;
 	size_t n = f->size;
 	cob_s128 v = 0;
+	cob_dec r;
+	if (f->attr->flags & COB_F_UNSIGNED_PACKED) {
+		/* COMP-6: every nibble is a digit, and there is no sign */
+		for (size_t i = 0; i < n; i++) {
+			unsigned char hi = p[i] >> 4, lo = p[i] & 0x0F;
+			v = v * 10 + (hi > 9 ? 0 : hi);
+			v = v * 10 + (lo > 9 ? 0 : lo);
+		}
+		r.v = v;
+		r.scale = f->attr->scale;
+		return r;
+	}
 	for (size_t i = 0; i < n; i++) {
 		unsigned char hi = p[i] >> 4, lo = p[i] & 0x0F;
 		v = v * 10 + (hi > 9 ? 0 : hi);
@@ -604,7 +616,6 @@ static cob_dec get_packed(const cob_field *f)
 			v = v * 10 + (lo > 9 ? 0 : lo);
 	}
 	unsigned char s = p[n - 1] & 0x0F;
-	cob_dec r;
 	r.v = (s == 0x0D || s == 0x0B) ? -v : v;
 	r.scale = f->attr->scale;
 	return r;
@@ -786,6 +797,17 @@ static void put_packed(cob_field *f, cob_s128 v)
 	size_t n = f->size;
 	int neg = v < 0;
 	cob_u128 u = uabs(v);
+	if (f->attr->flags & COB_F_UNSIGNED_PACKED) {
+		/* COMP-6: two digits per byte, no sign nibble */
+		for (size_t i = n; i > 0; i--) {
+			unsigned char lo = (unsigned char)(u % 10);
+			u /= 10;
+			unsigned char hi = (unsigned char)(u % 10);
+			u /= 10;
+			p[i - 1] = (unsigned char)((hi << 4) | lo);
+		}
+		return;
+	}
 	unsigned char sign = (f->attr->flags & COB_F_SIGNED) ? (neg ? 0x0D : 0x0C) : 0x0F;
 	memset(p, 0, n);
 	p[n - 1] = sign | (unsigned char)((u % 10) << 4);
@@ -1745,6 +1767,14 @@ int cob_is_numeric(const cob_field *f)
 	case COB_INDEX:
 		return 1;
 	case COB_NUM_PACKED: {
+		if (a->flags & COB_F_UNSIGNED_PACKED) {
+			/* COMP-6: every nibble is a digit, there is no sign to check */
+			for (size_t i = 0; i < n; i++) {
+				if ((p[i] >> 4) > 9 || (p[i] & 0x0F) > 9)
+					return 0;
+			}
+			return 1;
+		}
 		for (size_t i = 0; i < n; i++) {
 			unsigned char hi = p[i] >> 4, lo = p[i] & 0x0F;
 			if (hi > 9)
