@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 55 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 56 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -96,7 +96,7 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 55 pass, built with gcc.
+All 56 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   408    25             55      205
+  693   411    25             52      205
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -433,6 +433,14 @@ stored truncated and the exception is still raised, so `COMPUTE X = 10` on
 `PIC 9` sets X to 0 and EXCEPTION-STATUS to EC-SIZE-OVERFLOW. `SET LAST
 EXCEPTION TO OFF` clears the last condition.
 
+**Pointers, BASED items.** A level 01/77 item may be `BASED`: its storage is
+allocated by `ALLOCATE item [INITIALIZED]` (the VALUE clauses apply when
+`INITIALIZED` is given) and released by `FREE item`, which also clears the
+pointer so `ADDRESS OF item = NULL` tests it. Using a BASED item before it is
+allocated is a runtime error naming the item, not a wild write. `ALLOCATE n
+CHARACTERS` allocates a block that is not bound to any item. `ADDRESS OF item`
+compares against `NULL` or another `ADDRESS OF`, and may be passed to a CALL.
+
 **JSON GENERATE.** Writes the JSON document for a data item into an
 alphanumeric receiving field. A group becomes an object, an elementary item a
 string or a number according to its USAGE, OCCURS an array, and FILLER,
@@ -463,7 +471,8 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
 - SCREEN SECTION and COMMUNICATION SECTION.
 - Report Writer features added by the 2002 standard such as PRESENT WHEN,
   and OCCURS with STEP in report groups.
-- Pointers: ADDRESS OF, BASED, SET ADDRESS OF (ALLOCATE/FREE).
+- SET ADDRESS OF a pointer to arbitrary storage. ADDRESS OF, BASED,
+  ALLOCATE and FREE are implemented.
 - ANY LENGTH is implemented for LINKAGE items: the size comes from the
   calling program's argument.
 - JSON PARSE (JSON GENERATE is implemented), XML PARSE/GENERATE.

@@ -546,6 +546,16 @@ cob_field *cob_fn_exception_statement(void);
 cob_field *cob_fn_exception_status(void);
 void cob_clear_exception(void);
 const char *cob_chain_arg(int n);   /* CHAINING argument n, or NULL */
+/* ALLOCATE / FREE */
+/* a BASED item that was never allocated is a clean error, not a wild write */
+static inline unsigned char *cob_based_ptr(unsigned char *p, const char *name)
+{
+	if (!p)
+		cob_fatal("BASED item '%s' used before ALLOCATE", name);
+	return p;
+}
+unsigned char *cob_alloc_chars(cob_s64 n);
+void cob_free_chars(unsigned char *p);
 extern int cob_zero_div_seen;          /* a DIVIDE by zero ran in this statement */
 
 /* JSON GENERATE */

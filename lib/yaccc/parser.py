@@ -1045,7 +1045,11 @@ class Parser:
                 self.accept('IS')
                 item.false_value = self.parse_value_literal()
             elif w == 'BASED':
-                raise self.err("BASED items are not supported")
+                # a level 01/77 item whose storage is allocated at run time
+                self.next()
+                if level not in (1, 77):
+                    raise CompileError("BASED requires a level 01 or 77 item", loc)
+                item.based = True
             elif w == 'ANY':
                 # PIC X ANY LENGTH: the size comes from the CALLing program
                 self.next()
@@ -1615,6 +1619,26 @@ class Parser:
         return st
 
     # ---- DISPLAY / ACCEPT
+    def p_ALLOCATE(self, loc):
+        """ALLOCATE item [INITIALIZED] | ALLOCATE n CHARACTERS [INITIALIZED]"""
+        st = Allocate(loc)
+        if self.peek().kind == 'NUM' and self.is_word('CHARACTERS', k=1):
+            st.count = make_numlit(self.next().val, loc)
+            self.next()
+        elif self.peek().kind == 'NUM':
+            st.count = make_numlit(self.next().val, loc)
+            self.accept('CHARACTERS', 'BYTES')
+        else:
+            st.target = self.parse_identifier()
+        if self.accept('INITIALIZED'):
+            st.initialized = True
+        return st
+
+    def p_FREE(self, loc):
+        self.accept('ADDRESS')
+        self.accept('OF')
+        return FreeStmt(loc, self.parse_identifier())
+
     def p_JSON(self, loc):
         """JSON GENERATE out FROM src [NAME OF ...] [SUPPRESS ...] [COUNT IN n]
         [ON EXCEPTION ...] [NOT ON EXCEPTION ...] [END-JSON]"""
@@ -2210,7 +2234,8 @@ class Parser:
                 elif self.accept('OMITTED'):
                     args.append(CallArg(mode, 'OMITTED'))
                 elif self.is_word('ADDRESS') and self.is_word('OF', k=1):
-                    raise self.err("ADDRESS OF is not supported")
+                    self.next(); self.next()
+                    args.append(CallArg(mode, AddressOf(self.parse_identifier())))
                 elif self.is_operand_start():
                     args.append(CallArg(mode, self.parse_operand()))
                 else:
@@ -2555,7 +2580,8 @@ class Parser:
                 return make_numlit(str(len(ref.value)))
             return LengthOf(ref)
         if t.kind == 'WORD' and t.up == 'ADDRESS' and self.is_word('OF', k=1):
-            raise self.err("ADDRESS OF is not supported")
+            self.next(); self.next()
+            return AddressOf(self.parse_identifier())
         if not (t.kind == 'WORD' and (t.up not in RESERVED or t.up in SPECIAL_REGISTERS)):
             raise self.err("identifier expected")
         self.next()
@@ -2712,6 +2738,9 @@ class Parser:
             e = self.parse_expr()
             self.expect_kind(')', "')'")
             return e
+        if t.kind == 'WORD' and t.up == 'ADDRESS' and self.is_word('OF', k=1):
+            self.next(); self.next()
+            return AddressOf(self.parse_identifier())
         if t.kind == 'WORD' and t.up == 'ALL':
             return self.parse_operand(allow_all=True)
         if t.kind in ('NUM', 'STR', 'WORD'):

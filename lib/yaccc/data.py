@@ -248,6 +248,7 @@ class DataItem:
         self.rw_type = None         # (kind, control-name|'FINAL'|None)
         self.src_name = None            # name as written in the source
         self.any_length = False         # PIC X ANY LENGTH: size from the caller
+        self.based = False              # storage allocated by ALLOCATE
         self.rw_column = None
         self.rw_just = None             # COLUMN LEFT / RIGHT / CENTER: 'L', 'R', 'C'
         self.rw_source = None
@@ -388,7 +389,17 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
     if pic is None:
         if usage == 'COMP-X':
             raise CompileError(f"COMP-X item '{item.name}' requires a PICTURE", item.loc)
-        raise CompileError(f"elementary item '{item.name or 'FILLER'}' has no PICTURE clause", item.loc)
+        # a literal VALUE gives the item its PICTURE, as GnuCOBOL does for an
+        # untyped 01 such as "01 PT BASED VALUE "."."
+        from .nodes import StrLit, NumLit
+        if isinstance(item.value, StrLit):
+            pic = Picture(f"X({max(len(item.value.value), 1)})", item.loc, '$', False)
+        elif isinstance(item.value, NumLit):
+            digits = len(item.value.digits) or 1
+            pic = Picture(f"9({digits})", item.loc, '$', False)
+        else:
+            raise CompileError(f"elementary item '{item.name or 'FILLER'}' has no PICTURE clause",
+                               item.loc)
     cat = pic.category
     if usage in (None, 'DISPLAY'):
         if cat == 'NUMERIC':

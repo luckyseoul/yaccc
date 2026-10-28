@@ -536,7 +536,12 @@ class CodeGen(ReportWriterGen, DebugGen):
                     continue
                 # a section root may itself have OCCURS: allocate every occurrence
                 size = max([r.total_size()] + [x.total_size() for x in r.redefined_by])
-                if sec == 'WS':
+                if getattr(r, 'based', False):
+                    # storage allocated by ALLOCATE at run time, in any section
+                    sym = self.sym('bas_')
+                    self.glob.append(f"static unsigned char *{sym}; /* BASED {r.name} */")
+                    r.based_sym = sym
+                elif sec == 'WS':
                     if r.external:
                         key = r.name
                         if key in self.externals:
@@ -1287,8 +1292,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             if ref.refmod:
                 f = self.apply_refmod(f, ref.refmod, ref.loc)
             return f
+        base = it.storage
+        if getattr(getattr(it, 'record', None), 'based', False):
+            base = f'cob_based_ptr({base}, {c_string(it.record.name)})'
         off = self.offset_expr(ref, it)
-        f = f"CF({it.storage} + {off}, {self.size_expr(it, receiving)}, &{self.item_attr(it)})"
+        f = f"CF({base} + {off}, {self.size_expr(it, receiving)}, &{self.item_attr(it)})"
         if ref.refmod:
             f = self.apply_refmod(f, ref.refmod, ref.loc)
         return f
@@ -1312,8 +1320,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             return f"((unsigned char *)&{it.cname})"
         if getattr(it, 'special', None):
             return f"({it.special})->data"
+        base = it.storage
+        if getattr(getattr(it, 'record', None), 'based', False):
+            base = f'cob_based_ptr({base}, {c_string(it.record.name)})'
         off = self.offset_expr(ref, it)
-        return f"({it.storage} + {off})"
+        return f"({base} + {off})"
 
     # ================================================================ fixed-point fast paths
     C5_DIGITS = {1: 3, 2: 5, 4: 10, 8: 19}
@@ -1525,6 +1536,9 @@ class CodeGen(ReportWriterGen, DebugGen):
         if isinstance(e, BinOp) and e.op in ('+', '-', '*'):
             return self.intish(e.left) and self.intish(e.right)
         return False
+
+    def g_AddressOf_field(self, e):
+        return self.address_of(e.ref)
 
     def length_of(self, e):
         r = e.ref
@@ -1952,6 +1966,8 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def rel(self, l, op, r):
         cop = CMP_OP[op]
+        if isinstance(l, AddressOf) or isinstance(r, AddressOf):
+            return f"({self._addr(l)} {cop} {self._addr(r)})"
         if self.is_numeric(l) and self.is_numeric(r):
             a = self.fx(l)
             b = self.fx(r) if a is not None else None
@@ -1979,6 +1995,15 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return f"(cob_d_sign({self.dec(l)}) {cop} 0)"
             return f"(cob_d_cmp({self.dec(l)}, {self.dec(r)}) {cop} 0)"
         return f"(cob_cmp({self.field(l)}, {self.field(r)}) {cop} 0)"
+
+    def _addr(self, e):
+        """A pointer value as a C expression, for comparing ADDRESS OF."""
+        if isinstance(e, AddressOf):
+            return f"((void *){self.address_of(e.ref)})"
+        if isinstance(e, Figurative) and e.kind == 'NULL':
+            return "((void *)0)"
+        raise CompileError("ADDRESS OF can only be compared with NULL or "
+                           "another ADDRESS OF", getattr(e, 'loc', None))
 
     def cond_name(self, ref):
         c = self.resolve(ref)
@@ -2473,6 +2498,56 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("}")
 
     # ---------------------------------------------------------------- DISPLAY / ACCEPT
+    # ---------------------------------------------------------------- pointers
+    def g_Allocate(self, s):
+        em = self.em
+        em("{")
+        em.ind += 1
+        if s.target is None:
+            n = self.dec(s.count) if s.count is not None else 'cob_d_int(0)'
+            em(f"unsigned char *cob_a = cob_alloc_chars((cob_s64)cob_d_int64({n}));")
+            if s.initialized:
+                em("memset(cob_a, 0, (size_t)cob_d_int64(" + n + "));")
+            em("(void)cob_a;")
+            em.ind -= 1
+            em("}")
+            return
+        it = self.resolve(s.target)
+        if not getattr(it, 'based', False):
+            raise CompileError(f"ALLOCATE needs a BASED item; '{s.target.name}' is not one",
+                               s.target.loc)
+        sym = it.storage
+        em(f"{sym} = cob_alloc_chars({it.size});")
+        if s.initialized:
+            em(f"memset({sym}, 0, {it.size});")
+            # VALUE clauses then apply, as INITIALIZE would
+            self.init_based(it, sym)
+        em.ind -= 1
+        em("}")
+
+    def init_based(self, item, sym):
+        em = self.em
+        for it in item.walk():
+            if it.children or it.value is None:
+                continue
+            f = f"CF({sym} + {it.offset}, {it.size}, &{self.item_attr(it)})"
+            em(f"cob_move({self.field(it.value)}, {f});")
+
+    def g_FreeStmt(self, s):
+        em = self.em
+        it = self.resolve(s.target)
+        if not getattr(it, 'based', False):
+            raise CompileError(f"FREE needs a BASED item; '{s.target.name}' is not one",
+                               s.target.loc)
+        em(f"cob_free_chars({it.storage});")
+        em(f"{it.storage} = NULL;")
+
+    def address_of(self, ref):
+        it = self.resolve(ref)
+        if getattr(it, 'based', False):
+            return f"((unsigned char *){it.storage})"
+        return f"({self.data_ptr(ref)})"
+
     # ---------------------------------------------------------------- JSON
     JSON_NUMERIC = (T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5,
                     T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX)
@@ -3083,6 +3158,10 @@ class CodeGen(ReportWriterGen, DebugGen):
     def init_tree(self, root, mode):
         self.init_spec = None
         if root.level == 66:
+            return
+        if getattr(root, 'based', False):
+            # a BASED item has no storage until ALLOCATE; its VALUE clauses
+            # apply when it is allocated INITIALIZED
             return
         self.init_item(root, root.storage, str(root.offset), mode, root=True, root_occurs=bool(root.occurs))
 

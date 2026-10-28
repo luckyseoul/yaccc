@@ -556,8 +556,8 @@ PASS  run_misc.at:3184             COB_PRE_LOAD
 CERR  run_misc.at:3210             COB_PRE_LOAD with entry points
 CERR  run_misc.at:3281             Lookup ENTRY from main executable
 PASS  run_misc.at:3322             COB_LOAD_CASE=UPPER test
-CERR  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
-CERR  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
+PASS  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
+PASS  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
 CERR  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
 SKIP  run_misc.at:3463             Initialized value with defaultbyte
 CERR  run_misc.at:3488             CALL with OMITTED parameter
@@ -572,7 +572,7 @@ PASS  run_misc.at:4015             ANY LENGTH (2)
 PASS  run_misc.at:4059             ANY LENGTH (3)
 PASS  run_misc.at:4102             ANY LENGTH (4)
 PASS  run_misc.at:4145             ANY LENGTH (5)
-CERR  run_misc.at:4170             access to BASED item without allocation
+PASS  run_misc.at:4170             access to BASED item without allocation
 FAIL  run_misc.at:4211             access to OPTIONAL LINKAGE item not passed
 PASS  run_misc.at:4253             STOP RUN WITH NORMAL STATUS
 PASS  run_misc.at:4271             STOP RUN WITH ERROR STATUS
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 408  FAIL 25  CERR 55  XERR 0  SKIP 205
+PASS 411  FAIL 25  CERR 52  XERR 0  SKIP 205

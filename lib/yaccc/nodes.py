@@ -82,6 +82,11 @@ class LengthOf(Expr):
     ref: Any
 
 
+@dataclass(eq=False)
+class AddressOf(Expr):
+    ref: Any = None
+
+
 # ---------------------------------------------------------------- conditions
 
 class Cond:
@@ -185,6 +190,18 @@ class Compute(Stmt):
     expr: Any
     on_error: Optional[list] = None
     not_on_error: Optional[list] = None
+
+
+@dataclass(eq=False)
+class Allocate(Stmt):
+    target: Any = None
+    count: Any = None
+    initialized: bool = False
+
+
+@dataclass(eq=False)
+class FreeStmt(Stmt):
+    target: Any = None
 
 
 @dataclass(eq=False)

@@ -2388,6 +2388,18 @@ void cob_accept_cmdline(cob_field *f)
 
 /* PROCEDURE DIVISION CHAINING: the nth argument after the program name, or
  * NULL. chaining items keep their VALUE when no such argument was given. */
+unsigned char *cob_alloc_chars(cob_s64 n)
+{
+	if (n <= 0)
+		return cob_malloc(1);
+	return cob_malloc((size_t)n);
+}
+
+void cob_free_chars(unsigned char *p)
+{
+	free(p);
+}
+
 const char *cob_chain_arg(int n)
 {
 	if (n < 0 || n + 1 >= g_argc)
