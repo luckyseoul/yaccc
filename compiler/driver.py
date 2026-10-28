@@ -72,12 +72,12 @@ def safe_build_runtime(cc, verbose=False, force=False):
     return None
 
 
-def compile_sources(paths, opts, fmt, include_dirs, debugging=False):
+def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=None):
     programs = []
     for p in paths:
-        ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging)
+        ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging, defines=defines)
         toks = ss.load(p)
-        parser = Parser(toks)
+        parser = Parser(toks, ss.directives.vars)
         programs.extend(parser.parse_unit())
     opts.source_name = paths[0]
     opts.debugging = debugging
@@ -94,6 +94,8 @@ def main(argv=None):
     ap.add_argument('-free', '--free', dest='fmt', action='store_const', const='free', help='free-format source')
     ap.add_argument('-fixed', '--fixed', dest='fmt', action='store_const', const='fixed', help='fixed-format source')
     ap.add_argument('-I', dest='include', action='append', default=[], help='copybook directory')
+    ap.add_argument('-D', dest='define', action='append', default=[], metavar='NAME[=VALUE]',
+                    help='define a compilation variable for >>IF and >>DEFINE ... AS PARAMETER')
     ap.add_argument('-O', dest='opt', default='2', nargs='?', const='2', help='C optimisation level')
     ap.add_argument('-g', dest='debug', action='store_true', help='include C debug information')
     ap.add_argument('--no-check', dest='check', action='store_false', help='disable subscript/reference checks')
@@ -122,7 +124,11 @@ def main(argv=None):
     opts.binary_size = args.binary_size
     fmt = args.fmt or 'auto'
     try:
-        csrc, programs = compile_sources(args.sources, opts, fmt, args.include, args.debugging_mode)
+        defines = {}
+        for d in args.define:
+            name, eq, value = d.partition('=')
+            defines[name] = value if eq else True
+        csrc, programs = compile_sources(args.sources, opts, fmt, args.include, args.debugging_mode, defines)
     except CompileError as e:
         DIAG.flush()
         print(str(e), file=sys.stderr)

@@ -616,6 +616,7 @@ class ReportDesc:
     first_detail: int = 0
     last_detail: int = 0
     footing: int = 0
+    line_limit: int = 0             # LINE LIMIT / PAGE ... n COLUMNS (0: none)
     groups: list = field(default_factory=list)     # 01-level report groups
 
 

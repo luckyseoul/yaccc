@@ -115,6 +115,13 @@ class ReportWriterGen:
             self.rw_link_sums(ri)
             ri.width = max([ri.width] + [len(ri.code) + f.rw_column - 1 + f.size
                                          for g in ri.groups for _, fl in g.lines for f in fl])
+            if rd.line_limit:
+                for g in ri.groups:
+                    for _, fl in g.lines:
+                        for f in fl:
+                            if f.rw_column - 1 + f.size > rd.line_limit:
+                                raise CompileError(f"report item ends in column {f.rw_column - 1 + f.size}, "
+                                                   f"beyond the LINE LIMIT of {rd.line_limit}", f.loc)
 
     def rw_special(self, ri, name):
         sym = self.sym('rwc_')
@@ -173,7 +180,21 @@ class ReportWriterGen:
             if not it.children:
                 if it.rw_column is not None:
                     if cur is None:
-                        raise CompileError("COLUMN requires a LINE clause in the report group", it.loc)
+                        # a group without LINE clauses: its items go on the next line
+                        cur = (('REL', 1), [])
+                        gi.lines.append(cur)
+                    col = it.rw_column
+                    if isinstance(col, tuple):
+                        # COLUMN PLUS n: n positions right of the previous item of the line
+                        prev = cur[1][-1] if cur[1] else None
+                        col = (prev.rw_column + prev.size - 1 if prev else 0) + col[1]
+                    if it.rw_just == 'R':           # COLUMN RIGHT n: the item ends in column n
+                        col = col - it.size + 1
+                    elif it.rw_just == 'C':         # COLUMN CENTER n: centered on column n
+                        col = col - (it.size - 1) // 2 if it.size % 2 else col - it.size // 2 + 1
+                    if col < 1:
+                        raise CompileError("report item starts before column 1", it.loc)
+                    it.rw_column = col
                     cur[1].append(it)
                 if it.rw_group_indicate and gi.type != 'DE':
                     raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
@@ -337,8 +358,12 @@ class ReportWriterGen:
                         src = self.rw_source(ri, f)
                         if src is None:
                             continue
-                        dst = f"CF(buf + {len(ri.code) + f.rw_column - 1}, {f.size}, &{self.item_attr(f)})"
+                        off = len(ri.code) + f.rw_column - 1
+                        dst = f"CF(buf + {off}, {f.size}, &{self.item_attr(f)})"
                         stmt = f"cob_move({src}, {dst});"
+                        if f.rw_just and (f.rw_source is not None or f.rw_sums):
+                            # GnuCOBOL aligns SOURCE and SUM data within the item, not VALUEs
+                            stmt = f"{{ {stmt} cob_rw_justify(buf + {off}, {f.size}, '{f.rw_just}'); }}"
                         em(f"if (gi) {stmt}" if f.rw_group_indicate else stmt)
                     em("break;")
                     em.ind -= 1

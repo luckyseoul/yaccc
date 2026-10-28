@@ -4,6 +4,7 @@ import os
 import re
 
 from . import source
+from .directives import Directives
 from .errors import CompileError, DIAG
 from .nodes import Loc
 
@@ -267,13 +268,14 @@ class SourceSet:
 
     COPY_EXTS = ['', '.cpy', '.CPY', '.cbl', '.CBL', '.cob', '.COB', '.copy', '.COPY', '.cbx']
 
-    def __init__(self, include_dirs=(), fmt='auto', debugging=False):
+    def __init__(self, include_dirs=(), fmt='auto', debugging=False, defines=None):
         self.include_dirs = list(include_dirs)
         env = os.environ.get('COBCPY')
         if env:
             self.include_dirs.extend(p for p in env.split(os.pathsep) if p)
         self.fmt = fmt
         self.debugging = source.DebugSwitch(debugging)
+        self.directives = Directives(defines)
         self.decimal_comma = False
 
     def load(self, path):
@@ -281,6 +283,7 @@ class SourceSet:
         if re.search(r'DECIMAL-POINT\s+IS\s+COMMA|DECIMAL-POINT\s+COMMA', '\n'.join(raw), re.I):
             self.decimal_comma = True
         toks = self._tokenize(path, raw, 0)
+        self.directives.check_closed(Loc(path, len(raw)))
         toks = _concat_literals(toks)
         toks = _apply_replace_stmts(toks)
         last = toks[-1].loc if toks else Loc(path, 1)
@@ -298,7 +301,7 @@ class SourceSet:
                 new.append(line)
             raw = new
         fmt = self.fmt if self.fmt != 'auto' else source.detect_format(raw)
-        lines = source.process(raw, path, fmt, self.debugging)
+        lines = source.process(raw, path, fmt, self.debugging, self.directives)
         lx = Lexer(self.decimal_comma)
         toks = lx.lex_lines(lines)
         return self._expand_copy(toks, path, depth)

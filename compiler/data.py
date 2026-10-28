@@ -41,11 +41,12 @@ F_BINARY_TRUNC = 0x40
 
 
 class Picture:
-    def __init__(self, src, loc, currency='$', decimal_comma=False):
+    def __init__(self, src, loc, currency='$', decimal_comma=False, constants=None):
         self.src = src
         self.loc = loc
         self.currency = currency
         self.decimal_comma = decimal_comma
+        self.constants = constants or {}
         self.symbols = self._expand(src)        # list of single symbols ('CR','DB' as one)
         self._classify()
 
@@ -64,7 +65,10 @@ class Picture:
                 try:
                     rep = int(up[i + 1:j])
                 except ValueError:
-                    raise CompileError(f"invalid repetition in PICTURE '{s}'", self.loc)
+                    c = self.constants.get(up[i + 1:j].strip())     # PIC X(constant-name)
+                    if c is None or getattr(c, 'scale', 1) != 0 or getattr(c, 'neg', True):
+                        raise CompileError(f"invalid repetition in PICTURE '{s}'", self.loc)
+                    rep = int(c.digits)
                 if rep < 1:
                     raise CompileError(f"invalid repetition in PICTURE '{s}'", self.loc)
                 out.extend([out[-1]] * (rep - 1))
@@ -242,6 +246,7 @@ class DataItem:
         self.rw_next_group = None   # ('ABS', n) ('REL', n) ('NP', 0)
         self.rw_type = None         # (kind, control-name|'FINAL'|None)
         self.rw_column = None
+        self.rw_just = None             # COLUMN LEFT / RIGHT / CENTER: 'L', 'R', 'C'
         self.rw_source = None
         self.rw_sums = []           # [(operands, upon-names)]
         self.rw_reset = None        # control name or 'FINAL'

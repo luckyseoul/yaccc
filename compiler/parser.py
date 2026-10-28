@@ -51,6 +51,53 @@ def make_numlit(text, loc=None):
     return NumLit(text=text, digits=(ip + fp) if (ip + fp) else '0', scale=len(fp), neg=neg)
 
 
+def fold_constant(e):
+    """A constant expression as a literal when it can be computed now:
+    arithmetic of numeric literals and LENGTH OF a literal. Otherwise the
+    expression itself (LENGTH OF a data item is computed where it is used).
+    As in GnuCOBOL (and Micro Focus level 78), the value of an expression is
+    an integer: each division and the final result are truncated toward zero."""
+    from decimal import Decimal, getcontext, ROUND_DOWN
+    getcontext().prec = 60
+
+    def trunc(v):
+        return v.quantize(Decimal(1), rounding=ROUND_DOWN)
+
+    def val(x):
+        if isinstance(x, NumLit):
+            return Decimal(x.text)
+        if isinstance(x, LengthOf) and isinstance(x.ref, StrLit):
+            return Decimal(len(x.ref.value))
+        if isinstance(x, Neg):
+            v = val(x.e)
+            return None if v is None else -v
+        if isinstance(x, BinOp):
+            a, b = val(x.left), val(x.right)
+            if a is None or b is None:
+                return None
+            if x.op == '+':
+                return a + b
+            if x.op == '-':
+                return a - b
+            if x.op == '*':
+                return a * b
+            if x.op == '/':
+                return trunc(a / b) if b else None
+            if x.op == '**':
+                return a ** b if b == int(b) else None
+        return None
+    if isinstance(e, (NumLit, StrLit, Figurative, AllLit)):
+        return e
+    v = val(e)
+    if v is None:
+        return e
+    v = trunc(v).normalize()
+    t = format(v, 'f')
+    if '.' in t:
+        t = t.rstrip('0').rstrip('.')
+    return make_numlit(t)
+
+
 SELECT_CLAUSE_WORDS = {'ORGANIZATION', 'ACCESS', 'RECORD', 'ALTERNATE', 'RELATIVE', 'FILE', 'STATUS',
                        'LOCK', 'RESERVE', 'PADDING', 'SHARING', 'COLLATING', 'INDEXED', 'SEQUENTIAL',
                        'LINE', 'OPTIONAL'}
@@ -60,8 +107,9 @@ ROUNDING_MODES = ('AWAY-FROM-ZERO', 'NEAREST-AWAY-FROM-ZERO', 'NEAREST-EVEN', 'N
 
 
 class Parser:
-    def __init__(self, toks):
+    def __init__(self, toks, compile_vars=None):
         self.toks = toks
+        self.compile_vars = compile_vars if compile_vars is not None else {}
         self.pos = 0
         self.prog = None
         self.subj = None
@@ -102,6 +150,12 @@ class Parser:
 
     def accept_kind(self, kind):
         if self.peek().kind == kind:
+            return self.next()
+        return None
+
+    def accept_op(self, op):
+        t = self.peek()
+        if t.kind == 'OP' and t.val == op:
             return self.next()
         return None
 
@@ -447,12 +501,15 @@ class Parser:
             if self.accept('ASSIGN'):
                 self.accept('TO', 'USING')
                 while self.is_word('DISK', 'PRINTER', 'KEYBOARD', 'DISPLAY', 'EXTERNAL', 'DYNAMIC',
-                                   'TAPE', 'LINE', 'SEQUENTIAL') and not (self.is_word('LINE') and self.is_word('SEQUENTIAL', k=1)):
+                                   'TAPE', 'LINE', 'SEQUENTIAL', 'ADVANCING', 'MULTIPLE', 'REEL', 'UNIT') and \
+                        not (self.is_word('LINE') and self.is_word('SEQUENTIAL', k=1)):
                     w = self.next().up
                     if w in ('KEYBOARD', 'DISPLAY'):
                         fc.assign_kind = w
                     elif w == 'PRINTER':
                         fc.assign_kind = 'PRINTER'
+                    elif w == 'ADVANCING':
+                        fc.organization = 'LINE SEQUENTIAL'      # LINE ADVANCING: a print file
                 t = self.peek()
                 if t.kind == 'STR':
                     self.next()
@@ -685,6 +742,9 @@ class Parser:
                 self.accept('IS', 'ARE')
                 rd.page_limit = int(self.expect_kind('NUM', 'page limit').val)
                 self.accept('LINE', 'LINES')
+                if self.is_kind('NUM') and self.is_word('COLUMNS', 'COLS', k=1):
+                    rd.line_limit = int(self.next().val)
+                    self.next()
                 while True:
                     if self.accept('HEADING'):
                         self.accept('IS')
@@ -700,15 +760,49 @@ class Parser:
                         rd.footing = int(self.expect_kind('NUM', 'integer').val)
                     else:
                         break
+            elif self.is_word('LINE') and self.is_word('LIMIT', 'LIMITS', k=1):
+                self.next(); self.next()
+                self.accept('IS', 'ARE')
+                rd.line_limit = int(self.expect_kind('NUM', 'line limit').val)
             else:
                 raise self.err("unexpected clause in report description")
         self.expect_period()
         self.in_report = True
         try:
-            rd.groups = self.parse_entries()
+            rd.groups = self._rw_split_groups(self.parse_entries())
         finally:
             self.in_report = False
         return rd
+
+    @staticmethod
+    def _rw_split_groups(groups):
+        """GnuCOBOL extension: an 01 entry without TYPE whose subordinate entries
+        have TYPE clauses describes several report groups. Consecutive entries
+        with the same TYPE (other than DETAIL) form one group of several lines."""
+        out = []
+        for g in groups:
+            if g.rw_type is not None or not g.children or any(c.rw_type is None for c in g.children):
+                out.append(g)
+                continue
+            runs = []
+            for c in g.children:
+                if runs and runs[-1][-1].rw_type == c.rw_type and c.rw_type[0] != 'DE':
+                    runs[-1].append(c)
+                else:
+                    runs.append([c])
+            for run in runs:
+                if len(run) == 1:
+                    grp = run[0]
+                    grp.level = 1
+                    grp.parent = None
+                else:
+                    grp = DataItem(1, None, run[0].loc)
+                    grp.rw_type = run[0].rw_type
+                    grp.children = run
+                    for c in run:
+                        c.parent = grp
+                out.append(grp)
+        return out
 
     def _rw_clause(self, item, w):
         """Report Writer clauses of a REPORT SECTION entry; returns False if w is not one."""
@@ -719,7 +813,7 @@ class Parser:
             if self.is_word('NEXT') and self.is_word('PAGE', k=1):
                 self.next(); self.next()
                 item.rw_line = ('NP', 0)
-            elif self.accept('PLUS'):
+            elif self.accept('PLUS') or self.accept_op('+'):
                 item.rw_line = ('REL', int(self.expect_kind('NUM', 'integer').val))
             else:
                 t = self.expect_kind('NUM', 'line number')
@@ -739,7 +833,7 @@ class Parser:
             if self.accept('NEXT'):
                 self.expect('PAGE')
                 item.rw_next_group = ('NP', 0)
-            elif self.accept('PLUS'):
+            elif self.accept('PLUS') or self.accept_op('+'):
                 item.rw_next_group = ('REL', int(self.expect_kind('NUM', 'integer').val))
             else:
                 t = self.expect_kind('NUM', 'line number')
@@ -767,11 +861,20 @@ class Parser:
                 else:
                     ctl = self.user_word('control name')
             item.rw_type = (kind, ctl)
-        elif w in ('COLUMN', 'COL'):
+        elif w in ('COLUMN', 'COL', 'COLUMNS', 'COLS'):
+            # COLUMN [NUMBER IS] [LEFT | RIGHT | CENTER] [PLUS | +] integer
             self.next()
-            self.accept('NUMBER')
-            self.accept('IS')
-            item.rw_column = int(self.expect_kind('NUM', 'column number').val)
+            self.accept('NUMBER', 'NUMBERS')
+            self.accept('IS', 'ARE')
+            j = self.accept('LEFT', 'RIGHT', 'CENTER', 'CENTRE')
+            if j:
+                item.rw_just = j.up[0]
+            rel = bool(self.accept('PLUS') or self.accept_op('+'))
+            t = self.expect_kind('NUM', 'column number')
+            if t.val.startswith('+'):
+                rel = True
+            n = int(t.val.lstrip('+'))
+            item.rw_column = ('REL', n) if rel else n
         elif w == 'SOURCE':
             self.next()
             self.accept('IS')
@@ -823,11 +926,9 @@ class Parser:
             t = self.peek()
             if t.kind == 'PIC':
                 self.next()
-                item.pic = Picture(t.val, t.loc, prog.currency, prog.decimal_comma)
+                item.pic = Picture(t.val, t.loc, prog.currency, prog.decimal_comma, prog.constants)
                 continue
             if t.kind != 'WORD':
-                if level == 78 and item.value is not None:
-                    raise self.err("constant expressions are not supported")
                 raise self.err("unexpected token in data description")
             w = t.up
             if in_report and w not in ('PIC', 'PICTURE', 'VALUE', 'VALUES', 'IS', 'USAGE') \
@@ -837,7 +938,7 @@ class Parser:
                 self.next()
                 self.accept('IS')
                 pt = self.expect_kind('PIC', 'PICTURE string')
-                item.pic = Picture(pt.val, pt.loc, prog.currency, prog.decimal_comma)
+                item.pic = Picture(pt.val, pt.loc, prog.currency, prog.decimal_comma, prog.constants)
             elif w == 'REDEFINES':
                 self.next()
                 item.redefines_name = self.user_word('data name')
@@ -881,8 +982,31 @@ class Parser:
                 self.accept('IS', 'ARE')
                 if level == 88:
                     self._cond_values(item)
+                elif level == 78:
+                    item.value = self.parse_constant_value()
                 else:
                     item.value = self.parse_value_literal()
+            elif w == 'CONSTANT' and level == 1 and item.name:
+                # 01 name CONSTANT [IS GLOBAL] AS expression (COBOL 2002)
+                self.next()
+                self.accept('IS')
+                if self.accept('GLOBAL'):
+                    item.is_global = True
+                if self.accept('FROM'):
+                    vt = self.next()
+                    v = self.compile_vars.get(vt.up)
+                    if v is None or v is True:
+                        raise CompileError(f"'{vt.val}' is not a compilation variable with a value", vt.loc)
+                    if isinstance(v, str):
+                        item.value = StrLit(v.encode('latin-1', 'replace'))
+                    else:
+                        t = format(v.normalize(), 'f')
+                        item.value = make_numlit(t.rstrip('0').rstrip('.') if '.' in t else t)
+                else:
+                    self.accept('AS')
+                    item.value = self.parse_constant_value()
+                level = 78
+                item.level = 78
             elif w == 'RENAMES':
                 self.next()
                 a = self.parse_identifier()
@@ -935,10 +1059,10 @@ class Parser:
     def _occurs(self, item):
         oc = Occurs()
         oc.loc = self.peek().loc
-        a = int(self.expect_kind('NUM', 'integer').val)
+        a = self.const_int('integer')
         if self.accept('TO'):
             oc.min = a
-            oc.max = int(self.expect_kind('NUM', 'integer').val)
+            oc.max = self.const_int('integer')
         else:
             oc.min = a
             oc.max = a
@@ -979,6 +1103,24 @@ class Parser:
                 break
         if not item.values:
             raise self.err("condition value expected")
+
+    def parse_constant_value(self):
+        """The value of a constant: a literal, or an arithmetic expression of
+        literals, constants and LENGTH OF / BYTE-LENGTH OF."""
+        t = self.peek()
+        if t.kind == 'STR' or (t.kind == 'WORD' and (t.up in FIGURATIVES or t.up == 'ALL')):
+            return self.parse_value_literal()
+        return fold_constant(self.parse_expr())
+
+    def const_int(self, what):
+        """An integer literal or the name of an integer constant."""
+        t = self.peek()
+        if t.kind == 'WORD' and t.up in self.prog.constants:
+            v = self.prog.constants[t.up]
+            if isinstance(v, NumLit) and v.scale == 0 and not v.neg:
+                self.next()
+                return int(v.digits)
+        return int(self.expect_kind('NUM', what).val)
 
     def parse_value_literal(self):
         t = self.peek()
@@ -2302,9 +2444,13 @@ class Parser:
         t = self.peek()
         if t.kind == 'WORD' and t.up == 'FUNCTION':
             return self.parse_function()
-        if t.kind == 'WORD' and t.up == 'LENGTH' and self.is_word('OF', k=1):
+        if t.kind == 'WORD' and t.up in ('LENGTH', 'BYTE-LENGTH') and self.is_word('OF', k=1):
             self.next(); self.next()
+            if self.peek().kind == 'STR':           # LENGTH OF literal
+                return make_numlit(str(len(self.parse_value_literal().value)))
             ref = self.parse_identifier()
+            if isinstance(ref, StrLit):              # LENGTH OF constant-name
+                return make_numlit(str(len(ref.value)))
             return LengthOf(ref)
         if t.kind == 'WORD' and t.up == 'ADDRESS' and self.is_word('OF', k=1):
             raise self.err("ADDRESS OF is not supported")

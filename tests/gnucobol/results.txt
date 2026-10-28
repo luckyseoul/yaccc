@@ -110,13 +110,13 @@ CERR  run_extensions.at:4382       System routine SYSTEM, parameter handling
 CERR  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
 SKIP  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
 SKIP  run_extensions.at:4673       DISPLAY DIRECTIVE and $DISPLAY
-FAIL  run_extensions.at:4706       Conditional / define directives (1)
-SKIP  run_extensions.at:4731       Conditional / define directives (2)
-SKIP  run_extensions.at:4756       Conditional / define directives (3)
-SKIP  run_extensions.at:4784       Conditional / define directives (4)
+PASS  run_extensions.at:4706       Conditional / define directives (1)
+PASS  run_extensions.at:4731       Conditional / define directives (2)
+PASS  run_extensions.at:4756       Conditional / define directives (3)
+PASS  run_extensions.at:4784       Conditional / define directives (4)
 PASS  run_extensions.at:4810       Variable format
 SKIP  run_extensions.at:4832       Binary COMP-1 (1)
-SKIP  run_extensions.at:4863       Binary COMP-1 (2)
+CERR  run_extensions.at:4863       Binary COMP-1 (2)
 CERR  run_extensions.at:4899       EXHIBIT statement
 PASS  run_file.at:23               OPEN EXTEND and CLOSE, SEQUENTIAL
 PASS  run_file.at:89               DELETE FILE, SEQUENTIAL
@@ -230,7 +230,7 @@ PASS  run_functions.at:846         FUNCTION EXCEPTION-STATUS
 PASS  run_functions.at:881         FUNCTION EXP
 PASS  run_functions.at:905         FUNCTION EXP10
 PASS  run_functions.at:930         FUNCTION FACTORIAL
-CERR  run_functions.at:955         FUNCTION FORMATTED-CURRENT-DATE
+PASS  run_functions.at:955         FUNCTION FORMATTED-CURRENT-DATE
 PASS  run_functions.at:983         FUNCTION FORMATTED-DATE
 PASS  run_functions.at:1046        FUNCTION FORMATTED-DATE with ref modding
 PASS  run_functions.at:1071        FUNCTION FORMATTED-DATETIME
@@ -365,7 +365,7 @@ PASS  run_fundamental.at:1850      CANCEL test (2)
 PASS  run_fundamental.at:1890      CANCEL test (3)
 PASS  run_fundamental.at:1933      Separate sign positions (1)
 SKIP  run_fundamental.at:1957      Separate sign positions (2)
-CERR  run_fundamental.at:1990      Context sensitive words (1)
+PASS  run_fundamental.at:1990      Context sensitive words (1)
 PASS  run_fundamental.at:2013      Context sensitive words (2)
 PASS  run_fundamental.at:2037      Context sensitive words (3)
 PASS  run_fundamental.at:2061      Context sensitive words (4)
@@ -496,7 +496,7 @@ PASS  run_misc.at:690              MOVE Z'literal'
 CERR  run_misc.at:732              Floating continuation indicator
 PASS  run_misc.at:754              Fixed continuation indicator
 PASS  run_misc.at:796              Concatenation operator
-CERR  run_misc.at:820              SOURCE FIXED/FREE directives
+PASS  run_misc.at:820              SOURCE FIXED/FREE directives
 FAIL  run_misc.at:856              TURN directive
 SKIP  run_misc.at:897              Level 01 subscripts
 PASS  run_misc.at:919              Class check with reference modification
@@ -596,7 +596,7 @@ SKIP  run_misc.at:8977             stack and dump feature
 SKIP  run_misc.at:9700             Test dump feature (2)
 CERR  run_misc.at:9965             CALL with program prototypes
 PASS  run_misc.at:10021            REDEFINES values on FILLER and INITIALIZE
-CERR  run_misc.at:10076            PICTURE with constant-name
+SKIP  run_misc.at:10076            PICTURE with constant-name
 PASS  run_misc.at:10104            Quote marks in comment paragraphs
 CERR  run_misc.at:10130            Numeric MOVE with/without -fbinary-truncate
 PASS  run_misc.at:10190            Alphanumeric MOVE with truncation
@@ -652,28 +652,28 @@ PASS  run_refmod.at:280            Length overflow with offset (3)
 FAIL  run_refmod.at:313            enable / disable ref-mod check
 SKIP  run_refmod.at:388            MF SSRANGE and NOSSRANGE directives
 FAIL  run_reportwriter.at:23       Report Line Order
-CERR  run_reportwriter.at:120      REPORT COL PLUS
+PASS  run_reportwriter.at:120      REPORT COL PLUS
 PASS  run_reportwriter.at:189      Report Overlapping Fields
-CERR  run_reportwriter.at:258      EMPTY REPORT
-CERR  run_reportwriter.at:327      PAGE LIMIT REPORT
-CERR  run_reportwriter.at:389      PAGE LIMIT REPORT 2
-CERR  run_reportwriter.at:461      Sample Customer Report
-CERR  run_reportwriter.at:776      Sample Charge Report
-CERR  run_reportwriter.at:1129     Sample Charge Report 2
-CERR  run_reportwriter.at:1499     Sample Charge Report 3
-CERR  run_reportwriter.at:1799     Sample Charge Report 4
+PASS  run_reportwriter.at:258      EMPTY REPORT
+PASS  run_reportwriter.at:327      PAGE LIMIT REPORT
+FAIL  run_reportwriter.at:389      PAGE LIMIT REPORT 2
+FAIL  run_reportwriter.at:461      Sample Customer Report
+FAIL  run_reportwriter.at:776      Sample Charge Report
+FAIL  run_reportwriter.at:1129     Sample Charge Report 2
+PASS  run_reportwriter.at:1499     Sample Charge Report 3
+FAIL  run_reportwriter.at:1799     Sample Charge Report 4
 CERR  run_reportwriter.at:2215     Sample Payroll Report
-SKIP  run_reportwriter.at:2900     Sample REPORT with RIGHT/CENTER
-CERR  run_reportwriter.at:3068     STUDENT REPORT with INITIAL
-CERR  run_reportwriter.at:3220     ORDER REPORT; Test substring
+FAIL  run_reportwriter.at:2900     Sample REPORT with RIGHT/CENTER
+PASS  run_reportwriter.at:3068     STUDENT REPORT with INITIAL
+PASS  run_reportwriter.at:3220     ORDER REPORT; Test substring
 CERR  run_reportwriter.at:3568     Sample Control Break
-CERR  run_reportwriter.at:3797     Sample Inventory Report
+FAIL  run_reportwriter.at:3797     Sample Inventory Report
 PASS  run_reportwriter.at:3990     Duplicate Detail Line
 CERR  run_reportwriter.at:4118     Report with OCCURS
 SKIP  run_reportwriter.at:4223     Report CODE and LIMIT COLUMNS
-CERR  run_reportwriter.at:4444     Duplicate INITIATE
-CERR  run_reportwriter.at:4511     Missing INITIATE and GENERATE
-CERR  run_reportwriter.at:4571     Missing INITIATE and TERMINATE
+PASS  run_reportwriter.at:4444     Duplicate INITIATE
+PASS  run_reportwriter.at:4511     Missing INITIATE and GENERATE
+PASS  run_reportwriter.at:4571     Missing INITIATE and TERMINATE
 FAIL  run_reportwriter.at:4625     Next Group Next Page
 SKIP  run_reportwriter.at:8948     Report PRESENT AFTER
 PASS  run_returncode.at:23         RETURN-CODE moving
@@ -689,7 +689,7 @@ PASS  run_subscripts.at:242        length of ODO w/- reference modification
 PASS  run_subscripts.at:298        SEARCH ALL with OCCURS DEPENDING ON
 SKIP  run_subscripts.at:351        enable / disable subscript check
 SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
-SKIP  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
+FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 362  FAIL 20  CERR 96  XERR 0  SKIP 215
+PASS 378  FAIL 27  CERR 78  XERR 0  SKIP 210

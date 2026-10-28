@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 42 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 44 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -87,7 +87,7 @@ START FIRST/LAST and DELETE FILE), SORT, Report Writer and the Debug module.
   by hand.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 42 pass in both modes, built with gcc and with clang.
+All 44 pass in both modes, built with gcc and with clang.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -100,7 +100,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   362    20             96      215
+  693   378    27             78      210
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -115,10 +115,12 @@ longer passes. `make gctest-update` records a new baseline.
   XML or JSON support, or shell scripting.
 - **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
   features cobolc doesn't have yet: pointers and BASED items, ANY LENGTH,
-  CONSTANT entries and constant expressions, `>>IF`/`>>DEFINE`, FUNCTION-ID,
-  TYPEDEF, COMP-6 and some Report Writer syntax.
+  FUNCTION-ID, CHAINING, ENTRY, TYPEDEF, COMP-6 and Report Writer PRESENT
+  WHEN, STEP and OCCURS.
 - **Failures** include the deliberate differences listed below (WRITE
-  ADVANCING, Debug module, LINAGE page geometry), national (UTF-16) data,
+  ADVANCING, Debug module, LINAGE and Report Writer page geometry, where
+  GnuCOBOL 3.1.2 starts a new page one line early after a page overflow and
+  prints a PAGE FOOTING one line late after TERMINATE), national (UTF-16) data,
   file sharing between processes and a few library routines.
 
 ### Performance
@@ -165,6 +167,7 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 | `-C` | write the generated C and stop |
 | `-free` / `-fixed` | source format; otherwise detected per file, and `>>SOURCE FORMAT` / `$SET SOURCEFORMAT` switch it |
 | `-I DIR` | copybook directory (also `$COBCPY`) |
+| `-D NAME[=VALUE]` | define a compilation variable for `>>IF` / `>>DEFINE ... AS PARAMETER` / `CONSTANT FROM` |
 | `-O N` | C optimisation level (default 2) |
 | `-g` | C debug information |
 | `--no-check` | drop subscript and reference-modification range checks |
@@ -193,6 +196,9 @@ with status 1.
 `*>` comments, debugging lines, comment-entries. COPY ... REPLACING (pseudo-text,
 identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF. Boolean
 literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
+Compiler directives: `>>DEFINE`, `>>IF` / `>>ELIF` / `>>ELSE` / `>>END-IF`,
+`>>EVALUATE` / `>>WHEN` / `>>END-EVALUATE`, `>>SET CONSTANT`, `>>SOURCE FORMAT`,
+and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 
 **Environment division.**
 - SPECIAL-NAMES: DECIMAL-POINT IS COMMA, CURRENCY SIGN, CLASS (with THRU), SYMBOLIC
@@ -218,15 +224,22 @@ literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),
   REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
 - VALUE clauses, GLOBAL and EXTERNAL items and files.
+- Constants: level 78 and `01 name CONSTANT AS ...` (COBOL 2002) with a literal,
+  an arithmetic expression of literals and constants (integer valued, as in
+  GnuCOBOL), `LENGTH OF` / `BYTE-LENGTH OF`, or `FROM` a compilation variable;
+  constants can be used in PICTURE repetitions and OCCURS.
 - FD: RECORD VARYING ... DEPENDING ON, LINAGE (FOOTING, TOP, BOTTOM, LINAGE-COUNTER),
   REPORT IS.
 
 **Report Writer.**
 - RD entries: CONTROLS (with FINAL), PAGE LIMIT with HEADING, FIRST DETAIL,
-  LAST DETAIL and FOOTING, and CODE.
+  LAST DETAIL and FOOTING, LINE LIMIT, and CODE.
 - Report groups: REPORT HEADING, PAGE HEADING, CONTROL HEADING, DETAIL,
   CONTROL FOOTING, PAGE FOOTING and REPORT FOOTING, with:
-  - LINE (absolute, PLUS, ON NEXT PAGE), NEXT GROUP, COLUMN, SOURCE, VALUE;
+  - LINE (absolute, PLUS, ON NEXT PAGE), NEXT GROUP, COLUMN (absolute, PLUS,
+    LEFT / RIGHT / CENTER), SOURCE, VALUE;
+  - report groups described by entries subordinate to an 01 entry without
+    TYPE (a GnuCOBOL extension);
   - SUM ... UPON ... RESET ON, with subtotaling, crossfooting and rolling
     forward;
   - GROUP INDICATE.
@@ -335,8 +348,8 @@ EXCEPTION for both).
 ### Not implemented
 
 - SCREEN SECTION and COMMUNICATION SECTION.
-- Report Writer features added by the 2002 standard, such as PRESENT WHEN,
-  COLUMN RIGHT/CENTER and LINE LIMIT.
+- Report Writer features added by the 2002 standard such as PRESENT WHEN,
+  and OCCURS with STEP in report groups.
 - Pointers: ADDRESS OF, BASED, SET ADDRESS OF.
 - Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.

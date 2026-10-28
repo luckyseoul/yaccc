@@ -349,6 +349,7 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz);
 void cob_display(int dev, const cob_field *f);
 void cob_display_lit(int dev, const char *s, size_t n);
 void cob_display_dec(int dev, cob_dec d);
+void cob_display_signed(int dev, cob_s64 v, int digits);
 void cob_display_end(int dev, int newline);
 int cob_accept(cob_field *f);
 struct tm;
@@ -713,5 +714,6 @@ extern int cob_rw_suppress;
 void cob_rw_initiate(cob_report *r, const char *loc);
 void cob_rw_generate(cob_report *r, int group, const char *loc);
 void cob_rw_terminate(cob_report *r, const char *loc);
+void cob_rw_justify(unsigned char *p, int size, int mode);
 
 #endif

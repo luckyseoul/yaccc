@@ -2429,6 +2429,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em(f"cob_display_lit({dev}, {c_string(it.value)}, {len(it.value)});")
             elif isinstance(it, FuncCall) and self.is_numeric(it) and not it.refmod:
                 em(f"cob_display({dev}, {self.func_field(it)});")
+            elif isinstance(it, LengthOf) and not self.length_of(it).isdigit():
+                em(f"cob_display_signed({dev}, (cob_s64)({self.length_of(it)}), 9);")
             elif isinstance(it, (LengthOf, BinOp, Neg)):
                 em(f"cob_display_dec({dev}, {self.dec(it)});")
             else:

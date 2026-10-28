@@ -304,8 +304,12 @@ static void present(cob_report *r, int gi, int apply_ng)
 
 void cob_rw_initiate(cob_report *r, const char *loc)
 {
-	if (r->initiated)
-		cob_fatal("%s: INITIATE for report %s that is already initiated", loc, r->name);
+	if (r->initiated) {
+		/* EC-REPORT-ACTIVE: the INITIATE is not executed */
+		cob_set_exception("EC-REPORT-ACTIVE");
+		cob_warning("%s: INITIATE for report %s that is already initiated", loc, r->name);
+		return;
+	}
 	if (!r->file->open_mode || !r->file->fp)
 		cob_fatal("%s: INITIATE for report %s: file %s is not open", loc, r->name, r->file->select_name);
 	if (!r->buf) {
@@ -415,4 +419,28 @@ void cob_rw_terminate(cob_report *r, const char *loc)
 	}
 	r->initiated = 0;
 	r->generated = 0;
+}
+
+/* COLUMN LEFT / RIGHT / CENTER: the printable part of a report item (without
+   leading and trailing spaces) aligned within the item's columns, with
+   GnuCOBOL's rounding for CENTER. */
+void cob_rw_justify(unsigned char *p, int size, int mode)
+{
+    int b = 0, e = size;
+    while (b < e && p[b] == ' ')
+        b++;
+    while (e > b && (p[e - 1] == ' ' || p[e - 1] == 0))
+        e--;
+    int n = e - b, at = 0;
+    if (mode == 'R')
+        at = size - n;
+    else if (mode == 'C')
+        at = n < size ? (size - n - (1 - (n & 1))) / 2 : 0;
+    if (at < 0)
+        at = 0;
+    if (b == at && e == size)
+        return;
+    memmove(p + at, p + b, (size_t)n);
+    memset(p, ' ', (size_t)at);
+    memset(p + at + n, ' ', (size_t)(size - at - n));
 }

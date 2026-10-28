@@ -1925,6 +1925,13 @@ void cob_display_dec(int dev, cob_dec d)
 	fputs(buf, dev_fp(dev));
 }
 
+/* the value of a signed binary item of `digits` digits, as DISPLAY shows it
+   (LENGTH OF an item of variable size, as in GnuCOBOL) */
+void cob_display_signed(int dev, cob_s64 v, int digits)
+{
+	fprintf(dev_fp(dev), "%c%0*lld", v < 0 ? '-' : '+', digits, (long long)(v < 0 ? -v : v));
+}
+
 void cob_display_end(int dev, int newline)
 {
 	FILE *fp = dev_fp(dev);

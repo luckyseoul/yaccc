@@ -133,13 +133,15 @@ class DebugSwitch:
             self.scan = None
 
 
-def process(lines, path, fmt, debugging=False):
+def process(lines, path, fmt, debugging=False, directives=None):
     """Turn raw lines into logical lines (continuations joined, comments
     removed). Returns list of LogicalLine. `debugging` is a bool or a
-    DebugSwitch shared by a source file and its copybooks."""
+    DebugSwitch shared by a source file and its copybooks; `directives` the
+    Directives state (>>IF, >>DEFINE, ...) they share."""
     out = []
     mode = fmt
     dbg = debugging if isinstance(debugging, DebugSwitch) else DebugSwitch(debugging)
+    dirs = directives
     for idx, raw in enumerate(lines):
         loc = Loc(path, idx + 1)
         if mode in ('fixed', 'variable'):
@@ -151,10 +153,12 @@ def process(lines, path, fmt, debugging=False):
                 continue
             st = raw[6:].lstrip() if ind == '>' else text.lstrip()
             if st.startswith('>>') or (ind == '>' and raw[6:8] == '>>'):
-                mode = _directive(st, mode, loc)
+                mode = _directive(st, mode, loc, dirs)
                 continue
             if ind == '$':
-                mode = _directive(raw[6:], mode, loc)
+                mode = _directive(raw[6:], mode, loc, dirs)
+                continue
+            if dirs is not None and not dirs.active:
                 continue
             if ind in 'dD':
                 if not dbg.on:
@@ -194,15 +198,17 @@ def process(lines, path, fmt, debugging=False):
             st = raw.lstrip()
             if st.startswith('>>'):
                 if st[2:3].upper() == 'D' and (len(st) == 3 or st[3] == ' '):
-                    if not dbg.on:
+                    if not dbg.on or (dirs is not None and not dirs.active):
                         continue
                     raw = st[3:]
                     st = raw.lstrip()
                 else:
-                    mode = _directive(st, mode, loc)
+                    mode = _directive(st, mode, loc, dirs)
                     continue
-            if st.upper().startswith('$SET'):
-                mode = _directive(st, mode, loc)
+            if st[:1] == '$' and re.match(r'\$(SET|IF|ELSE|END|DISPLAY)\b', st, re.I):
+                mode = _directive(st, mode, loc, dirs)
+                continue
+            if dirs is not None and not dirs.active:
                 continue
             if st.startswith('*>'):
                 continue
@@ -221,7 +227,12 @@ def process(lines, path, fmt, debugging=False):
     return out
 
 
-def _directive(text, mode, loc):
+def _directive(text, mode, loc, dirs=None):
+    if dirs is not None:
+        if dirs.handle(text, loc):
+            return mode
+        if not dirs.active:
+            return mode
     up = text.upper()
     m = _SOURCE_RE.search(text)
     if m:
@@ -233,6 +244,11 @@ def _directive(text, mode, loc):
             if 'FIXED' in up:
                 return 'fixed'
         return mode
+    if up.startswith('>>SET') and 'SOURCEFORMAT' in up:
+        if 'FREE' in up:
+            return 'free'
+        if 'FIXED' in up:
+            return 'fixed'
     word = up[2:].strip().split(' ')[0] if up.startswith('>>') else ''
     if word not in ('PAGE', 'LISTING', 'EJECT', 'SKIP1', 'SKIP2', 'SKIP3', 'TITLE', 'CALL-CONVENTION', 'TURN', 'FEATURE'):
         DIAG.warn(f"compiler directive ignored: {text.strip()}", loc)

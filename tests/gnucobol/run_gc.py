@@ -220,6 +220,12 @@ class Runner:
                 d = next(it, None)
                 out.extend(['-I', d])
                 continue
+            if w == '-D':
+                out.extend(['-D', next(it, '')])
+                continue
+            if w.startswith('-D') and len(w) > 2:
+                out.extend(['-D', w[2:]])
+                continue
             if w.startswith('-I'):
                 out.extend(['-I', w[2:]])
                 continue
