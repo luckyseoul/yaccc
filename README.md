@@ -451,6 +451,7 @@ Design choices:
 
 ```
 cobolc               compiler entry point
+LICENSE              MIT licence
 compiler/            front end and code generator (Python)
 runtime/             C runtime library
 examples/            payroll report with control breaks, indexed-file bank ledger,
@@ -462,3 +463,7 @@ tests/nist/          NIST CCVS85 runner and the result logs of the runs above
 tests/gnucobol/      GnuCOBOL testsuite runner and the recorded results
 Makefile             make test | test-ref | nist | nist-all | gctest | examples | clean
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
