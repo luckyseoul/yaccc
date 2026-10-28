@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   420    26             48      199
+  693   422    26             46      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -302,13 +302,15 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   - insertion, floating insertion, zero suppression, check protection, CR/DB;
   - `P` scaling in numeric and edited pictures;
   - BLANK WHEN ZERO, JUSTIFIED.
-- USAGE: DISPLAY, BINARY/COMP/COMP-4, COMP-5, COMP-X, PACKED-DECIMAL/COMP-3,
-  COMP-6, COMP-1/COMP-2, INDEX.
+- USAGE: DISPLAY, BINARY/COMP/COMP-4, COMP-5/COMP-N, COMP-X,
+  PACKED-DECIMAL/COMP-3, COMP-6, COMP-1/COMP-2, FLOAT-SHORT/FLOAT-LONG,
+  BINARY-CHAR/SHORT/LONG/DOUBLE and their UNSIGNED- forms, INDEX, POINTER.
 - SIGN LEADING/TRAILING [SEPARATE].
 - USAGE ... PIC X(n) COMP-5 / COMP-X: Micro Focus n-byte binary numbers.
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),
   REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
-- VALUE clauses, GLOBAL and EXTERNAL items and files.
+- VALUE clauses, GLOBAL and EXTERNAL items and files; `EXTERNAL AS "name"`
+  shares storage under another name.
 - Constants: level 78 and `01 name CONSTANT AS ...` (COBOL 2002) with a literal,
   an arithmetic expression of literals and constants (integer valued, as in
   GnuCOBOL), `LENGTH OF` / `BYTE-LENGTH OF`, or `FROM` a compilation variable;

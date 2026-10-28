@@ -247,6 +247,7 @@ class DataItem:
         self.rw_next_group = None   # ('ABS', n) ('REL', n) ('NP', 0)
         self.rw_type = None         # (kind, control-name|'FINAL'|None)
         self.src_name = None            # name as written in the source
+        self.external_name = None       # EXTERNAL AS "name"
         self.any_length = False         # PIC X ANY LENGTH: size from the caller
         self.based = False              # storage allocated by ALLOCATE
         self.rw_column = None

@@ -13,7 +13,7 @@ SKIP  data_binary.at:1322          COMP-4 No Truncate
 SKIP  data_display.at:21           DISPLAY: Sign ASCII
 SKIP  data_display.at:80           DISPLAY: Sign ASCII (2)
 SKIP  data_display.at:126          DISPLAY: Sign EBCDIC
-CERR  data_display.at:171          DISPLAY: unsigned
+PASS  data_display.at:171          DISPLAY: unsigned
 SKIP  data_packed.at:25            PACKED-DECIMAL dump
 PASS  data_packed.at:161           PACKED-DECIMAL used with DISPLAY
 PASS  data_packed.at:216           PACKED-DECIMAL used with MOVE
@@ -484,7 +484,7 @@ SKIP  run_misc.at:221              CURRENCY SIGN WITH PICTURE SYMBOL
 PASS  run_misc.at:268              LOCAL-STORAGE (1)
 PASS  run_misc.at:304              LOCAL-STORAGE (2)
 PASS  run_misc.at:352              EXTERNAL data item
-CERR  run_misc.at:394              EXTERNAL AS data item
+PASS  run_misc.at:394              EXTERNAL AS data item
 SKIP  run_misc.at:443              EXTERNAL data item size mismatch
 PASS  run_misc.at:528              MOVE to itself
 PASS  run_misc.at:554              MOVE with refmod
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 420  FAIL 26  CERR 48  XERR 0  SKIP 199
+PASS 422  FAIL 26  CERR 46  XERR 0  SKIP 199

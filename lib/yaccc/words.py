@@ -72,6 +72,11 @@ USAGES = {
     # IBM and Micro Focus spellings of the same widths
     'BINARY-INT': 'BINARY-LONG', 'BINARY-C-LONG': 'BINARY-LONG',
     'BINARY-LONG-LONG': 'BINARY-DOUBLE',
+    # native binary, as COMP-5 is
+    'COMP-N': 'COMP-5',
+    # explicit unsigned widths
+    'UNSIGNED-SHORT': 'BINARY-SHORT', 'UNSIGNED-INT': 'BINARY-LONG',
+    'UNSIGNED-LONG': 'BINARY-LONG',
 }
 
 # Intrinsic functions: name -> (result kind, min args, max args)

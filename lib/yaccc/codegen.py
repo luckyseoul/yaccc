@@ -543,11 +543,13 @@ class CodeGen(ReportWriterGen, DebugGen):
                     r.based_sym = sym
                 elif sec == 'WS':
                     if r.external:
-                        key = r.name
+                        key = r.external_name or r.name
                         if key in self.externals:
                             sym = self.externals[key]
                         else:
-                            sym = 'cobext_' + ''.join(ch if ch.isalnum() else '_' for ch in r.name)
+                            # the symbol follows the external name, so two
+                            # programs that share it share the storage
+                            sym = 'cobext_' + ''.join(ch if ch.isalnum() else '_' for ch in key)
                             self.externals[key] = sym
                             self.glob.append(f"static unsigned char {sym}[{size}] __attribute__((aligned(16)));")
                     else:
@@ -1053,9 +1055,9 @@ class CodeGen(ReportWriterGen, DebugGen):
             if r.redefines is not None or r.renames:
                 continue
             if r.external:
-                if r.name in self.ext_inited:
+                if (r.external_name or r.name) in self.ext_inited:
                     continue
-                self.ext_inited.add(r.name)
+                self.ext_inited.add(r.external_name or r.name)
             out.append(r)
         return out
 

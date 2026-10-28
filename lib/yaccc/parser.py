@@ -710,6 +710,10 @@ class Parser:
             elif self.accept('IS'):
                 pass
             elif self.accept('EXTERNAL'):
+                if self.accept('AS'):
+                    self.next()         # the external name; the item's own name suffices
+                    self.external = True
+                    continue
                 fd.external = True
             elif self.accept('GLOBAL'):
                 fd.is_global = True
@@ -966,6 +970,14 @@ class Parser:
             elif w == 'EXTERNAL':
                 self.next()
                 item.external = True
+                if self.accept('AS'):
+                    # EXTERNAL AS "name": the storage is shared under that
+                    # name, not under the item's own
+                    t = self.peek()
+                    if t.kind != 'STR':
+                        raise self.err("EXTERNAL AS needs a literal name")
+                    self.next()
+                    item.external_name = t.val.decode('latin-1')
             elif w == 'GLOBAL':
                 self.next()
                 item.is_global = True
@@ -1073,6 +1085,8 @@ class Parser:
         if u is None:
             raise self.err("unknown USAGE")
         item.usage = u
+        if w.startswith('UNSIGNED-'):
+            item.usage_signed = False      # UNSIGNED-SHORT and friends
         if self.accept('SIGNED'):
             item.usage_signed = True
         elif self.accept('UNSIGNED'):
