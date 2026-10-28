@@ -605,6 +605,7 @@ class Program:
     linkage: list = field(default_factory=list)
     constants: dict = field(default_factory=dict)
     using: List[tuple] = field(default_factory=list)       # (mode, DataRef)
+    chaining: list = field(default_factory=list)          # PROCEDURE DIVISION CHAINING items
     returning: Any = None
     declaratives: List[Section] = field(default_factory=list)
     sections: List[Section] = field(default_factory=list)

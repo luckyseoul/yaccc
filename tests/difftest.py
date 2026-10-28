@@ -111,7 +111,10 @@ def main():
             print(f"FAIL {name}: yaccc compile error\n{err.decode(errors='replace')}")
             failed += 1
             continue
-        mrc, mout, merr = run([exe], stdin, cwd=mine_dir, env=env)
+        # a .args file holds the program's own arguments, one line each, for
+        # programs whose behaviour depends on them
+        pargs = open(base + '.args', 'rb').read().split() if os.path.exists(base + '.args') else []
+        mrc, mout, merr = run([exe] + pargs, stdin, cwd=mine_dir, env=env)
         exp_path = base + '.expected'
         out_dir = base + '.outfiles'
         expected = open(exp_path, 'rb').read() if os.path.exists(exp_path) else None
@@ -126,7 +129,7 @@ def main():
             if rc != 0:
                 print(f"SKIP {name}: reference compile error\n{err.decode(errors='replace')}")
                 continue
-            rrc, rout, rerr = run([rexe], stdin, cwd=ref_dir, env=env)
+            rrc, rout, rerr = run([rexe] + pargs, stdin, cwd=ref_dir, env=env)
             written = [f for f in os.listdir(ref_dir) if f != name and os.path.isfile(os.path.join(ref_dir, f))]
             if args.update and expected is None:
                 open(exp_path, 'wb').write(rout)

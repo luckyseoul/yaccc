@@ -2229,7 +2229,7 @@ int cob_accept(cob_field *f)
 	return 0;
 }
 
-static void move_text(const char *s, cob_field *f)
+void cob_move_text(cob_field *f, const char *s)
 {
 	cob_field tmp = { strlen(s), (unsigned char *)s, &cob_attr_alnum };
 	cob_move(&tmp, f);
@@ -2355,7 +2355,7 @@ void cob_accept_date(cob_field *f, int fmt)
 	default:
 		buf[0] = 0;
 	}
-	move_text(buf, f);
+	cob_move_text(f, buf);
 }
 
 void cob_accept_time(cob_field *f)
@@ -2365,7 +2365,7 @@ void cob_accept_time(cob_field *f)
 	char buf[16];
 	cob_now(&tm, &hs, NULL);
 	snprintf(buf, sizeof buf, "%02d%02d%02d%02d", tm.tm_hour, tm.tm_min, tm.tm_sec, hs);
-	move_text(buf, f);
+	cob_move_text(f, buf);
 }
 
 void cob_accept_cmdline(cob_field *f)
@@ -2383,7 +2383,16 @@ void cob_accept_cmdline(cob_field *f)
 		o += l;
 	}
 	buf[o] = 0;
-	move_text(buf, f);
+	cob_move_text(f, buf);
+}
+
+/* PROCEDURE DIVISION CHAINING: the nth argument after the program name, or
+ * NULL. chaining items keep their VALUE when no such argument was given. */
+const char *cob_chain_arg(int n)
+{
+	if (n < 0 || n + 1 >= g_argc)
+		return NULL;
+	return g_argv[n + 1];
 }
 
 static char env_name[256];
@@ -2402,10 +2411,10 @@ int cob_accept_env(cob_field *f, const cob_field *name)
 	} else
 		val = getenv(env_name);
 	if (!val) {
-		move_text("", f);
+		cob_move_text(f, "");
 		return 1;
 	}
-	move_text(val, f);
+	cob_move_text(f, val);
 	return 0;
 }
 
@@ -2415,12 +2424,12 @@ void cob_accept_argv(cob_field *f, int what)
 	if (what == 0) {
 		/* ARGUMENT-NUMBER */
 		snprintf(buf, sizeof buf, "%d", g_argc - 1);
-		move_text(buf, f);
+		cob_move_text(f, buf);
 	} else {
 		if (g_arg_index < g_argc)
-			move_text(g_argv[g_arg_index++], f);
+			cob_move_text(f, g_argv[g_arg_index++]);
 		else
-			move_text("", f);
+			cob_move_text(f, "");
 	}
 }
 

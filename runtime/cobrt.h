@@ -367,6 +367,7 @@ int cob_d_to_str(cob_dec d, char *buf, size_t bufsz);
 /* ------------------------------------------------------------ move / compare */
 void cob_move(const cob_field *src, cob_field *dst);
 void cob_move_bytes(const unsigned char *src, size_t n, cob_field *dst);
+void cob_move_text(cob_field *dst, const char *s);
 void cob_move_raw(const cob_field *src, cob_field *dst);
 void cob_set_collating(const unsigned short *tbl);
 const unsigned short *cob_get_collating(void);
@@ -544,6 +545,7 @@ cob_field *cob_fn_exception_location(void);
 cob_field *cob_fn_exception_statement(void);
 cob_field *cob_fn_exception_status(void);
 void cob_clear_exception(void);
+const char *cob_chain_arg(int n);   /* CHAINING argument n, or NULL */
 extern int cob_zero_div_seen;          /* a DIVIDE by zero ran in this statement */
 
 /* JSON GENERATE */

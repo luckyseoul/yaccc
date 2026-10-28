@@ -68,7 +68,7 @@ PASS  run_extensions.at:2064       NUMBER-OF-CALL-PARAMETERS
 SKIP  run_extensions.at:2119       TALLY register
 SKIP  run_extensions.at:2153       Redefining TALLY
 PASS  run_extensions.at:2189       PROCEDURE DIVISION USING BY ...
-CERR  run_extensions.at:2242       PROCEDURE DIVISION CHAINING
+SKIP  run_extensions.at:2242       PROCEDURE DIVISION CHAINING
 PASS  run_extensions.at:2365       STOP RUN RETURNING/GIVING
 PASS  run_extensions.at:2421       GOBACK/EXIT PROGRAM RETURNING/GIVING
 SKIP  run_extensions.at:2471       ENTRY
@@ -106,7 +106,7 @@ FAIL  run_extensions.at:3695       System routine CBL_GC_GETOPT
 PASS  run_extensions.at:4132       System routine CBL_GC_FORK
 PASS  run_extensions.at:4200       System routine CBL_GC_WAITPID
 SKIP  run_extensions.at:4252       System routine CBL_GC_HOSTED
-CERR  run_extensions.at:4382       System routine SYSTEM, parameter handling
+PASS  run_extensions.at:4382       System routine SYSTEM, parameter handling
 CERR  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
 SKIP  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
 SKIP  run_extensions.at:4673       DISPLAY DIRECTIVE and $DISPLAY
@@ -148,7 +148,7 @@ PASS  run_file.at:1833             ASSIGN DYNAMIC with LOCAL-STORAGE item
 PASS  run_file.at:1870             ASSIGN DYNAMIC with LOCAL-STORAGE item and INITIAL prog
 CERR  run_file.at:1910             ASSIGN DYNAMIC with BASED data item
 CERR  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
-CERR  run_file.at:2168             ASSIGN DYNAMIC with empty data item
+PASS  run_file.at:2168             ASSIGN DYNAMIC with empty data item
 PASS  run_file.at:2208             ASSIGN DYNAMIC with unset implicit data item
 CERR  run_file.at:2240             INDEXED file key-name
 CERR  run_file.at:2282             INDEXED file sparse/split keys
@@ -624,7 +624,7 @@ PASS  run_misc.at:12248            EC-SIZE-ZERO-DIVIDE
 PASS  run_misc.at:12291            EC-SIZE-OVERFLOW
 CERR  run_misc.at:12322            Constant Expressions
 SKIP  run_misc.at:12408            ENTRY FOR GO TO / GO TO ENTRY
-CERR  run_misc.at:12498            runtime checks within conditions
+SKIP  run_misc.at:12498            runtime checks within conditions
 SKIP  run_misc.at:12612            libcob version check
 SKIP  run_ml.at:19                 XML GENERATE general
 SKIP  run_ml.at:127                XML GENERATE SUPPRESS
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 406  FAIL 25  CERR 59  XERR 0  SKIP 203
+PASS 408  FAIL 25  CERR 55  XERR 0  SKIP 205

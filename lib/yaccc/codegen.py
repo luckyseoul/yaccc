@@ -977,6 +977,12 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.glob.append(f"static unsigned char {sym}_dummy[{size}];")
             if sym not in using_items:
                 em(f"{sym} = {sym}_dummy;")
+        for i, ref in enumerate(getattr(prog, 'chaining', []) or []):
+            it = self.resolve(ref)
+            if it.section not in ('WS', 'LS'):
+                raise CompileError("a CHAINING item must be in WORKING-STORAGE", ref.loc)
+            em(f'if (cob_chain_arg({i})) cob_move_text(CF({it.storage} + {it.offset}, '
+               f'{it.size}, &{self.item_attr(it)}), cob_chain_arg({i}));')
         rebind_at = len(em.lines)
         decls = [s for s in prog.declaratives]
         if decls:

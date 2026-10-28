@@ -66,8 +66,12 @@ USAGES = {
     'COMP-1': 'FLOAT', 'COMPUTATIONAL-1': 'FLOAT', 'FLOAT-SHORT': 'FLOAT',
     'COMP-2': 'DOUBLE', 'COMPUTATIONAL-2': 'DOUBLE', 'FLOAT-LONG': 'DOUBLE',
     'INDEX': 'INDEX', 'POINTER': 'POINTER', 'NATIONAL': 'DISPLAY',
+    'PROGRAM-POINTER': 'POINTER', 'PROCEDURE-POINTER': 'POINTER',
     'BINARY-CHAR': 'BINARY-CHAR', 'BINARY-SHORT': 'BINARY-SHORT',
     'BINARY-LONG': 'BINARY-LONG', 'BINARY-DOUBLE': 'BINARY-DOUBLE',
+    # IBM and Micro Focus spellings of the same widths
+    'BINARY-INT': 'BINARY-LONG', 'BINARY-C-LONG': 'BINARY-LONG',
+    'BINARY-LONG-LONG': 'BINARY-DOUBLE',
 }
 
 # Intrinsic functions: name -> (result kind, min args, max args)

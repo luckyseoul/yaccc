@@ -1225,6 +1225,12 @@ class Parser:
     def parse_procedure(self, prog):
         self.expect('PROCEDURE')
         self.expect('DIVISION')
+        if self.accept('CHAINING'):
+            # legacy entry: the items are WORKING-STORAGE items that receive
+            # the command-line arguments, keeping their VALUE when there are
+            # fewer of them
+            while self.is_user_word():
+                prog.chaining.append(self.parse_identifier())
         if self.accept('USING'):
             mode = 'REFERENCE'
             while True:

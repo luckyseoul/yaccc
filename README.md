@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 54 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 55 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -91,9 +91,12 @@ COLUMN clause.
   had no live `cobc` to record from, so their baselines were checked by hand
   against the standard. `rwlimit` is marked `.noref`: it prints a whole page,
   which is the documented page-geometry difference.
+- Each case may add sidecars: `.in` (stdin), `.args` (the program's own
+  arguments), `.flags` (compile flags), `.env` (environment), `.nocmp` (files
+  not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 54 pass, built with gcc.
+All 55 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
