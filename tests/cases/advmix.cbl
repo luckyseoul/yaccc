@@ -1,7 +1,8 @@
        IDENTIFICATION DIVISION.
        PROGRAM-ID. ADVMIX.
       * A default WRITE after WRITE ... AFTER ADVANCING starts a new
-      * line (ISO default AFTER ADVANCING 1) instead of joining lines.
+      * line (ISO default AFTER ADVANCING 1) instead of joining lines;
+      * WRITE ... BEFORE ADVANCING prints on the line left open.
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.

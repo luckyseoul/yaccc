@@ -72,12 +72,13 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 40 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 42 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
-intrinsic functions, COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
-ACCEPT, CALL and CANCEL, ALTER, declaratives, sequential, relative and indexed
-files (including READ PREVIOUS, START FIRST/LAST and DELETE FILE), SORT, Report
-Writer and the Debug module.
+intrinsic functions (including the COBOL 2014 date functions and the
+high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
+ACCEPT, CALL and CANCEL, library routines and exception functions, ALTER,
+declaratives, sequential, relative and indexed files (including READ PREVIOUS,
+START FIRST/LAST and DELETE FILE), SORT, Report Writer and the Debug module.
 
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, the three
@@ -86,7 +87,7 @@ Writer and the Debug module.
   by hand.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 40 pass in both modes, built with gcc and with clang.
+All 42 pass in both modes, built with gcc and with clang.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -99,7 +100,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   253    75            149      216
+  693   362    20             96      215
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -114,18 +115,20 @@ longer passes. `make gctest-update` records a new baseline.
   XML or JSON support, or shell scripting.
 - **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
   features cobolc doesn't have yet: pointers and BASED items, ANY LENGTH,
-  CONSTANT and 78-level entries, `>>IF`/`>>DEFINE`, FUNCTION-ID, TYPEDEF, and
-  intrinsic functions such as FORMATTED-DATETIME and the EXCEPTION- and LOCALE-
-  families.
-- **Failures** are mostly system routines (`CBL_AND`, `C$JUSTIFY`, ...), the
-  printed form of numeric function results (difference 4 below), and the
-  trigonometric and logarithmic functions, which cobolc computes in double
-  precision while GnuCOBOL's tests check 35 decimal places.
+  CONSTANT entries and constant expressions, `>>IF`/`>>DEFINE`, FUNCTION-ID,
+  TYPEDEF, COMP-6 and some Report Writer syntax.
+- **Failures** include the deliberate differences listed below (WRITE
+  ADVANCING, Debug module, LINAGE page geometry), national (UTF-16) data,
+  file sharing between processes and a few library routines.
 
 ### Performance
 
 `examples/mandelbrot.cbl` (COMP-5 and fixed-point arithmetic in tight loops) runs
 in about 40 ms with cobolc. The GnuCOBOL 3.1.2 build at `-O2` takes about 133 ms.
+
+A loop of 100,000 iterations of `Y ** 12.5`, `FUNCTION SQRT` and `FUNCTION SIN`
+takes 4.2 seconds with cobolc and 136 seconds with GnuCOBOL, with identical
+results.
 
 ## Requirements
 
@@ -211,6 +214,7 @@ literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
 - USAGE: DISPLAY, BINARY/COMP/COMP-4, COMP-5, COMP-X, PACKED-DECIMAL/COMP-3,
   COMP-1/COMP-2, INDEX.
 - SIGN LEADING/TRAILING [SEPARATE].
+- USAGE ... PIC X(n) COMP-5 / COMP-X: Micro Focus n-byte binary numbers.
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),
   REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
 - VALUE clauses, GLOBAL and EXTERNAL items and files.
@@ -276,20 +280,57 @@ literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
 - FILE STATUS codes follow the standard, including 04/05/07/14/24/35/38/41–49.
 
 **Programs.** Nested and contained programs (COMMON, INITIAL, GLOBAL names, USE
-GLOBAL), RECURSIVE, PROGRAM-ID ... AS "name", several source files and programs
-built into one executable. Segmentation: an independent segment (50–99) returns to its initial
+GLOBAL, and the standard's scope rules for CALL), RECURSIVE (CALL of an active
+program that isn't RECURSIVE raises EC-PROGRAM-RECURSIVE-CALL, CANCEL of one is
+an error), PROGRAM-ID ... AS "name", several source files and programs built
+into one executable. Special registers RETURN-CODE, TALLY, SORT-RETURN,
+WHEN-COMPILED and NUMBER-OF-CALL-PARAMETERS. Segmentation: an independent segment (50–99) returns to its initial
 state whenever it's entered from another segment.
 
-**Intrinsic functions (67).** ABS, ACOS, ANNUITY, ASIN, ATAN, BYTE-LENGTH,
-CHAR, CONCATENATE, COS, CURRENT-DATE, DATE-OF-INTEGER, DATE-TO-YYYYMMDD,
-DAY-OF-INTEGER, DAY-TO-YYYYDDD, E, EXP, EXP10, FACTORIAL, FRACTION-PART, HEX-OF,
-INTEGER, INTEGER-OF-BOOLEAN, INTEGER-OF-DATE, INTEGER-OF-DAY, INTEGER-PART,
-LENGTH, LOG, LOG10, LOWER-CASE, MAX, MEAN, MEDIAN, MIDRANGE, MIN, MOD,
-MODULE-NAME, NUMVAL, NUMVAL-C, NUMVAL-F, ORD, ORD-MAX, ORD-MIN, PI,
-PRESENT-VALUE, RANDOM, RANGE, REM, REVERSE, SECONDS-PAST-MIDNIGHT, SIGN, SIN,
-SQRT, STANDARD-DEVIATION, STORED-CHAR-LENGTH, SUBSTITUTE, SUM, TAN,
-TEST-DATE-YYYYMMDD, TEST-DAY-YYYYDDD, TEST-NUMVAL, TRIM, TRIML, TRIMR,
-UPPER-CASE, VARIANCE, WHEN-COMPILED, YEAR-TO-YYYY.
+**Intrinsic functions (101).** ABS, ACOS, ANNUITY, ASIN, ATAN, BYTE-LENGTH,
+CHAR, COMBINED-DATETIME, CONCAT, CONCATENATE, COS, CURRENCY-SYMBOL, CURRENT-
+DATE, DATE-OF-INTEGER, DATE-TO-YYYYMMDD, DAY-OF-INTEGER, DAY-TO-YYYYDDD, E,
+EXCEPTION-FILE, EXCEPTION-LOCATION, EXCEPTION-STATEMENT, EXCEPTION-STATUS, EXP,
+EXP10, FACTORIAL, FORMATTED-CURRENT-DATE, FORMATTED-DATE, FORMATTED-DATETIME,
+FORMATTED-TIME, FRACTION-PART, HEX-OF, HIGHEST-ALGEBRAIC, INTEGER, INTEGER-OF-
+BOOLEAN, INTEGER-OF-DATE, INTEGER-OF-DAY, INTEGER-OF-FORMATTED-DATE, INTEGER-
+PART, LENGTH, LOCALE-COMPARE, LOCALE-DATE, LOCALE-TIME, LOCALE-TIME-FROM-
+SECONDS, LOG, LOG10, LOWER-CASE, LOWEST-ALGEBRAIC, MAX, MEAN, MEDIAN, MIDRANGE,
+MIN, MOD, MODULE-CALLER-ID, MODULE-DATE, MODULE-FORMATTED-DATE, MODULE-ID,
+MODULE-NAME, MODULE-PATH, MODULE-SOURCE, MODULE-TIME, MONETARY-DECIMAL-POINT,
+MONETARY-THOUSANDS-SEPARATOR, NUMERIC-DECIMAL-POINT, NUMERIC-THOUSANDS-
+SEPARATOR, NUMVAL, NUMVAL-C, NUMVAL-F, ORD, ORD-MAX, ORD-MIN, PI, PRESENT-VALUE,
+RANDOM, RANGE, REM, REVERSE, SECONDS-FROM-FORMATTED-TIME, SECONDS-PAST-MIDNIGHT,
+SIGN, SIN, SQRT, STANDARD-DEVIATION, STORED-CHAR-LENGTH, SUBSTITUTE, SUBSTITUTE-
+CASE, SUM, TAN, TEST-DATE-YYYYMMDD, TEST-DAY-YYYYDDD, TEST-FORMATTED-DATETIME,
+TEST-NUMVAL, TEST-NUMVAL-C, TEST-NUMVAL-F, TRIM, TRIML, TRIMR, UPPER-CASE,
+VARIANCE, WHEN-COMPILED, YEAR-TO-YYYY.
+
+The trigonometric, logarithmic and exponential functions, SQRT, ANNUITY,
+PRESENT-VALUE, VARIANCE, STANDARD-DEVIATION and `**` with a non-integer
+exponent are computed in 640-bit fixed point and truncated to the 38
+significant digits a result can hold, so a MOVE to an item with fewer
+decimals gets the digits of the exact value. Function results are described
+as GnuCOBOL describes them, so DISPLAY and MOVE to an alphanumeric item give
+the same characters (`FUNCTION ORD("A")` displays `000000066`).
+
+**Exceptions.** EXCEPTION-STATUS, EXCEPTION-STATEMENT, EXCEPTION-LOCATION and
+EXCEPTION-FILE report the last exception condition: EC-I-O-* for unsuccessful
+I/O statements, EC-ARGUMENT-FUNCTION for invalid function arguments,
+EC-PROGRAM-NOT-FOUND and EC-PROGRAM-RECURSIVE-CALL for CALL (which takes ON
+EXCEPTION for both).
+
+**Library routines.** CALL by name reaches these routines directly:
+- bytes and text: CBL_AND, CBL_OR, CBL_NOR, CBL_XOR, CBL_IMP, CBL_NIMP, CBL_EQ,
+  CBL_NOT, CBL_TOUPPER, CBL_TOLOWER, C$TOUPPER, C$TOLOWER, C$JUSTIFY,
+  C$PRINTABLE, CBL_OC_DUMP;
+- files and directories: CBL_CREATE_DIR, CBL_DELETE_DIR, CBL_CHANGE_DIR,
+  CBL_GET_CURRENT_DIR, C$MAKEDIR, C$CHDIR, CBL_DELETE_FILE, C$DELETE,
+  CBL_RENAME_FILE, CBL_COPY_FILE, C$COPY, CBL_CHECK_FILE_EXIST, C$FILEINFO, and
+  the byte-stream files CBL_OPEN_FILE, CBL_CREATE_FILE, CBL_READ_FILE,
+  CBL_WRITE_FILE, CBL_FLUSH_FILE, CBL_CLOSE_FILE;
+- calls and processes: C$NARG, C$PARAMSIZE, C$CALLEDBY, C$GETPID, C$SLEEP,
+  CBL_GC_NANOSLEEP, CBL_GC_FORK, CBL_GC_WAITPID, and `SYSTEM`.
 
 ### Not implemented
 
@@ -310,16 +351,22 @@ All of these were checked against GnuCOBOL 3.1.2:
 
 1. **WRITE without ADVANCING after WRITE ... AFTER ADVANCING** starts a new
    line, as ISO's default AFTER ADVANCING 1 requires. GnuCOBOL appends the
-   record to the line still open (`tests/cases/advmix.cbl`).
-2. **NUMVAL-C with CR or DB** returns a negative value, as the standard
-   requires. GnuCOBOL 3.1.2 returns a positive one.
+   record to the line still open. (WRITE ... BEFORE ADVANCING after AFTER
+   ADVANCING prints on that open line in both, as on a printer;
+   `tests/cases/advmix.cbl`.)
+2. **NUMVAL and NUMVAL-C with CR or DB** return a negative value, as the
+   standard requires. GnuCOBOL 3.1.2 returns a positive one. NUMVAL-C also
+   accepts a currency string of several characters (`"EUR"`), which GnuCOBOL
+   3.1.2 rejects.
 3. **Alphanumeric data with signs or non-digits moved to a numeric item**: the
    standard leaves the result undefined. cobolc reads the value the way NUMVAL
    does, so `" -42"` becomes -42. GnuCOBOL copies the characters as an
    unsigned integer.
-4. **DISPLAY of a numeric intrinsic function result** prints the value in its
-   shortest form (`3`, `1.4142135623730950472`). GnuCOBOL prints a fixed width
-   or up to 96 digits.
+4. **Numeric intrinsic function results** are described as in GnuCOBOL, with
+   two exceptions. A value of 10 digits that fits in 32 bits keeps all its
+   digits (GnuCOBOL 3.1.2 shows only the last nine). The irrational results
+   (SQRT, LOG, SIN, ...) have 38 significant digits; GnuCOBOL computes about 96,
+   so a DISPLAY of one shows fewer digits, and their last digits can differ.
 5. **Report Writer.** cobolc follows the standard's presentation rules. Each page
    of a report with a PAGE clause occupies exactly PAGE LIMIT lines of the file.
    GnuCOBOL 3.1.2 differs in these ways:
@@ -344,6 +391,11 @@ All of these were checked against GnuCOBOL 3.1.2:
      of the PERFORM or SORT statement;
    - it doesn't run the debugging procedure of a READ ... INTO identifier;
    - it rejects USE FOR DEBUGGING in contained programs (`tests/cases/dbg5.cbl`).
+7. **Micro Focus binary items.** `PIC X(n) COMP-X` shows all the digits its n
+   bytes can hold (`PIC X(2) COMP-X` is 5 digits). GnuCOBOL shows fewer
+   (4 digits for 2 bytes) and truncates values to them.
+8. **WHEN-COMPILED register** has IBM's `MM/DD/YYhh.mm.ss` format; GnuCOBOL
+   puts the day first.
 
 ## How it works
 
@@ -358,17 +410,20 @@ source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─�
 |---|---|---|
 | `compiler/source.py` | 272 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `compiler/lexer.py` | 515 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `compiler/parser.py` | 2,594 | recursive-descent parser to the AST (`nodes.py`, 638) |
-| `compiler/data.py` | 495 | PICTURE analysis, USAGE resolution, storage layout |
-| `compiler/codegen.py` | 3,300 | name resolution, C generation, typed fast paths |
+| `compiler/parser.py` | 2,602 | recursive-descent parser to the AST (`nodes.py`, 638) |
+| `compiler/data.py` | 510 | PICTURE analysis, USAGE resolution, storage layout |
+| `compiler/codegen.py` | 3,627 | name resolution, C generation, typed fast paths |
 | `compiler/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
 | `compiler/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 2,248 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, DEBUG-ITEM |
-| `runtime/cobrt_io.c` | 1,552 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_core.c` | 2,573 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_io.c` | 1,555 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_rw.c` | 417 | Report Writer control system: paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 424 | STRING, UNSTRING, INSPECT |
-| `runtime/cobrt_fn.c` | 731 | intrinsic functions |
-| `runtime/cobrt.h` | 616 | runtime interface and inline fast paths |
+| `runtime/cobrt_fn.c` | 678 | intrinsic functions |
+| `runtime/cobrt_math.c` | 728 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
+| `runtime/cobrt_dt.c` | 728 | FORMATTED-DATE/TIME/DATETIME and the other COBOL 2014 date functions, locale functions |
+| `runtime/cobrt_sys.c` | 653 | library routines (CBL_..., C$...) |
+| `runtime/cobrt.h` | 716 | runtime interface and inline fast paths |
 
 Design choices:
 

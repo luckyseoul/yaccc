@@ -384,6 +384,7 @@ typedef int (*cob_prog_fn)(int, unsigned char **);
 typedef void (*cob_cancel_fn)(void);
 #define COB_DECL_ENTRY (-2)
 extern int cob_decl_which;
+extern int cob_call_rejected;     /* set by a program entered while active */
 void cob_register_program(const char *name, cob_prog_fn fn, cob_cancel_fn cancel);
 void cob_cancel(const cob_field *name);
 void cob_cancel_name(const char *name);
@@ -423,12 +424,21 @@ cob_dec cob_fn_factorial(cob_dec a);
 cob_dec cob_fn_random(int has_seed, cob_dec seed);
 cob_dec cob_fn_length(const cob_field *f);
 cob_dec cob_fn_ord(const cob_field *f);
-cob_dec cob_fn_numval(const cob_field *f);
-cob_dec cob_fn_numval_c(const cob_field *f, const cob_field *cur);
-cob_dec cob_fn_test_numval(const cob_field *f);
+cob_dec cob_fn_numval(const cob_field *f, const cob_field *cur, const char *defcur, int kind, int dpc);
+cob_dec cob_fn_test_numval(const cob_field *f, const cob_field *cur, const char *defcur, int kind, int dpc);
 cob_dec cob_fn_aggregate(int which, int n, const cob_dec *v);
 cob_dec cob_fn_annuity(cob_dec rate, cob_dec periods);
 cob_dec cob_fn_present_value(int n, const cob_dec *v);
+cob_dec cob_fn_variance(int n, const cob_dec *v, int sd);
+cob_dec cob_hp_pow(cob_dec a, cob_dec b);
+double cob_fn_random_d(int has_seed, cob_dec seed);
+cob_field *cob_fn_field(cob_dec d, int flags, int digits);
+cob_field *cob_fn_abs_field(cob_dec d, int flags);
+cob_field *cob_fn_model_field(cob_dec d, const cob_field *model);
+cob_field *cob_fn_minmax_num(int is_max, int n, cob_field **f);
+cob_field *cob_fn_median_num(int n, cob_field **f, int flags);
+cob_field *cob_double_field(double x);
+cob_dec cob_d_from_double_exact(double x);
 cob_dec cob_fn_integer_of_date(cob_dec a);
 cob_dec cob_fn_date_of_integer(cob_dec a);
 cob_dec cob_fn_integer_of_day(cob_dec a);
@@ -448,6 +458,7 @@ cob_field *cob_fn_current_date(void);
 cob_field *cob_fn_when_compiled(void);
 cob_field *cob_fn_concatenate(int n, cob_field **f);
 cob_field *cob_fn_substitute(int n, cob_field **f);
+cob_field *cob_fn_substitute_case(int n, cob_field **f);
 cob_field *cob_fn_hex_of(const cob_field *f);
 cob_field *cob_fn_minmax_alnum(int is_max, int n, cob_field **f);
 cob_dec cob_fn_ord_minmax(int is_max, int n, const cob_dec *v);
@@ -481,6 +492,94 @@ typedef struct {
 } cob_file_key;
 
 typedef struct cob_irec cob_irec;
+
+/* COBOL 2002 exception information (EXCEPTION-STATUS and friends): the last
+   exception condition raised and where */
+typedef struct {
+	const char *prog, *para, *sect, *stmt;
+	int line;
+} cob_loc;
+extern const cob_loc *cob_cur_loc;       /* statement being executed, where tracked */
+void cob_set_exception(const char *name);
+void cob_exc_where(const cob_loc *loc);
+cob_field *cob_fn_exception_file(void);
+cob_field *cob_fn_exception_location(void);
+cob_field *cob_fn_exception_statement(void);
+cob_field *cob_fn_exception_status(void);
+
+/* calling chain for MODULE-ID / MODULE-CALLER-ID */
+void cob_module_push(const char *name, int argc);
+void cob_module_pop(void);
+extern const int *cob_call_sizes;
+extern cob_field cob_ncp_reg;            /* NUMBER-OF-CALL-PARAMETERS */
+int cob_frame_nargs(void);
+int cob_frame_param_size(int i);
+const char *cob_frame_caller(void);
+void cob_warning(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void cob_map_filename(const char *in, char *out, size_t sz);
+cob_field *cob_fn_module_caller_id(void);
+cob_field *cob_fn_module_path(void);
+cob_field *cob_fn_text(const char *s);
+
+/* library routines called by name (cobrt_sys.c) */
+int cob_sys_cbl_and(int n, cob_field **a);
+int cob_sys_cbl_or(int n, cob_field **a);
+int cob_sys_cbl_nor(int n, cob_field **a);
+int cob_sys_cbl_xor(int n, cob_field **a);
+int cob_sys_cbl_imp(int n, cob_field **a);
+int cob_sys_cbl_nimp(int n, cob_field **a);
+int cob_sys_cbl_eq(int n, cob_field **a);
+int cob_sys_cbl_not(int n, cob_field **a);
+int cob_sys_cbl_toupper(int n, cob_field **a);
+int cob_sys_cbl_tolower(int n, cob_field **a);
+int cob_sys_c_toupper(int n, cob_field **a);
+int cob_sys_c_tolower(int n, cob_field **a);
+int cob_sys_c_justify(int n, cob_field **a);
+int cob_sys_c_printable(int n, cob_field **a);
+int cob_sys_cbl_oc_dump(int n, cob_field **a);
+int cob_sys_c_narg(int n, cob_field **a);
+int cob_sys_c_paramsize(int n, cob_field **a);
+int cob_sys_c_calledby(int n, cob_field **a);
+int cob_sys_c_getpid(int n, cob_field **a);
+int cob_sys_c_sleep(int n, cob_field **a);
+int cob_sys_cbl_gc_nanosleep(int n, cob_field **a);
+int cob_sys_cbl_gc_fork(int n, cob_field **a);
+int cob_sys_cbl_gc_waitpid(int n, cob_field **a);
+int cob_sys_cbl_create_dir(int n, cob_field **a);
+int cob_sys_cbl_delete_dir(int n, cob_field **a);
+int cob_sys_cbl_change_dir(int n, cob_field **a);
+int cob_sys_c_makedir(int n, cob_field **a);
+int cob_sys_c_chdir(int n, cob_field **a);
+int cob_sys_cbl_get_current_dir(int n, cob_field **a);
+int cob_sys_cbl_delete_file(int n, cob_field **a);
+int cob_sys_c_delete(int n, cob_field **a);
+int cob_sys_cbl_rename_file(int n, cob_field **a);
+int cob_sys_cbl_copy_file(int n, cob_field **a);
+int cob_sys_c_copy(int n, cob_field **a);
+int cob_sys_cbl_check_file_exist(int n, cob_field **a);
+int cob_sys_c_fileinfo(int n, cob_field **a);
+int cob_sys_cbl_open_file(int n, cob_field **a);
+int cob_sys_cbl_create_file(int n, cob_field **a);
+int cob_sys_cbl_read_file(int n, cob_field **a);
+int cob_sys_cbl_write_file(int n, cob_field **a);
+int cob_sys_cbl_close_file(int n, cob_field **a);
+int cob_sys_cbl_flush_file(int n, cob_field **a);
+
+/* date and time (cobrt_dt.c) */
+cob_field *cob_fn_formatted_date(const cob_field *fmt, cob_dec date, int dpc);
+cob_field *cob_fn_formatted_time(const cob_field *fmt, cob_dec secs, int has_off, cob_dec off, int dpc);
+cob_field *cob_fn_formatted_datetime(const cob_field *fmt, cob_dec date, cob_dec secs, int has_off,
+				     cob_dec off, int dpc);
+cob_field *cob_fn_formatted_current_date(const cob_field *fmt, int dpc);
+cob_dec cob_fn_test_formatted_datetime(const cob_field *fmt, const cob_field *val, int dpc);
+cob_dec cob_fn_integer_of_formatted_date(const cob_field *fmt, const cob_field *val, int dpc);
+cob_dec cob_fn_seconds_from_formatted_time(const cob_field *fmt, const cob_field *val, int dpc);
+cob_dec cob_fn_combined_datetime(cob_dec date, cob_dec secs);
+cob_field *cob_fn_locale_compare(const cob_field *a, const cob_field *b);
+cob_field *cob_fn_locale_date(const cob_field *f);
+cob_field *cob_fn_locale_time(const cob_field *f);
+cob_field *cob_fn_locale_time_from_seconds(cob_dec secs);
+cob_field *cob_fn_locale_info(int which);
 
 typedef struct cob_file {
 	const char *select_name;
@@ -531,6 +630,7 @@ typedef struct cob_file {
 	const unsigned short *sort_coll;  /* SORT/MERGE COLLATING SEQUENCE */
 } cob_file;
 
+void cob_exc_io(cob_file *f, const char *status);
 int cob_open(cob_file *f, int mode);
 int cob_close(cob_file *f);
 int cob_close_opt(cob_file *f, int opt);

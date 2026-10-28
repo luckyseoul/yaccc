@@ -379,6 +379,12 @@ cob_dec cob_d_from_double(double x)
 	return d_from_ld((long double)x, 15);
 }
 
+/* the binary value itself, to 38 significant digits */
+cob_dec cob_d_from_double_exact(double x)
+{
+	return d_from_ld((long double)x, 38);
+}
+
 cob_dec cob_d_pow(cob_dec a, cob_dec b)
 {
 	if (a.scale == COB_DEC_ERR || b.scale == COB_DEC_ERR)
@@ -411,10 +417,7 @@ cob_dec cob_d_pow(cob_dec a, cob_dec b)
 			r = cob_d_div(cob_d_int(1), r);
 		return r;
 	}
-	long double x = d_to_ld(a), y = d_to_ld(b);
-	if (x < 0)
-		return cob_d_err();
-	return d_from_ld(powl(x, y), 18);
+	return cob_hp_pow(a, b);
 }
 
 int cob_d_sign(cob_dec a)
@@ -807,6 +810,12 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 	case COB_NUM_BINARY:
 	case COB_NUM_COMP5:
 	case COB_INDEX: {
+		if (d.scale < a->scale && !(opt & COB_SIZE_CHECK)) {
+			/* drop the high-order digits no item can hold before scaling up */
+			int k = a->scale - d.scale;
+			if (k < 38 && ndigits(d.v) + k > 38)
+				d.v %= P10[38 - k];
+		}
 		v = rescale(d.v, d.scale, a->scale, opt, &ovf);
 		if (ovf) {
 			if (opt & COB_SIZE_CHECK)
@@ -922,6 +931,118 @@ cob_field *cob_dec_field(cob_dec d)
 	at.scale = (signed char)d.scale;
 	cob_field *f = cob_tmp_field((size_t)nd, &at);
 	cob_d_set(f, d, 0);
+	return f;
+}
+
+/* The data item that holds a numeric function result, typed as GnuCOBOL
+   types it: unsigned unless the value is negative (or force_sign), 9 digits
+   when the value fits 32 bits with fewer than 10 decimals, 20 digits when it
+   fits 64 bits with fewer than 19, otherwise as many digits as the value has.
+   digits > 0 asks for that many instead (DATE-OF-INTEGER: 8), digits < 0 for
+   just the digits of the value (a constant LENGTH). */
+static cob_field *fn_field(cob_dec d, int flags, int digits, int force_sign)
+{
+	if (d.scale == COB_DEC_ERR)
+		d = cob_d_int(0);
+	if (d.scale < 0) {
+		d.v *= P10[-d.scale];
+		d.scale = 0;
+	}
+	dnorm(&d);
+	int neg = d.v < 0;
+	int sgn = neg || force_sign;
+	cob_u128 u = uabs(d.v);
+	int bits = 0;
+	for (cob_u128 t = u; t; t >>= 1)
+		bits++;
+	if (digits < 0)
+		digits = 1;
+	else if (digits == 0) {
+		if (bits < 33 - sgn && d.scale < 10)
+			digits = 9;
+		else if (bits < 65 - sgn && d.scale < 19)
+			digits = 20;
+		else
+			digits = (int)floor(bits * 0.30102999566398119521) + 1;
+	}
+	int nd = ndigits(d.v);
+	if (digits < nd)
+		digits = nd;
+	if (digits < d.scale)
+		digits = d.scale;
+	cob_attr at = { COB_NUM_DISPLAY, (unsigned char)digits, (signed char)d.scale,
+			(unsigned char)((sgn ? COB_F_SIGNED | COB_F_SIGN_SEP | COB_F_SIGN_LEAD : 0) | flags),
+			NULL, 0 };
+	cob_field *f = cob_tmp_field((size_t)(digits + sgn), &at);
+	cob_d_set(f, d, 0);
+	return f;
+}
+
+cob_field *cob_fn_field(cob_dec d, int flags, int digits)
+{
+	return fn_field(d, flags, digits, 0);
+}
+
+/* ABS of an expression: the item the expression's value would get, signed
+   if the value is negative, holding the absolute value */
+cob_field *cob_fn_abs_field(cob_dec d, int flags)
+{
+	int neg = d.scale != COB_DEC_ERR && d.v < 0;
+	if (neg)
+		d.v = -d.v;
+	return fn_field(d, flags, 0, neg);
+}
+
+/* ABS of a data item or literal: a result with the argument's description */
+cob_field *cob_fn_model_field(cob_dec d, const cob_field *model)
+{
+	cob_field *f = cob_tmp_field(model->size, model->attr);
+	cob_d_set(f, d, 0);
+	return f;
+}
+
+/* numeric MAX / MIN: a copy of the first greatest / least argument */
+cob_field *cob_fn_minmax_num(int is_max, int n, cob_field **f)
+{
+	int best = 0;
+	for (int i = 1; i < n; i++) {
+		int c = cob_d_cmp(cob_d_get(f[i]), cob_d_get(f[best]));
+		if ((is_max && c > 0) || (!is_max && c < 0))
+			best = i;
+	}
+	cob_field *r = cob_tmp_field(f[best]->size, f[best]->attr);
+	memcpy(r->data, f[best]->data, f[best]->size);
+	return r;
+}
+
+static int median_cmp(const void *a, const void *b)
+{
+	return cob_d_cmp(cob_d_get(*(cob_field *const *)a), cob_d_get(*(cob_field *const *)b));
+}
+
+/* numeric MEDIAN: the middle argument itself, or the mean of the middle two */
+cob_field *cob_fn_median_num(int n, cob_field **f, int flags)
+{
+	cob_field **c = cob_malloc(sizeof(cob_field *) * (size_t)n);
+	memcpy(c, f, sizeof(cob_field *) * (size_t)n);
+	qsort(c, (size_t)n, sizeof(cob_field *), median_cmp);
+	cob_field *r;
+	if (n % 2) {
+		cob_field *m = c[n / 2];
+		r = cob_tmp_field(m->size, m->attr);
+		memcpy(r->data, m->data, m->size);
+	} else
+		r = fn_field(cob_d_div(cob_d_add(cob_d_get(c[n / 2 - 1]), cob_d_get(c[n / 2])), cob_d_int(2)),
+			     flags, 0, 0);
+	free(c);
+	return r;
+}
+
+cob_field *cob_double_field(double x)
+{
+	static const cob_attr at = { COB_NUM_DOUBLE, 17, 0, COB_F_SIGNED, NULL, 0 };
+	cob_field *f = cob_tmp_field(sizeof x, &at);
+	memcpy(f->data, &x, sizeof x);
 	return f;
 }
 
@@ -1712,13 +1833,9 @@ static int disp_digits(const cob_field *f)
 {
 	const cob_attr *a = f->attr;
 	if (a->type == COB_NUM_COMP5) {
-		switch (f->size) {
-		case 1: return 3;
-		case 2: return 5;
-		case 4: return 10;
-		case 8: return 20;
-		default: return 39;
-		}
+		/* as many digits as the largest value of the size */
+		static const unsigned char dig[17] = { 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25, 27, 29, 32, 34, 37, 39 };
+		return f->size <= 16 ? dig[f->size] : 39;
 	}
 	if (a->type == COB_INDEX)
 		return 9;
@@ -1814,6 +1931,214 @@ void cob_display_end(int dev, int newline)
 		fputc('\n', fp);
 	if (dev == 1 || !newline)
 		fflush(fp);
+}
+
+/* ================================================================ exceptions */
+
+const cob_loc *cob_cur_loc;
+int cob_call_rejected;
+static const char *exc_name;            /* NULL: no exception */
+static const cob_loc *exc_loc;
+static cob_file *exc_file;
+static int exc_is_io;
+
+void cob_set_exception(const char *name)
+{
+	exc_name = name;
+	exc_loc = cob_cur_loc;
+	exc_is_io = 0;
+}
+
+/* the statement that raised the exception being recorded */
+void cob_exc_where(const cob_loc *loc)
+{
+	cob_cur_loc = loc;
+	if (exc_name)
+		exc_loc = loc;
+}
+
+/* every I/O status: an unsuccessful one raises the EC-I-O condition of its
+   class, a successful one clears the last exception (as in GnuCOBOL) */
+void cob_exc_io(cob_file *f, const char *st)
+{
+	static const char *names[10] = {
+		NULL, "EC-I-O-AT-END", "EC-I-O-INVALID-KEY", "EC-I-O-PERMANENT-ERROR",
+		"EC-I-O-LOGIC-ERROR", "EC-I-O-RECORD-OPERATION", "EC-I-O-FILE-SHARING",
+		"EC-I-O", "EC-I-O", "EC-I-O-IMP"
+	};
+	int k = st[0] - '0';
+	exc_file = f;
+	if (k <= 0 || k > 9) {
+		exc_name = NULL;
+		return;
+	}
+	exc_name = names[k];
+	exc_loc = cob_cur_loc;
+	exc_is_io = 1;
+}
+
+cob_field *cob_fn_text(const char *s)
+{
+	size_t n = strlen(s);
+	cob_field *r = cob_tmp_field(n, &cob_attr_alnum);
+	memcpy(r->data, s, n);
+	return r;
+}
+
+static cob_field *padded(const char *s, size_t width)
+{
+	cob_field *r = cob_tmp_field(width, &cob_attr_alnum);
+	size_t n = s ? strlen(s) : 0;
+	memcpy(r->data, s, n < width ? n : width);
+	return r;
+}
+
+/* EXCEPTION-FILE: I/O status and file name of the last I/O exception, else "00" */
+cob_field *cob_fn_exception_file(void)
+{
+	if (!exc_name || !exc_is_io || !exc_file)
+		return cob_fn_text("00");
+	size_t n = strlen(exc_file->select_name);
+	cob_field *r = cob_tmp_field(n + 2, &cob_attr_alnum);
+	memcpy(r->data, exc_file->stat, 2);
+	memcpy(r->data + 2, exc_file->select_name, n);
+	return r;
+}
+
+/* EXCEPTION-LOCATION: "program; paragraph OF section; line" */
+cob_field *cob_fn_exception_location(void)
+{
+	if (!exc_name || !exc_loc)
+		return cob_fn_text(" ");
+	char buf[512];
+	const cob_loc *l = exc_loc;
+	if (l->para && l->sect)
+		snprintf(buf, sizeof buf, "%s; %s OF %s; %d", l->prog, l->para, l->sect, l->line);
+	else if (l->para || l->sect)
+		snprintf(buf, sizeof buf, "%s; %s; %d", l->prog, l->para ? l->para : l->sect, l->line);
+	else
+		snprintf(buf, sizeof buf, "%s; ; %d", l->prog, l->line);
+	return cob_fn_text(buf);
+}
+
+cob_field *cob_fn_exception_statement(void)
+{
+	return padded(exc_name && exc_loc ? exc_loc->stmt : NULL, 31);
+}
+
+cob_field *cob_fn_exception_status(void)
+{
+	return padded(exc_name, 31);
+}
+
+/* ================================================================ calling chain */
+
+/* the active programs, innermost last: name, number of parameters received
+   and their sizes (for C$NARG, C$PARAMSIZE, C$CALLEDBY, MODULE-CALLER-ID and
+   NUMBER-OF-CALL-PARAMETERS) */
+typedef struct {
+	const char *name;
+	int nargs;
+	const int *sizes;
+} cob_frame_info;
+
+static cob_frame_info frames[256];
+static int frame_depth;
+const int *cob_call_sizes;                  /* set by a CALL for the program it enters */
+static unsigned char ncp_data[4];
+static const cob_attr attr_ncp = { COB_NUM_BINARY, 9, 0, COB_F_SIGNED, NULL, 0 };
+cob_field cob_ncp_reg = { 4, ncp_data, &attr_ncp };
+static int *main_sizes;
+
+static void set_ncp(void)
+{
+	cob_set_int(&cob_ncp_reg, frame_depth > 0 && frame_depth <= 256 ? frames[frame_depth - 1].nargs : 0);
+}
+
+void cob_module_push(const char *name, int argc)
+{
+	if (frame_depth < 256) {
+		cob_frame_info *fr = &frames[frame_depth];
+		fr->name = name;
+		if (argc >= 0) {
+			fr->nargs = argc;
+			fr->sizes = cob_call_sizes;
+		} else {
+			/* the main program: its parameters are the command-line arguments */
+			fr->nargs = g_argc > 1 ? g_argc - 1 : 0;
+			if (!main_sizes && fr->nargs) {
+				main_sizes = cob_malloc(sizeof(int) * (size_t)fr->nargs);
+				for (int i = 0; i < fr->nargs; i++)
+					main_sizes[i] = (int)strlen(g_argv[i + 1]);
+			}
+			fr->sizes = main_sizes;
+		}
+	}
+	cob_call_sizes = NULL;
+	frame_depth++;
+	set_ncp();
+}
+
+void cob_module_pop(void)
+{
+	if (frame_depth > 0)
+		frame_depth--;
+	set_ncp();
+}
+
+int cob_frame_nargs(void)
+{
+	return frame_depth > 0 && frame_depth <= 256 ? frames[frame_depth - 1].nargs : 0;
+}
+
+int cob_frame_param_size(int i)
+{
+	if (frame_depth <= 0 || frame_depth > 256)
+		return 0;
+	const cob_frame_info *fr = &frames[frame_depth - 1];
+	if (i < 1 || i > fr->nargs || !fr->sizes)
+		return 0;
+	return fr->sizes[i - 1];
+}
+
+/* the program that called the running one; NULL for the main program */
+const char *cob_frame_caller(void)
+{
+	if (frame_depth >= 2 && frame_depth - 2 < 256)
+		return frames[frame_depth - 2].name;
+	return NULL;
+}
+
+/* MODULE-CALLER-ID: the program that called the running one; spaces for the main program */
+cob_field *cob_fn_module_caller_id(void)
+{
+	const char *c = cob_frame_caller();
+	return cob_fn_text(c ? c : " ");
+}
+
+void cob_warning(const char *fmt, ...)
+{
+	va_list ap;
+	fflush(stdout);
+	fputs("cobrt: warning: ", stderr);
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+}
+
+/* MODULE-PATH: the full path of the executable */
+cob_field *cob_fn_module_path(void)
+{
+	static char path[4096];
+	if (!path[0]) {
+		ssize_t n = readlink("/proc/self/exe", path, sizeof path - 1);
+		if (n > 0)
+			path[n] = 0;
+		else if (g_argc > 0 && !realpath(g_argv[0], path))
+			snprintf(path, sizeof path, "%s", g_argv[0]);
+	}
+	return cob_fn_text(path[0] ? path : " ");
 }
 
 /* ================================================================ ACCEPT */

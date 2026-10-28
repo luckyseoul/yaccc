@@ -325,6 +325,9 @@ class Runner:
                         return 'FAIL', f"{cmd}:\n" + diff_text(want_out, texts[0], b'')
                 checks += 1
                 continue
+            if verb.startswith('./') and verb[2:] in built:
+                words.insert(0, '$COBCRUN_DIRECT')     # a program built by an earlier step
+                verb = words[0]
             if verb in ('$COBCRUN_DIRECT', '$COBCRUN'):
                 if len(words) < 2:
                     return 'SKIP', 'shell command'

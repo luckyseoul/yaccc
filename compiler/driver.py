@@ -13,7 +13,7 @@ from .parser import Parser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_DIR = os.path.join(os.path.dirname(HERE), 'runtime')
-RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_io.c', 'cobrt_rw.c']
+RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c', 'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c']
 VERSION = '1.0'
 
 

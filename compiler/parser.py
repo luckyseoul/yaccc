@@ -354,24 +354,29 @@ class Parser:
             elif self.accept('SYMBOLIC'):
                 self.accept('CHARACTERS')
                 names = []
+                defined = []
                 while True:
                     if self.is_user_word():
                         names.append(self.next().up)
                     elif self.accept('IS', 'ARE'):
                         pass
                     elif self.peek().kind == 'NUM':
-                        for nm in names:
-                            pass
                         vals = []
                         while self.peek().kind == 'NUM':
                             vals.append(int(self.next().val))
                         for nm, v in zip(names, vals):
                             prog.symbolic[nm] = v - 1
+                            defined.append(nm)
                         names = []
                     else:
                         break
                 if self.accept('IN'):
-                    self.next()
+                    # ordinal positions in that alphabet: the native character
+                    # with that code in it
+                    spec = prog.alphabets.get(self.next().up)
+                    if spec == 'EBCDIC':
+                        for nm in defined:
+                            prog.symbolic[nm] = bytes([prog.symbolic[nm]]).decode('cp037').encode('latin-1')[0]
             elif self.accept('ALPHABET'):
                 aname = self.next().up
                 self.accept('IS')
@@ -2385,6 +2390,9 @@ class Parser:
                 if self.peek().kind == 'EOF':
                     raise self.err("')' expected")
                 if name in ('TRIM',) and self.is_word('LEADING', 'TRAILING'):
+                    args.append(StrLit(self.next().up.encode()))
+                    continue
+                if name in ('FORMATTED-TIME', 'FORMATTED-DATETIME') and self.is_word('SYSTEM-OFFSET'):
                     args.append(StrLit(self.next().up.encode()))
                     continue
                 args.append(self.parse_expr(split_signed=False))

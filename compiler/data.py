@@ -428,6 +428,17 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
             item.flags |= F_DEC_COMMA
         return
     if cat != 'NUMERIC':
+        if usage in ('COMP-5', 'COMP-X') and cat == 'ALPHANUMERIC' and set(pic.symbols) <= {'X'}:
+            # Micro Focus PIC X(n) COMP-5 / COMP-X: an n-byte unsigned binary
+            # number (native byte order for COMP-5, big-endian for COMP-X)
+            n = pic.size
+            if n > 16:
+                raise CompileError(f"USAGE {usage} item '{item.name}' is longer than 16 bytes", item.loc)
+            item.type = T_NUM_COMP5 if usage == 'COMP-5' else T_NUM_BINARY
+            item.size = n
+            item.digits = min(len(str(256 ** n - 1)), 38)
+            item.scale = 0
+            return
         raise CompileError(f"USAGE {usage} requires a numeric PICTURE", item.loc)
     item.digits = pic.digits
     item.scale = pic.scale
@@ -444,9 +455,13 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.type = T_NUM_COMP5
         item.size = binary_size(pic.digits, opts.binary_size)
     elif usage == 'COMP-X':
+        # COMP-X with a numeric PICTURE: the fewest bytes that hold its digits
         item.type = T_NUM_BINARY
-        # COMP-X: PIC 9(n)/X(n) gives bytes; approximate via digits
-        item.size = binary_size(pic.digits, opts.binary_size)
+        top = 10 ** pic.digits - 1
+        n = 1
+        while (2 ** (8 * n - 1) if pic.signed else 2 ** (8 * n)) <= top:
+            n += 1
+        item.size = n
     else:
         raise CompileError(f"unsupported USAGE {usage}", item.loc)
     if pic.decimal_comma:

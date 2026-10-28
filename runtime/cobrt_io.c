@@ -44,6 +44,7 @@ static int set_st(cob_file *f, const char *st)
 {
 	f->stat[0] = st[0];
 	f->stat[1] = st[1];
+	cob_exc_io(f, st);
 	if (f->status)
 		cob_move_bytes((const unsigned char *)st, 2, f->status);
 	switch (st[0]) {
@@ -815,9 +816,11 @@ static int write_seq(cob_file *f, size_t recsize, int adv_when, int adv_lines)
 			fwrite(rec, 1, n, f->fp);
 			f->linage_lines = 1;
 		} else {
-			/* a line left open by AFTER ADVANCING is terminated first, so a
-			 * default WRITE behaves as AFTER ADVANCING 1 (ISO default) */
-			if (f->linage_lines)
+			/* a line left open by AFTER ADVANCING is terminated first by a
+			 * WRITE without ADVANCING, which behaves as AFTER ADVANCING 1
+			 * (ISO default); BEFORE ADVANCING prints on that line, as the
+			 * printer would (and as GnuCOBOL and Micro Focus do) */
+			if (f->linage_lines && adv_when != COB_ADV_BEFORE)
 				fputc('\n', f->fp);
 			fwrite(rec, 1, n, f->fp);
 			if (adv_when == COB_ADV_BEFORE && adv_lines == COB_ADV_PAGE)

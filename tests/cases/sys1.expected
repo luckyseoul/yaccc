@@ -1,0 +1,22 @@
+[                               ]
+[11]
+[OK    ]
+[    OK]
+[ABCdef] [A.B.C]
+0 [        ] +000000000
+000000513 0000070000
+mkdir +000000000
+read +000000000 [world       ]
+exists +000000000 000000012
+delete +000000000
+delete again +000000128
+rmdir +000000000
+35 [EC-I-O-PERMANENT-ERROR         ]
+[OPEN                           ]
+[sys1; MAIN-PARA; 72]
+[35NOFILE]
+not found: EC-PROGRAM-NOT-FOUND           
+INNER called by [sys1    ] +000000001 sys1
+INNER2
+recursive: EC-PROGRAM-NOT-FOUND           
+INNER2 is not visible

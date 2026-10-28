@@ -5,46 +5,11 @@
 #include <time.h>
 #include <sys/time.h>
 
-static long double to_ld(cob_dec d)
+/* an invalid argument: EC-ARGUMENT-FUNCTION, and zero as the result (as GnuCOBOL) */
+static cob_dec arg_error(void)
 {
-	long double x = (long double)d.v;
-	if (d.scale > 0)
-		x /= powl(10.0L, d.scale);
-	else if (d.scale < 0)
-		x *= powl(10.0L, -d.scale);
-	return x;
-}
-
-static cob_dec from_ld(long double x)
-{
-	char buf[80];
-	if (isnan(x) || isinf(x))
-		return cob_d_err();
-	snprintf(buf, sizeof buf, "%.17Le", x);
-	char *e = strchr(buf, 'e');
-	int expo = atoi(e + 1);
-	*e = 0;
-	cob_dec r = cob_d_str(buf);
-	r.scale -= expo;
-	if (r.scale < 0) {
-		while (r.scale < 0) {
-			r.v *= 10;
-			r.scale++;
-		}
-	}
-	while (r.scale > 0 && r.v % 10 == 0) {
-		r.v /= 10;
-		r.scale--;
-	}
-	if (r.scale > 38) {
-		cob_dec t = r;
-		while (t.scale > 38) {
-			t.v /= 10;
-			t.scale--;
-		}
-		r = t;
-	}
-	return r;
+	cob_set_exception("EC-ARGUMENT-FUNCTION");
+	return cob_d_int(0);
 }
 
 static int dec_is_int(cob_dec d)
@@ -84,16 +49,16 @@ cob_dec cob_fn_fraction_part(cob_dec a)
 
 cob_dec cob_fn_mod(cob_dec a, cob_dec b)
 {
-	if (b.v == 0)
-		return cob_d_err();
+	if (b.v == 0 || a.scale == COB_DEC_ERR || b.scale == COB_DEC_ERR)
+		return arg_error();
 	cob_dec q = cob_fn_integer(cob_d_div(a, b));
 	return cob_d_sub(a, cob_d_mul(b, q));
 }
 
 cob_dec cob_fn_rem(cob_dec a, cob_dec b)
 {
-	if (b.v == 0)
-		return cob_d_err();
+	if (b.v == 0 || a.scale == COB_DEC_ERR || b.scale == COB_DEC_ERR)
+		return arg_error();
 	cob_dec q = cob_d_trunc(cob_d_div(a, b), 0);
 	return cob_d_sub(a, cob_d_mul(b, q));
 }
@@ -103,62 +68,13 @@ cob_dec cob_fn_sign(cob_dec a)
 	return cob_d_int(cob_d_sign(a));
 }
 
-cob_dec cob_fn_sqrt(cob_dec a)
-{
-	if (a.scale == COB_DEC_ERR || a.v < 0)
-		return cob_d_err();
-	if (a.v == 0)
-		return cob_d_int(0);
-	/* Newton iteration in decimal starting from long double estimate */
-	cob_dec x = from_ld(sqrtl(to_ld(a)));
-	cob_dec two = cob_d_int(2);
-	for (int i = 0; i < 3; i++) {
-		cob_dec nx = cob_d_div(cob_d_add(x, cob_d_div(a, x)), two);
-		if (nx.scale == COB_DEC_ERR)
-			break;
-		if (nx.scale > 34)
-			nx = cob_d_trunc(nx, 34);
-		x = nx;
-	}
-	return x;
-}
-
-cob_dec cob_fn_math(int which, cob_dec a)
-{
-	long double x = to_ld(a), r;
-	switch (which) {
-	case 0: r = expl(x); break;
-	case 1: r = powl(10.0L, x); break;
-	case 2: if (x <= 0) return cob_d_err(); r = logl(x); break;
-	case 3: if (x <= 0) return cob_d_err(); r = log10l(x); break;
-	case 4: r = sinl(x); break;
-	case 5: r = cosl(x); break;
-	case 6: r = tanl(x); break;
-	case 7: if (x < -1 || x > 1) return cob_d_err(); r = asinl(x); break;
-	case 8: if (x < -1 || x > 1) return cob_d_err(); r = acosl(x); break;
-	case 9: r = atanl(x); break;
-	default: return cob_d_err();
-	}
-	return from_ld(r);
-}
-
-cob_dec cob_fn_pi(void)
-{
-	return cob_d_str("3.1415926535897932384626433832795028842");
-}
-
-cob_dec cob_fn_e(void)
-{
-	return cob_d_str("2.7182818284590452353602874713526624978");
-}
-
 cob_dec cob_fn_factorial(cob_dec a)
 {
 	if (a.scale == COB_DEC_ERR)
 		return a;
 	cob_s64 n = cob_d_to_int(a);
 	if (n < 0 || n > 33)
-		return cob_d_err();
+		return arg_error();
 	cob_s128 r = 1;
 	for (cob_s64 i = 2; i <= n; i++)
 		r *= i;
@@ -168,20 +84,20 @@ cob_dec cob_fn_factorial(cob_dec a)
 	return d;
 }
 
-static int rnd_seeded;
+/* RANDOM: the C library generator, as GnuCOBOL: a seed restarts it (a
+   negative seed counts as 0); the value is rand() / RAND_MAX */
+double cob_fn_random_d(int has_seed, cob_dec seed)
+{
+	if (has_seed) {
+		cob_s64 s = cob_d_to_int(seed);
+		srand((unsigned int)(s < 0 ? 0 : s));
+	}
+	return (double)rand() / RAND_MAX;
+}
 
 cob_dec cob_fn_random(int has_seed, cob_dec seed)
 {
-	if (has_seed) {
-		srand48((long)cob_d_to_int(seed));
-		rnd_seeded = 1;
-	} else if (!rnd_seeded) {
-		srand48(0);
-		rnd_seeded = 1;
-	}
-	double x = drand48();
-	cob_dec r = from_ld((long double)x);
-	return cob_d_trunc(r, 15);
+	return cob_d_from_double_exact(cob_fn_random_d(has_seed, seed));
 }
 
 cob_dec cob_fn_length(const cob_field *f)
@@ -194,113 +110,148 @@ cob_dec cob_fn_ord(const cob_field *f)
 	return cob_d_int(f->size ? f->data[0] + 1 : 1);
 }
 
-static cob_dec numval_impl(const unsigned char *s, size_t n, int currency, unsigned char cur)
+/* NUMVAL (kind 0), NUMVAL-C (kind 1) and NUMVAL-F (kind 2) arguments:
+     [sp][+|-][sp][cs][sp]{digits[.[digits]] | .digits}[sp][+|-|CR|DB][sp]
+   with the currency string cs and thousands separators only for NUMVAL-C,
+   the sign either leading or trailing, and for NUMVAL-F an exponent
+   E[sp]{+|-}[sp]digits after the mantissa instead of CR/DB. Returns 0 for a
+   valid argument and stores its value; otherwise the position of the first
+   character in error (the length + 1 when the argument ends too early). */
+static int numval_scan(const unsigned char *s, size_t n, int kind, const unsigned char *cs, size_t csl,
+		       int dpc, cob_dec *res)
 {
+	unsigned char dp = dpc ? ',' : '.', sep = dpc ? '.' : ',';
 	size_t i = 0;
-	int neg = 0, after = 0, scale = 0;
+	int lead = 0, neg = 0, digits = 0, point = 0, scale = 0, sig = 0, big = 0;
 	cob_s128 v = 0;
-	int nd = 0;
-	while (i < n && s[i] == ' ')
-		i++;
+	*res = cob_d_int(0);
+#define SKIP_SP() while (i < n && s[i] == ' ') i++
+	SKIP_SP();
 	if (i < n && (s[i] == '+' || s[i] == '-')) {
+		lead = 1;
 		neg = s[i] == '-';
 		i++;
-		while (i < n && s[i] == ' ')
-			i++;
+		SKIP_SP();
 	}
-	if (currency && i < n && s[i] == cur) {
-		i++;
-		while (i < n && s[i] == ' ')
+	if (kind == 1 && csl && i + csl <= n && memcmp(s + i, cs, csl) == 0) {
+		i += csl;
+		SKIP_SP();
+		if (!lead && i < n && (s[i] == '+' || s[i] == '-')) {     /* "$ -1.5", as GnuCOBOL */
+			lead = 1;
+			neg = s[i] == '-';
 			i++;
+			SKIP_SP();
+		}
 	}
 	for (; i < n; i++) {
 		unsigned char c = s[i];
 		if (c >= '0' && c <= '9') {
-			if (nd < 37) {
-				v = v * 10 + (c - '0');
-				if (v)
-					nd++;
-				if (after)
-					scale++;
-			}
-		} else if (c == '.') {
-			after = 1;
-		} else if (c == ',' && currency) {
-			continue;
-		} else
-			break;
-	}
-	while (i < n && s[i] == ' ')
-		i++;
-	if (i < n) {
-		if (s[i] == '-')
-			neg = 1;
-		else if (i + 1 < n && ((toupper(s[i]) == 'C' && toupper(s[i + 1]) == 'R') ||
-				       (toupper(s[i]) == 'D' && toupper(s[i + 1]) == 'B')))
-			neg = 1;
-	}
-	cob_dec r;
-	r.v = neg ? -v : v;
-	r.scale = scale;
-	return r;
-}
-
-cob_dec cob_fn_numval(const cob_field *f)
-{
-	unsigned char b[256];
-	size_t n = cob_field_text(f, b, sizeof b);
-	if (cob_is_num_type(f->attr->type))
-		return cob_d_get(f);
-	return numval_impl(b, n, 0, '$');
-}
-
-cob_dec cob_fn_numval_c(const cob_field *f, const cob_field *cur)
-{
-	unsigned char b[256];
-	size_t n = cob_field_text(f, b, sizeof b);
-	unsigned char c = '$';
-	if (cur && cur->size)
-		c = cur->data[0];
-	return numval_impl(b, n, 1, c);
-}
-
-cob_dec cob_fn_test_numval(const cob_field *f)
-{
-	const unsigned char *s = f->data;
-	size_t n = f->size, i = 0;
-	int digits = 0, point = 0, sign = 0;
-	while (i < n && s[i] == ' ')
-		i++;
-	if (i < n && (s[i] == '+' || s[i] == '-')) {
-		sign = 1;
-		i++;
-		while (i < n && s[i] == ' ')
-			i++;
-	}
-	for (; i < n; i++) {
-		if (isdigit(s[i]))
 			digits++;
-		else if (s[i] == '.' && !point)
+			if (sig || c != '0')
+				sig++;
+			if (sig <= 38) {
+				v = v * 10 + (c - '0');
+				if (point)
+					scale++;
+			} else if (!point)
+				big = 1;                /* more than 38 integer digits */
+		} else if (c == dp && !point)
 			point = 1;
+		else if (kind == 1 && c == sep && !point && digits)
+			continue;
 		else
 			break;
 	}
-	while (i < n && s[i] == ' ')
-		i++;
-	if (i < n && !sign) {
-		if (s[i] == '+' || s[i] == '-')
-			i++;
-		else if (i + 1 < n && ((toupper(s[i]) == 'C' && toupper(s[i + 1]) == 'R') ||
-				       (toupper(s[i]) == 'D' && toupper(s[i + 1]) == 'B')))
-			i += 2;
-		while (i < n && s[i] == ' ')
-			i++;
-	}
-	if (i < n)
-		return cob_d_int((cob_s64)i + 1);
 	if (!digits)
-		return cob_d_int((cob_s64)n + 1);
-	return cob_d_int(0);
+		return i < n && s[i] != ' ' ? (int)i + 1 : (int)n + 1;
+	SKIP_SP();
+	if (kind == 2 && i < n && (s[i] == 'E' || s[i] == 'e')) {
+		i++;
+		SKIP_SP();
+		if (i >= n)
+			return (int)n + 1;
+		if (s[i] != '+' && s[i] != '-')
+			return (int)i + 1;
+		int eneg = s[i] == '-', ex = 0;
+		i++;
+		SKIP_SP();
+		if (i >= n)
+			return (int)n + 1;
+		if (s[i] < '0' || s[i] > '9')
+			return (int)i + 1;
+		while (i < n && s[i] >= '0' && s[i] <= '9') {
+			if (ex < 10000)
+				ex = ex * 10 + (s[i] - '0');
+			i++;
+		}
+		SKIP_SP();
+		scale += eneg ? ex : -ex;
+	} else if (!lead && i < n) {
+		if (s[i] == '+' || s[i] == '-') {
+			neg = s[i] == '-';
+			i++;
+		} else if (kind != 2 && (s[i] == 'C' || s[i] == 'D')) {
+			if (i + 1 >= n || s[i + 1] != (s[i] == 'C' ? 'R' : 'B'))
+				return (int)i + 2;
+			neg = 1;
+			i += 2;
+		}
+		SKIP_SP();
+	}
+#undef SKIP_SP
+	if (i < n)
+		return (int)i + 1;
+	cob_dec r;
+	r.v = neg ? -v : v;
+	r.scale = scale;
+	while (r.scale > 38) {
+		r.v /= 10;
+		r.scale--;
+	}
+	while (r.scale < 0 && !big) {
+		if (r.v >= (cob_s128)1e37 || r.v <= -(cob_s128)1e37)
+			big = 1;
+		else {
+			r.v *= 10;
+			r.scale++;
+		}
+	}
+	*res = big ? cob_d_err() : r;
+	return 0;
+}
+
+static int numval_arg(const cob_field *f, const cob_field *cur, const char *defcur, int kind, int dpc,
+		      cob_dec *res)
+{
+	unsigned char b[512];
+	size_t n = cob_field_text(f, b, sizeof b);
+	const unsigned char *cs = (const unsigned char *)defcur;
+	size_t csl = defcur ? strlen(defcur) : 0;
+	if (cur && cur->size) {
+		cs = cur->data;
+		csl = cur->size;
+		while (csl > 1 && cs[csl - 1] == ' ')
+			csl--;
+	}
+	return numval_scan(b, n, kind, cs, csl, dpc, res);
+}
+
+/* NUMVAL / NUMVAL-F (kind 2) / NUMVAL-C (kind 1); 0 for an invalid argument */
+cob_dec cob_fn_numval(const cob_field *f, const cob_field *cur, const char *defcur, int kind, int dpc)
+{
+	cob_dec r;
+	if (kind != 1 && cob_is_num_type(f->attr->type))
+		return cob_d_get(f);
+	if (numval_arg(f, cur, defcur, kind, dpc, &r) != 0)
+		return cob_d_int(0);
+	return r;
+}
+
+/* TEST-NUMVAL / TEST-NUMVAL-C / TEST-NUMVAL-F */
+cob_dec cob_fn_test_numval(const cob_field *f, const cob_field *cur, const char *defcur, int kind, int dpc)
+{
+	cob_dec r;
+	return cob_d_int(numval_arg(f, cur, defcur, kind, dpc, &r));
 }
 
 static int dcmp_qsort(const void *a, const void *b)
@@ -341,16 +292,8 @@ cob_dec cob_fn_aggregate(int which, int n, const cob_dec *v)
 	case 4:
 		return cob_d_sub(mx, mn);
 	case 5:
-	case 6: {
-		cob_dec mean = cob_d_div(s, cob_d_int(n));
-		cob_dec acc = cob_d_int(0);
-		for (int i = 0; i < n; i++) {
-			cob_dec d = cob_d_sub(v[i], mean);
-			acc = cob_d_add(acc, cob_d_mul(d, d));
-		}
-		cob_dec var = cob_d_div(acc, cob_d_int(n));
-		return which == 5 ? var : cob_fn_sqrt(var);
-	}
+	case 6:
+		return cob_fn_variance(n, v, which == 6);
 	case 7:
 		return mx;
 	case 8:
@@ -394,25 +337,6 @@ cob_field *cob_fn_minmax_alnum(int is_max, int n, cob_field **f)
 	return r;
 }
 
-cob_dec cob_fn_annuity(cob_dec rate, cob_dec periods)
-{
-	if (rate.v == 0)
-		return cob_d_div(cob_d_int(1), periods);
-	long double r = to_ld(rate), n = to_ld(periods);
-	return from_ld(r / (1.0L - powl(1.0L + r, -n)));
-}
-
-cob_dec cob_fn_present_value(int n, const cob_dec *v)
-{
-	cob_dec base = cob_d_add(cob_d_int(1), v[0]);
-	cob_dec acc = cob_d_int(0), den = base;
-	for (int i = 1; i < n; i++) {
-		acc = cob_d_add(acc, cob_d_div(v[i], den));
-		den = cob_d_mul(den, base);
-	}
-	return acc;
-}
-
 /* ---------------------------------------------------------------- dates */
 
 static int leap(int y)
@@ -435,10 +359,10 @@ cob_dec cob_fn_integer_of_date(cob_dec a)
 	cob_s64 d = cob_d_to_int(a);
 	int y = (int)(d / 10000), m = (int)(d / 100 % 100), dd = (int)(d % 100);
 	if (y < 1601 || y > 9999 || m < 1 || m > 12 || dd < 1)
-		return cob_d_int(0);
+		return arg_error();
 	int ml = mdays[m - 1] + (m == 2 && leap(y));
 	if (dd > ml)
-		return cob_d_int(0);
+		return arg_error();
 	cob_s64 n = days_before_year(y);
 	for (int i = 1; i < m; i++)
 		n += mdays[i - 1] + (i == 2 && leap(y));
@@ -449,7 +373,7 @@ cob_dec cob_fn_date_of_integer(cob_dec a)
 {
 	cob_s64 n = cob_d_to_int(a);
 	if (n < 1 || n > 3067671)
-		return cob_d_int(0);
+		return arg_error();
 	int y = 1601;
 	while (n > (leap(y) ? 366 : 365)) {
 		n -= leap(y) ? 366 : 365;
@@ -468,7 +392,7 @@ cob_dec cob_fn_integer_of_day(cob_dec a)
 	cob_s64 d = cob_d_to_int(a);
 	int y = (int)(d / 1000), dd = (int)(d % 1000);
 	if (y < 1601 || y > 9999 || dd < 1 || dd > (leap(y) ? 366 : 365))
-		return cob_d_int(0);
+		return arg_error();
 	return cob_d_int(days_before_year(y) + dd);
 }
 
@@ -476,7 +400,7 @@ cob_dec cob_fn_day_of_integer(cob_dec a)
 {
 	cob_s64 n = cob_d_to_int(a);
 	if (n < 1 || n > 3067671)
-		return cob_d_int(0);
+		return arg_error();
 	int y = 1601;
 	while (n > (leap(y) ? 366 : 365)) {
 		n -= leap(y) ? 366 : 365;
@@ -682,7 +606,30 @@ cob_field *cob_fn_concatenate(int n, cob_field **f)
 	return r;
 }
 
+static cob_field *substitute(int n, cob_field **f, int nocase);
+
 cob_field *cob_fn_substitute(int n, cob_field **f)
+{
+	return substitute(n, f, 0);
+}
+
+/* SUBSTITUTE-CASE: SUBSTITUTE matching regardless of case */
+cob_field *cob_fn_substitute_case(int n, cob_field **f)
+{
+	return substitute(n, f, 1);
+}
+
+static int match_at(const unsigned char *s, const unsigned char *pat, size_t n, int nocase)
+{
+	if (!nocase)
+		return memcmp(s, pat, n) == 0;
+	for (size_t i = 0; i < n; i++)
+		if (toupper(s[i]) != toupper(pat[i]))
+			return 0;
+	return 1;
+}
+
+static cob_field *substitute(int n, cob_field **f, int nocase)
 {
 	/* f[0] = source, then pairs (from, to) */
 	const cob_field *src = f[0];
@@ -693,7 +640,7 @@ cob_field *cob_fn_substitute(int n, cob_field **f)
 		int done = 0;
 		for (int k = 1; k + 1 < n; k += 2) {
 			const cob_field *a = f[k], *b = f[k + 1];
-			if (a->size && i + a->size <= src->size && memcmp(src->data + i, a->data, a->size) == 0) {
+			if (a->size && i + a->size <= src->size && match_at(src->data + i, a->data, a->size, nocase)) {
 				if (o + b->size >= cap) {
 					cap = (cap + b->size) * 2;
 					out = realloc(out, cap);
