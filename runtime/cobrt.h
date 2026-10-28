@@ -581,6 +581,36 @@ void cob_json_num(jsonw *w, cob_field *f, int dpc);
 void cob_json_finish(jsonw *w, cob_field *count_in);
 extern cob_field cob_json_code_reg;       /* JSON-CODE */
 
+/* XML GENERATE */
+typedef struct {
+	unsigned char *dst;
+	size_t cap;
+	size_t len;
+	int overflow;
+	int pending[258];           /* per depth: open tag not closed yet */
+	size_t open_at[258];
+	int depth;
+	size_t empty_start;
+	int last_was_empty;
+} xmlw;
+void cob_xml_code_reset(void);
+int cob_xml_code_value(void);
+void cob_xml_init(xmlw *w, cob_field *out);
+void cob_xml_declaration(xmlw *w);
+void cob_xml_root_namespace(xmlw *w, const char *prefix, cob_field *uri);
+void cob_xml_elem_open(xmlw *w, const char *prefix, const char *name);
+void cob_xml_elem_close(xmlw *w, const char *prefix, const char *name);
+void cob_xml_text(xmlw *w, cob_field *f);
+void cob_xml_text_just(xmlw *w, cob_field *f);
+void cob_xml_num(xmlw *w, cob_field *f, int dpc);
+void cob_xml_attr(xmlw *w, const char *prefix, const char *name, cob_field *f);
+void cob_xml_finish(xmlw *w, cob_field *count_in);
+int cob_xml_all(const cob_field *f, int c);
+int cob_xml_nonnumeric(const cob_field *f);
+size_t cob_xml_mark(xmlw *w);
+void cob_xml_rollback_if_empty(xmlw *w, size_t mark);
+extern cob_field cob_xml_code_reg;       /* XML-CODE */
+
 /* calling chain for MODULE-ID / MODULE-CALLER-ID */
 void cob_module_push(const char *name, int argc);
 void cob_module_pop(void);

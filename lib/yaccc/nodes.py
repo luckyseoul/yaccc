@@ -212,6 +212,22 @@ class FreeStmt(Stmt):
 
 
 @dataclass(eq=False)
+class XmlGenerate(Stmt):
+    out: Any = None
+    src: Any = None
+    declaration: bool = False
+    all_attributes: bool = False
+    names: list = field(default_factory=list)     # (DataRef, str)
+    types: list = field(default_factory=list)     # (DataRef, 'ATTRIBUTE'|'CONTENT')
+    suppress: list = field(default_factory=list)  # (DataRef|None, set of figurative, every)
+    namespace: Any = None
+    namespace_prefix: Any = None
+    count_in: Any = None
+    on_exc: Optional[list] = None
+    not_on_exc: Optional[list] = None
+
+
+@dataclass(eq=False)
 class JsonGenerate(Stmt):
     """JSON GENERATE out FROM src, with NAME OF / SUPPRESS / COUNT IN."""
     out: Any = None

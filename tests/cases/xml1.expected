@@ -1,0 +1,7 @@
+1:[<?xml version="1.0"?>
+<rec alpha="A"><b>BBB</b></rec>                                                                                                                                                   ]
+2:[<d> </d>                                                                                                                                                                                                ]
+3:[<c d=" "/>                                                                                                                                                                                              ]
+4:[<rec>AAABBB<c>CCC</c></rec>                                                                                                                                                                             ]
+5:[<d>&amp;&amp;&amp;</d>                                                                                                                                                                                  ]
+6:[<_0SpecialTAGName>abc</_0SpecialTAGName>                                                                                                                                                                ]

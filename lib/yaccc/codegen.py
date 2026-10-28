@@ -594,7 +594,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 ('SORT-RETURN', '&cob_sort_return_reg', T_NUM_BINARY, 4, F_SIGNED, 4),
                 ('WHEN-COMPILED', '&cob_wc_reg', T_ALNUM, 0, 0, 16),
                 ('NUMBER-OF-CALL-PARAMETERS', '&cob_ncp_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
-                ('JSON-CODE', '&cob_json_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4)):
+                ('JSON-CODE', '&cob_json_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
+                ('XML-CODE', '&cob_xml_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4)):
             if nm not in ctx.names:
                 it = DataItem(1, nm, prog.loc)
                 it.special = expr
@@ -2547,6 +2548,164 @@ class CodeGen(ReportWriterGen, DebugGen):
         if getattr(it, 'based', False):
             return f"((unsigned char *){it.storage})"
         return f"({self.data_ptr(ref)})"
+
+    # ---------------------------------------------------------------- XML
+    def g_XmlGenerate(self, s):
+        em = self.em
+        src = self.resolve(s.src)
+        if isinstance(src, IndexName):
+            raise CompileError("XML GENERATE needs a data item", s.loc)
+        self.check_receiving(s.out)
+        names = {id(self.resolve(r)): nm for r, nm in s.names}
+        types = {id(self.resolve(r)): t for r, t in s.types}
+        prefix = None
+        if s.namespace_prefix is not None:
+            prefix = self.sym('xpfx_')
+            em("{")
+            em.ind += 1
+            em(f"static unsigned char {prefix}_d[64];")
+            em(f"cob_field {prefix}_f = {{64, {prefix}_d, &cob_attr_alnum}};")
+            em(f"cob_move({self.field(s.namespace_prefix)}, &{prefix}_f);")
+            em(f"{prefix}_d[63] = 0;")
+            em(f"const char *{prefix} = (const char *){prefix}_d;")
+        em("{")
+        em.ind += 1
+        em("xmlw cob_xw;")
+        em("cob_xml_code_reset();")
+        em(f"cob_xml_init(&cob_xw, {self.field(s.out)});")
+        if s.declaration:
+            em("cob_xml_declaration(&cob_xw);")
+        self.xml_member(src, names, types, s, prefix, top=True)
+        cin = self.field(s.count_in) if s.count_in is not None else 'NULL'
+        em(f"cob_xml_finish(&cob_xw, {cin});")
+        em("int cob_xcode = cob_xml_code_value();")
+        self.handlers('cob_xcode', s.on_exc, s.not_on_exc)
+        em("(void)cob_xcode;")
+        em.ind -= 1
+        em("}")
+        if s.namespace_prefix is not None:
+            em.ind -= 1
+            em("}")
+
+    def xml_dpc(self):
+        prog = getattr(self.ctx, 'prog', None) or getattr(self, 'prog', None)
+        if prog is not None and getattr(prog, 'decimal_comma', False) \
+                and getattr(self.opts, 'dpc_in_data', 'none') in ('xml', 'all'):
+            return "'\u002c'"
+        return "'.'"
+
+    def xml_pfx(self, prefix):
+        return prefix or 'NULL'
+
+    def xml_name(self, it, names):
+        return names.get(id(it)) or getattr(it, 'src_name', None) or it.name
+
+    def xml_suppressed(self, it, s, is_attribute, field_expr):
+        """C condition: is this item suppressed by a SUPPRESS clause?
+
+        A clause naming the item wins over a SUPPRESS EVERY ... clause, and a
+        later clause for the same target replaces an earlier one."""
+        rules = {}
+        for ref, figs, every in s.suppress:
+            key = ('item', id(self.resolve(ref))) if ref is not None else ('every', every)
+            rules[key] = (ref, figs, every)
+        chosen = rules.get(('item', id(it)))
+        if chosen is None:
+            applicable = []
+            for (kind, sel), rule in rules.items():
+                if kind != 'every':
+                    continue
+                ref, figs, every = rule
+                if every is None:
+                    applicable.append(rule)          # SUPPRESS WHEN f: every item
+                elif every == 'ATTRIBUTE' and is_attribute:
+                    applicable.append(rule)
+                elif every == 'ELEMENT' and not is_attribute:
+                    applicable.append(rule)
+                elif every == 'NONNUMERIC' and it.type not in self.JSON_NUMERIC:
+                    applicable.append(rule)
+            tests = []
+            for _ref, figs, _every in applicable:
+                tests.extend(self.xml_fig_tests(figs, field_expr))
+        else:
+            tests = self.xml_fig_tests(chosen[1], field_expr)
+        if not tests:
+            return None
+        return '(' + ' || '.join(tests) + ')'
+
+    @staticmethod
+    def xml_fig_tests(figs, field_expr):
+        out = []
+        for f in figs:
+            ch = {'SPACE': ' ', 'SPACES': ' ', 'ZERO': '0', 'ZEROS': '0',
+                  'ZEROES': '0', 'LOW-VALUE': '\\0', 'LOW-VALUES': '\\0',
+                  'HIGH-VALUE': '\\xff', 'HIGH-VALUES': '\\xff'}.get(f)
+            if ch is not None:
+                out.append(f"cob_xml_all({field_expr}, '{ch}')")
+        return out
+
+    def xml_kind(self, it, types, all_attributes):
+        t = types.get(id(it))
+        if t in ('ATTRIBUTE', 'CONTENT'):
+            return t
+        return 'ATTRIBUTE' if all_attributes and not it.children else 'ELEMENT'
+
+    def xml_member(self, it, names, types, s, prefix, top=False):
+        em = self.em
+        name = self.xml_name(it, names)
+        pfx = self.xml_pfx(prefix)
+        if it.children:
+            em("{")
+            em.ind += 1
+            em("size_t cob_xm = cob_xml_mark(&cob_xw);")
+            em(f"cob_xml_elem_open(&cob_xw, {pfx}, {c_string(name)});")
+            if top and s.namespace is not None:
+                em(f"cob_xml_root_namespace(&cob_xw, {pfx}, {self.field(s.namespace)});")
+            for c in self.xml_members(it, s):
+                self.xml_member(c, names, types, s, prefix)
+            em(f"cob_xml_elem_close(&cob_xw, {pfx}, {c_string(name)});")
+            if not top:
+                em("cob_xml_rollback_if_empty(&cob_xw, cob_xm);")
+            em.ind -= 1
+            em("}")
+            return
+        kind = self.xml_kind(it, types, s.all_attributes)
+        field = self.xml_field(it)
+        cond = self.xml_suppressed(it, s, kind == 'ATTRIBUTE', field)
+        if cond is not None:
+            em(f"if (!{cond}) {{")
+            em.ind += 1
+        text_fn = 'cob_xml_text_just' if (it.flags & F_JUSTIFIED) else 'cob_xml_text'
+        if kind == 'ATTRIBUTE':
+            em(f"cob_xml_attr(&cob_xw, {pfx}, {c_string(name)}, {field});")
+        elif kind == 'CONTENT':
+            if it.type in self.JSON_NUMERIC:
+                em(f"cob_xml_num(&cob_xw, {field}, {self.xml_dpc()});")
+            else:
+                em(f"{text_fn}(&cob_xw, {field});")
+        else:
+            em(f"cob_xml_elem_open(&cob_xw, {pfx}, {c_string(name)});")
+            if it.type in self.JSON_NUMERIC:
+                em(f"cob_xml_num(&cob_xw, {field}, {self.xml_dpc()});")
+            else:
+                em(f"{text_fn}(&cob_xw, {field});")
+            em(f"cob_xml_elem_close(&cob_xw, {pfx}, {c_string(name)});")
+        if cond is not None:
+            em.ind -= 1
+            em("}")
+
+    def xml_members(self, it, s):
+        out = []
+        for c in it.children:
+            if c.level in (66, 88) or not c.name:
+                continue
+            if c.redefines is not None:
+                continue
+            out.append(c)
+        return out
+
+    def xml_field(self, it):
+        return f"CF({it.storage} + {it.offset}, {it.size}, &{self.item_attr(it)})"
 
     # ---------------------------------------------------------------- JSON
     JSON_NUMERIC = (T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5,

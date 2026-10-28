@@ -1657,6 +1657,102 @@ class Parser:
         self.accept('OF')
         return FreeStmt(loc, self.parse_identifier())
 
+    def p_XML(self, loc):
+        """XML GENERATE out FROM src [WITH XML-DECLARATION] [WITH ATTRIBUTES]
+        [NAME OF ...] [TYPE OF ... IS ATTRIBUTE|CONTENT] [SUPPRESS ...]
+        [NAMESPACE x] [NAMESPACE-PREFIX p] [COUNT IN n]."""
+        if not self.accept('GENERATE'):
+            raise self.err("XML PARSE is not supported (only XML GENERATE)")
+        out = self.parse_identifier()
+        self.expect('FROM')
+        src = self.parse_identifier()
+        st = XmlGenerate(loc, out, src)
+        while True:
+            if self.accept('WITH'):
+                if self.accept('XML-DECLARATION'):
+                    st.declaration = True
+                elif self.accept('ATTRIBUTES'):
+                    st.all_attributes = True
+                else:
+                    break
+            elif self.accept('NAME'):
+                self.accept('OF')
+                while True:
+                    ref = self.parse_identifier()
+                    self.accept('IS')
+                    t = self.peek()
+                    if t.kind != 'STR':
+                        raise self.err("an XML name must be a literal")
+                    self.next()
+                    st.names.append((ref, t.val.decode('latin-1')))
+                    if self.accept('OF'):
+                        continue
+                    if self.is_word('TYPE', 'SUPPRESS', 'NAMESPACE', 'NAMESPACE-PREFIX',
+                                    'COUNT', 'ON', 'NOT'):
+                        break
+                    if self.is_user_word():
+                        continue
+                    break
+            elif self.accept('TYPE'):
+                self.accept('OF')
+                while True:
+                    ref = self.parse_identifier()
+                    self.accept('IS')
+                    st.types.append((ref, self.expect('ATTRIBUTE', 'CONTENT', 'ELEMENT').up))
+                    if self.accept('OF'):
+                        continue
+                    if self.is_word('NAME', 'SUPPRESS', 'NAMESPACE', 'NAMESPACE-PREFIX',
+                                    'COUNT', 'ON', 'NOT'):
+                        break
+                    if self.is_user_word():
+                        continue
+                    break
+            elif self.accept('SUPPRESS'):
+                # the clause repeats: SUPPRESS a WHEN X, b WHEN Y, EVERY ELEMENT WHEN Z
+                while True:
+                    every = None
+                    ref = None
+                    if self.accept('EVERY'):
+                        every = self.expect('ELEMENT', 'ATTRIBUTE', 'NONNUMERIC').up
+                    elif self.is_user_word():
+                        ref = self.parse_identifier()
+                    self.expect('WHEN')
+                    figs = set()
+                    while True:
+                        w = self.next()
+                        figs.add(w.up)
+                        if not self.accept('OR'):
+                            break
+                    st.suppress.append((ref, figs, every))
+                    if self.accept('EVERY'):
+                        self.pos -= 1
+                        continue
+                    if self.is_user_word():
+                        continue
+                    break
+            elif self.accept('NAMESPACE'):
+                st.namespace = self.parse_operand()
+            elif self.accept('NAMESPACE-PREFIX'):
+                st.namespace_prefix = self.parse_operand()
+            elif self.is_word('COUNT') and self.is_word('IN', k=1):
+                self.next(); self.next()
+                st.count_in = self.parse_identifier()
+            elif self.accept('ON') and self.accept('EXCEPTION'):
+                st.on_exc = self.parse_statements()
+            elif self.is_word('NOT') and (self.is_word('ON', k=1) or self.is_word('EXCEPTION', k=1)):
+                self.next()
+                self.accept('ON')
+                self.expect('EXCEPTION')
+                st.not_on_exc = self.parse_statements()
+            elif self.accept('EXCEPTION'):
+                st.on_exc = self.parse_statements()
+            elif self.is_word('END-XML'):
+                self.next()
+                break
+            else:
+                break
+        return st
+
     def p_JSON(self, loc):
         """JSON GENERATE out FROM src [NAME OF ...] [SUPPRESS ...] [COUNT IN n]
         [ON EXCEPTION ...] [NOT ON EXCEPTION ...] [END-JSON]"""

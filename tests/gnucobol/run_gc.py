@@ -174,7 +174,7 @@ def parse_file(path):
         elif name == 'AT_SKIP_IF':
             cond = expand(args[0]) if args else ''
             # features yaccc provides; a test gated on one of these is run
-            HAVE = ('ISAM', 'JSON')
+            HAVE = ('ISAM', 'JSON', 'XML2')
             m = re.search(r'COB_HAS_(\w+)', cond)
             if not (m and m.group(1) in HAVE):
                 cur.skip_reason = cur.skip_reason or (f'needs {m.group(1).lower()}' if m else 'AT_SKIP_IF')

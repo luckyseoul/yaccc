@@ -627,12 +627,12 @@ SKIP  run_misc.at:12408            ENTRY FOR GO TO / GO TO ENTRY
 SKIP  run_misc.at:12498            runtime checks within conditions
 SKIP  run_misc.at:12612            libcob version check
 SKIP  run_ml.at:19                 XML GENERATE general
-SKIP  run_ml.at:127                XML GENERATE SUPPRESS
-SKIP  run_ml.at:204                XML GENERATE exceptions
-SKIP  run_ml.at:300                XML GENERATE record selection
-SKIP  run_ml.at:344                XML GENERATE trimming
-SKIP  run_ml.at:441                XML DPC-IN-DATA directive
-SKIP  run_ml.at:472                XML dpc-in-data config option
+PASS  run_ml.at:127                XML GENERATE SUPPRESS
+FAIL  run_ml.at:204                XML GENERATE exceptions
+PASS  run_ml.at:300                XML GENERATE record selection
+PASS  run_ml.at:344                XML GENERATE trimming
+PASS  run_ml.at:441                XML DPC-IN-DATA directive
+PASS  run_ml.at:472                XML dpc-in-data config option
 PASS  run_ml.at:516                JSON GENERATE general
 PASS  run_ml.at:573                JSON GENERATE SUPPRESS
 PASS  run_ml.at:612                JSON GENERATE exceptions
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 415  FAIL 25  CERR 48  XERR 0  SKIP 205
+PASS 420  FAIL 26  CERR 48  XERR 0  SKIP 199
