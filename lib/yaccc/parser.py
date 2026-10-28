@@ -1908,7 +1908,9 @@ class Parser:
         return StringStmt(loc, sources, into, ptr, on, noton)
 
     def p_UNSTRING(self, loc):
-        src = self.parse_identifier()
+        # identifier-1 in the standard, but GnuCOBOL, Micro Focus and IBM all
+        # accept a literal or figurative constant here, and programs use it
+        src = self.parse_operand()
         delims = []
         if self.accept('DELIMITED'):
             self.accept('BY')

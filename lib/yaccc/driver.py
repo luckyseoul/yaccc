@@ -86,6 +86,32 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
     return gen.generate(), programs
 
 
+def _split_run_args(ap, args, unknown):
+    """Arguments for the program being run, from the tokens argparse did not
+    claim. A token that looks like an option is a mistake in the compiler's
+    own command line, not a program argument: silently dropping "--no-chek"
+    or "-std=ibm" built the program with the wrong configuration and said
+    nothing, which is worse than refusing. Program arguments that begin with
+    "-" go after "--"."""
+    if not unknown:
+        return []
+    if '--' in unknown:
+        cut = unknown.index('--')
+        before, after = unknown[:cut], unknown[cut + 1:]
+    else:
+        before, after = unknown, []
+    bad = [t for t in before if t.startswith('-') and t != '-']
+    if bad:
+        ap.error("unrecognized option%s: %s (program arguments that begin with '-' "
+                 "go after '--')" % ("s" if len(bad) > 1 else "", ' '.join(bad)))
+    if not args.run and (before or after):
+        ap.error("unexpected argument%s: %s (needs --run)"
+                 % ("s" if len(before) + len(after) > 1 else "", ' '.join(before + after)))
+    if not args.run:
+        return []
+    return before + after
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='yaccc', description='COBOL compiler (COBOL -> C -> native executable)')
     ap.add_argument('sources', nargs='*', help='COBOL source files')
@@ -110,7 +136,8 @@ def main(argv=None):
     ap.add_argument('--build-runtime', action='store_true', help='(re)build the runtime library and exit')
     ap.add_argument('-v', '--verbose', action='store_true')
     ap.add_argument('--version', action='version', version=f'YACCC {VERSION}')
-    args, run_args = ap.parse_known_args(argv)
+    args, unknown = ap.parse_known_args(argv)
+    run_args = _split_run_args(ap, args, unknown)
 
     if args.build_runtime:
         if safe_build_runtime(args.cc, args.verbose, force=True) is None:

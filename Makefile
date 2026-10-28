@@ -10,7 +10,7 @@ GCSUITE ?= third_party/gnucobol/tests/testsuite.src
 GCTAG   ?= gnucobol-3.1.2
 OUT    ?= build/examples
 
-.PHONY: all runtime test test-ref nist nist-all gctest gctest-update examples clean
+.PHONY: all runtime test cli-test test-ref nist nist-all gctest gctest-update examples clean
 
 all: runtime
 
@@ -20,6 +20,10 @@ runtime:
 # regression tests against the recorded GnuCOBOL baselines
 test: runtime
 	$(PYTHON) tests/difftest.py
+
+# the compiler's own command line: options honoured, mistakes reported
+cli-test: runtime
+	$(PYTHON) tests/cli_test.py
 
 # the same tests compared live against GnuCOBOL (needs cobc on PATH)
 test-ref: runtime

@@ -22,6 +22,10 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
         run: make test
+      - name: Compiler command line
+        env:
+          CC: ${{ matrix.cc }}
+        run: make cli-test
       - name: Examples
         env:
           CC: ${{ matrix.cc }}

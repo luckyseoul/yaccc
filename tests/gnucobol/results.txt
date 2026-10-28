@@ -539,12 +539,12 @@ SKIP  run_misc.at:2238             PERFORM inline (2)
 PASS  run_misc.at:2263             Non-overflow after overflow
 SKIP  run_misc.at:2293             PERFORM ... CONTINUE
 PASS  run_misc.at:2310             STRING with subscript reference
-CERR  run_misc.at:2337             STRING / UNSTRING NOT ON OVERFLOW
+PASS  run_misc.at:2337             STRING / UNSTRING NOT ON OVERFLOW
 PASS  run_misc.at:2454             UNSTRING DELIMITED ALL LOW-VALUE
 PASS  run_misc.at:2489             UNSTRING DELIMITED ALL SPACE-2
 PASS  run_misc.at:2554             UNSTRING DELIMITED POINTER
 SKIP  run_misc.at:2608             UNSTRING DELIMITER IN
-CERR  run_misc.at:2650             UNSTRING with FUNCTION / literal
+PASS  run_misc.at:2650             UNSTRING with FUNCTION / literal
 PASS  run_misc.at:2720             SORT: table sort
 PASS  run_misc.at:2762             SORT: table sort (2)
 PASS  run_misc.at:2887             SORT: table sort (3)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 379  FAIL 26  CERR 78  XERR 0  SKIP 210
+PASS 381  FAIL 26  CERR 76  XERR 0  SKIP 210

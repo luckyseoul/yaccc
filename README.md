@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 48 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 49 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -93,7 +93,7 @@ COLUMN clause.
   which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 48 pass, built with gcc.
+All 49 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -106,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   379    26             78      210
+  693   381    26             76      210
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -186,7 +186,17 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 | `--debugging-mode` | compile as if `WITH DEBUGGING MODE` were specified: debugging lines and USE FOR DEBUGGING |
 | `--keep-c` | keep the generated C file next to the executable |
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
-| `--run` | run the program after building; remaining arguments are passed to it |
+| `--run` | run the program after building; its arguments follow, and ones that begin with `-` go after `--` |
+
+An option this compiler does not implement is an error, never a silent no-op:
+`yaccc prog.cbl -std=ibm` fails rather than building with the default dialect
+and saying nothing. Arguments for the program being run follow `--run`; those
+that begin with `-` follow `--`:
+
+```
+./yaccc prog.cbl --run 2026-10-28      # one argument to the program
+./yaccc prog.cbl --run -- --verbose    # an option-like argument to the program
+```
 
 Runtime environment:
 
@@ -311,8 +321,9 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   DEPENDING ON, ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH / SECTION /
   PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
   NORMAL STATUS], STOP literal, GOBACK [RETURNING].
-- Strings and tables: STRING, UNSTRING, INSPECT (TALLYING / REPLACING /
-  CONVERTING, BEFORE/AFTER), SEARCH, SEARCH ALL.
+- Strings and tables: STRING, UNSTRING (a literal or figurative constant is
+  accepted as the sending item, as GnuCOBOL and Micro Focus do), INSPECT
+  (TALLYING / REPLACING / CONVERTING, BEFORE/AFTER), SEARCH, SEARCH ALL.
 - Terminal I/O and program calls: DISPLAY, ACCEPT (incl. FROM DATE/DAY/TIME/
   DAY-OF-WEEK/ENVIRONMENT), CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION,
   `CALL "SYSTEM"`), CANCEL.
@@ -513,7 +524,8 @@ tests/cases/         differential tests and recorded GnuCOBOL baselines
 tests/difftest.py    differential test runner
 tests/nist/          NIST CCVS85 runner and the result logs of the runs above
 tests/gnucobol/      GnuCOBOL testsuite runner and the recorded results
-Makefile             make test | test-ref | nist | nist-all | gctest | examples | clean
+tests/cli_test.py    compiler command-line tests
+Makefile             make test | cli-test | test-ref | nist | nist-all | gctest | examples | clean
 ```
 
 ## License
