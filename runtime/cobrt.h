@@ -329,6 +329,15 @@ cob_s64 cob_get_int(const cob_field *f);
 void cob_set_int(cob_field *f, cob_s64 v);
 cob_field *cob_dec_field(cob_dec d);
 cob_field *cob_tmp_field(size_t size, const cob_attr *attr);
+
+/* PIC X ANY LENGTH: the field is as long as the caller's argument */
+static inline cob_field *cob_field_for_any_length(unsigned char *data, int n,
+                                                 const cob_attr *a)
+{
+	cob_field *f = cob_tmp_field((size_t)(n > 0 ? n : 0), a);
+	f->data = data;
+	return f;
+}
 int cob_d_to_str(cob_dec d, char *buf, size_t bufsz);
 
 /* ------------------------------------------------------------ move / compare */

@@ -1047,7 +1047,13 @@ class Parser:
             elif w == 'BASED':
                 raise self.err("BASED items are not supported")
             elif w == 'ANY':
-                raise self.err("ANY LENGTH items are not supported")
+                # PIC X ANY LENGTH: the size comes from the CALLing program
+                self.next()
+                self.expect('LENGTH')
+                if item.pic is None or item.pic.category not in ('ALPHANUMERIC', 'ALPHABETIC'):
+                    raise CompileError("ANY LENGTH requires an alphanumeric "
+                                       "PICTURE on a level 01 or 77 item", loc)
+                item.any_length = True
             else:
                 raise self.err("unexpected word in data description")
         self.expect_period()

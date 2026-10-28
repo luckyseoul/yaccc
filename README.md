@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 52 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 53 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -93,7 +93,7 @@ COLUMN clause.
   which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 52 pass, built with gcc.
+All 53 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -106,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   395    25             70      203
+  693   402    25             63      203
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -459,7 +459,9 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
 - SCREEN SECTION and COMMUNICATION SECTION.
 - Report Writer features added by the 2002 standard such as PRESENT WHEN,
   and OCCURS with STEP in report groups.
-- Pointers: ADDRESS OF, BASED, SET ADDRESS OF.
+- Pointers: ADDRESS OF, BASED, SET ADDRESS OF (ALLOCATE/FREE).
+- ANY LENGTH is implemented for LINKAGE items: the size comes from the
+  calling program's argument.
 - JSON PARSE (JSON GENERATE is implemented), XML PARSE/GENERATE.
 - Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.

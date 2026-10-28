@@ -86,7 +86,7 @@ PASS  run_extensions.at:3066       REDEFINES: non-referenced ambiguous item
 SKIP  run_extensions.at:3092       Obsolete 2002 keywords with COBOL2014
 PASS  run_extensions.at:3122       System routine with wrong number of parameters
 PASS  run_extensions.at:3165       System routine C$NARG
-CERR  run_extensions.at:3242       System routine C$PARAMSIZE
+PASS  run_extensions.at:3242       System routine C$PARAMSIZE
 PASS  run_extensions.at:3284       System routine C$CALLEDBY
 PASS  run_extensions.at:3330       System routine C$JUSTIFY
 PASS  run_extensions.at:3355       System routine C$PRINTABLE
@@ -214,7 +214,7 @@ PASS  run_functions.at:275         FUNCTION CONCAT / CONCATENATE
 PASS  run_functions.at:322         FUNCTION CONCATENATE with reference modding
 CERR  run_functions.at:350         FUNCTION CONTENT-LENGTH
 CERR  run_functions.at:384         FUNCTION CONTENT-OF
-CERR  run_functions.at:459         FUNCTION as CALL parameter BY CONTENT
+PASS  run_functions.at:459         FUNCTION as CALL parameter BY CONTENT
 PASS  run_functions.at:495         FUNCTION COS
 PASS  run_functions.at:519         FUNCTION CURRENCY-SYMBOL
 PASS  run_functions.at:542         FUNCTION CURRENT-DATE
@@ -567,11 +567,11 @@ SKIP  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTE
 SKIP  run_misc.at:3713             CALL C with callback, ENTRY-CONVENTION EXTERN
 SKIP  run_misc.at:3864             CALL in from C with init missing / implicit
 SKIP  run_misc.at:3916             CALL STATIC C from COBOL
-CERR  run_misc.at:3972             ANY LENGTH (1)
-CERR  run_misc.at:4015             ANY LENGTH (2)
-CERR  run_misc.at:4059             ANY LENGTH (3)
-CERR  run_misc.at:4102             ANY LENGTH (4)
-CERR  run_misc.at:4145             ANY LENGTH (5)
+PASS  run_misc.at:3972             ANY LENGTH (1)
+PASS  run_misc.at:4015             ANY LENGTH (2)
+PASS  run_misc.at:4059             ANY LENGTH (3)
+PASS  run_misc.at:4102             ANY LENGTH (4)
+PASS  run_misc.at:4145             ANY LENGTH (5)
 CERR  run_misc.at:4170             access to BASED item without allocation
 FAIL  run_misc.at:4211             access to OPTIONAL LINKAGE item not passed
 PASS  run_misc.at:4253             STOP RUN WITH NORMAL STATUS
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 395  FAIL 25  CERR 70  XERR 0  SKIP 203
+PASS 402  FAIL 25  CERR 63  XERR 0  SKIP 203

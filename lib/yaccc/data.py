@@ -246,6 +246,7 @@ class DataItem:
         self.rw_next_group = None   # ('ABS', n) ('REL', n) ('NP', 0)
         self.rw_type = None         # (kind, control-name|'FINAL'|None)
         self.src_name = None            # name as written in the source
+        self.any_length = False         # PIC X ANY LENGTH: size from the caller
         self.rw_column = None
         self.rw_just = None             # COLUMN LEFT / RIGHT / CENTER: 'L', 'R', 'C'
         self.rw_source = None

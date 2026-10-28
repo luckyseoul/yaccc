@@ -1273,11 +1273,31 @@ class CodeGen(ReportWriterGen, DebugGen):
             return f
         if it.level == 88:
             raise CompileError(f"condition-name '{ref.name}' cannot be used as a data item", ref.loc)
+        if getattr(it, 'any_length', False):
+            # PIC X ANY LENGTH: the calling program's field decides the size
+            n = self.any_length_param(self.prog, ref)
+            f = (f"cob_field_for_any_length({it.storage}, "
+                 f"cob_frame_param_size({n}), &{self.item_attr(it)})")
+            if ref.refmod:
+                f = self.apply_refmod(f, ref.refmod, ref.loc)
+            return f
         off = self.offset_expr(ref, it)
         f = f"CF({it.storage} + {off}, {self.size_expr(it, receiving)}, &{self.item_attr(it)})"
         if ref.refmod:
             f = self.apply_refmod(f, ref.refmod, ref.loc)
         return f
+
+    def any_length_param(self, prog, ref):
+        """The 1-based USING position of an ANY LENGTH item, for
+        cob_frame_param_size. Items after it in the LINKAGE section do not
+        shift it: each LINKAGE item is its own parameter."""
+        it = self.resolve(ref)
+        names = [self.resolve(r).name for _, r in prog.using]
+        try:
+            return names.index(it.name) + 1
+        except ValueError:
+            raise CompileError(f"ANY LENGTH item '{ref.name}' must be named in "
+                               f"the PROCEDURE DIVISION USING list", ref.loc) from None
 
     def data_ptr(self, ref):
         """C expression for data pointer of a reference (no refmod)."""
@@ -1506,6 +1526,10 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return f"({it.special})->size"
             if r.refmod:
                 return f"({self.field(r)})->size"
+            if getattr(it, 'any_length', False):
+                # PIC X ANY LENGTH: the caller's field decides it
+                n = self.any_length_param(self.prog, r)
+                return f"cob_frame_param_size({n})"
             return self.size_expr(it)
         return f"({self.field(r)})->size"
 
@@ -1908,8 +1932,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         if isinstance(e, DataRef) and not e.refmod:
             it = self.resolve(e)
             if isinstance(it, DataItem) and it.level != 88 and not getattr(it, 'special', None) and \
+                    not getattr(it, 'any_length', False) and \
                     it.type in (T_ALNUM, T_ALPHA, T_GROUP, T_ALNUM_EDITED, T_NUM_EDITED) and \
                     (it.type != T_GROUP or it.contains_odo() is None):
+                # ANY LENGTH is excluded: its size is known only at run time,
+                # and comparing the PICTURE's size compares one character
                 return (self.data_ptr(e), it.size)
         return None
 
@@ -2107,6 +2134,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return self.fast_set(fd, fv[0], fv[1], fv[2])
         if isinstance(dst, DataRef) and not dst.refmod:
             it = self.resolve(dst)
+            if getattr(it, 'any_length', False):
+                return None         # the size is known only at run time
             if isinstance(it, DataItem) and it.type in (T_ALNUM, T_ALPHA, T_GROUP) and \
                     not (it.flags & F_JUSTIFIED) and it.level != 88 and not getattr(it, 'special', None) and \
                     (it.type != T_GROUP or it.contains_odo() is None):
@@ -2115,6 +2144,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                     src_a = self.alnum_fixed(src)
                 elif isinstance(src, DataRef) and not src.refmod:
                     si = self.resolve(src)
+                    if getattr(si, 'any_length', False):
+                        si = None       # size known only at run time
                     if isinstance(si, DataItem) and si.type in (T_ALNUM, T_ALPHA, T_GROUP) and \
                             si.level != 88 and (si.type != T_GROUP or si.contains_odo() is None) and \
                             not getattr(si, 'special', None):
