@@ -284,6 +284,8 @@ class SourceSet:
             self.decimal_comma = True
         toks = self._tokenize(path, raw, 0)
         self.directives.check_closed(Loc(path, len(raw)))
+        if getattr(self.directives, 'dpc_in_data', None):
+            self.dpc_in_data = self.directives.dpc_in_data
         toks = _concat_literals(toks)
         toks = _apply_replace_stmts(toks)
         last = toks[-1].loc if toks else Loc(path, 1)

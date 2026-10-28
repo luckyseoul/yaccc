@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 51 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 52 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -93,7 +93,7 @@ COLUMN clause.
   which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 51 pass, built with gcc.
+All 52 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -106,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   387    25             71      210
+  693   395    25             70      203
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -117,8 +117,9 @@ The run fails if a test recorded as passing in `tests/gnucobol/results.txt` no
 longer passes. `make gctest-update` records a new baseline.
 
 - **Skipped** tests need things the harness can't provide: cobc dialect options
-  (`-std=ibm`, `-fnotrunc` and so on), C code, a terminal (SCREEN SECTION),
-  XML or JSON support, or shell scripting.
+  it has no equivalent for (`-fnotrunc` and so on), C code, a terminal (SCREEN
+  SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
+  tests gated on those now run.
 - **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
   features YACCC doesn't have yet: pointers and BASED items, ANY LENGTH,
   FUNCTION-ID, CHAINING, ENTRY, TYPEDEF, COMP-6 and Report Writer PRESENT
@@ -356,6 +357,9 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   DEPENDING ON, ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH / SECTION /
   PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
   NORMAL STATUS], STOP literal, GOBACK [RETURNING].
+- JSON: JSON GENERATE with NAME OF ... IS, SUPPRESS, COUNT IN, ON EXCEPTION /
+  NOT ON EXCEPTION, OCCURS as arrays, REDEFINES resolved to the first item,
+  JSON-CODE, and the `$SET DPC-IN-DATA` / `-fdpc-in-data` decimal comma.
 - Strings and tables: STRING, UNSTRING (a literal or figurative constant is
   accepted as the sending item, as GnuCOBOL and Micro Focus do), INSPECT
   (TALLYING / REPLACING / CONVERTING, ALL / LEADING / FIRST / TRAILING,
@@ -425,6 +429,19 @@ stored truncated and the exception is still raised, so `COMPUTE X = 10` on
 `PIC 9` sets X to 0 and EXCEPTION-STATUS to EC-SIZE-OVERFLOW. `SET LAST
 EXCEPTION TO OFF` clears the last condition.
 
+**JSON GENERATE.** Writes the JSON document for a data item into an
+alphanumeric receiving field. A group becomes an object, an elementary item a
+string or a number according to its USAGE, OCCURS an array, and FILLER,
+condition names, RENAMES and the later items of a REDEFINES set are not
+generated. `NAME OF x IS 'y'` renames an item (and `NAME OF x IS OMITTED`
+leaves out its name while keeping its members), `SUPPRESS` omits items, and a
+group left with nothing to write is itself omitted. Alphanumeric values lose
+their trailing spaces (leading ones for a JUSTIFIED item) and are escaped as
+the standard requires; numeric values are written without leading zeros and
+with the digits their PICTURE declares, so `PIC 99V999` holding 0.12 is
+`0.120`. `COUNT IN` reports the length the document needed and JSON-CODE is 1
+when it did not fit the receiving field. `JSON PARSE` is not implemented.
+
 **Library routines.** CALL by name reaches these routines directly:
 - bytes and text: CBL_AND, CBL_OR, CBL_NOR, CBL_XOR, CBL_IMP, CBL_NIMP, CBL_EQ,
   CBL_NOT, CBL_TOUPPER, CBL_TOLOWER, C$TOUPPER, C$TOLOWER, C$JUSTIFY,
@@ -443,6 +460,7 @@ EXCEPTION TO OFF` clears the last condition.
 - Report Writer features added by the 2002 standard such as PRESENT WHEN,
   and OCCURS with STEP in report groups.
 - Pointers: ADDRESS OF, BASED, SET ADDRESS OF.
+- JSON PARSE (JSON GENERATE is implemented), XML PARSE/GENERATE.
 - Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.
 - Relative and indexed files are held in memory while open and written back on

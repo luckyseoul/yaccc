@@ -188,6 +188,18 @@ class Compute(Stmt):
 
 
 @dataclass(eq=False)
+class JsonGenerate(Stmt):
+    """JSON GENERATE out FROM src, with NAME OF / SUPPRESS / COUNT IN."""
+    out: Any = None
+    src: Any = None
+    names: list = field(default_factory=list)      # (DataRef, str|None); None = IS OMITTED
+    suppress: list = field(default_factory=list)
+    count_in: Any = None
+    on_exc: Optional[list] = None
+    not_on_exc: Optional[list] = None
+
+
+@dataclass(eq=False)
 class Display(Stmt):
     items: List[Any]
     upon: str = 'SYSOUT'

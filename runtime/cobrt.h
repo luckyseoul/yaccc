@@ -513,6 +513,28 @@ cob_field *cob_fn_exception_status(void);
 void cob_clear_exception(void);
 extern int cob_zero_div_seen;          /* a DIVIDE by zero ran in this statement */
 
+/* JSON GENERATE */
+typedef struct cob_jsonw {
+	unsigned char *dst;
+	size_t cap;
+	size_t len;
+	int overflow;
+} jsonw;
+void cob_json_code_reset(void);
+int cob_json_code_value(void);
+void cob_json_code_set(int v);
+void cob_json_init(jsonw *w, cob_field *out);
+void cob_json_obj_open(jsonw *w);
+void cob_json_obj_close(jsonw *w);
+void cob_json_arr_open(jsonw *w);
+void cob_json_arr_close(jsonw *w);
+void cob_json_comma(jsonw *w);
+void cob_json_key(jsonw *w, const char *name);
+void cob_json_str(jsonw *w, cob_field *f, int justified);
+void cob_json_num(jsonw *w, cob_field *f, int dpc);
+void cob_json_finish(jsonw *w, cob_field *count_in);
+extern cob_field cob_json_code_reg;       /* JSON-CODE */
+
 /* calling chain for MODULE-ID / MODULE-CALLER-ID */
 void cob_module_push(const char *name, int argc);
 void cob_module_pop(void);

@@ -16,7 +16,8 @@ from .parser import Parser
 HERE = os.path.dirname(os.path.abspath(__file__))        # .../lib/yaccc
 PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
 RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
-RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c', 'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c']
+RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
+               'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c']
 VERSION = '1.0'
 
 
@@ -81,6 +82,8 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
         toks = ss.load(p)
         parser = Parser(toks, ss.directives.vars)
         parser.missing_period = getattr(opts, 'missing_period', False)
+        if getattr(ss, 'dpc_in_data', None) and opts.dpc_in_data == 'none':
+            opts.dpc_in_data = ss.dpc_in_data
         programs.extend(parser.parse_unit())
     opts.source_name = paths[0]
     opts.debugging = debugging
@@ -145,6 +148,10 @@ def main(argv=None):
                     help='a BINARY item is limited to the digits of its PICTURE (default)')
     ap.add_argument('-fno-binary-truncate', dest='binary_truncate', action='store_false',
                     help='a BINARY item may use the whole capacity of its USAGE')
+    ap.add_argument('-fdpc-in-data', dest='dpc_in_data', default=None,
+                    choices=['none', 'json', 'xml', 'all'],
+                    help='use the decimal comma in JSON/XML numbers when '
+                         'DECIMAL-POINT IS COMMA (default: none)')
     ap.add_argument('-fmissing-period', dest='missing_period', action='store_true', default=None,
                     help="accept a statement where a '.' is required")
     ap.add_argument('-fno-missing-period', dest='missing_period', action='store_false',
@@ -187,6 +194,8 @@ def main(argv=None):
     opts.binary_size = args.binary_size or d.binary_size
     opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
     opts.missing_period = d.missing_period if args.missing_period is None else args.missing_period
+    if args.dpc_in_data is not None:
+        opts.dpc_in_data = args.dpc_in_data
     opts.check = args.check
     opts.line_map = args.debug
     fmt = args.fmt or 'auto'

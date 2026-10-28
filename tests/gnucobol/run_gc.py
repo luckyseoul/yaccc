@@ -41,7 +41,11 @@ QUADRIGRAPHS = (('@<:@', '['), ('@:>@', ']'), ('@S|@', '$'), ('@%:@', '#'), ('@&
 IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra'}
 FLAG_MAP = {'-free': ['-free'], '-fixed': ['-fixed'], '-fdebugging-line': ['--debugging-mode'],
             '-fbinary-size=2-4-8': ['--binary-size', '2-4-8'],
-            '-fbinary-size=1-2-4-8': ['--binary-size', '1-2-4-8']}
+            '-fbinary-size=1-2-4-8': ['--binary-size', '1-2-4-8'],
+            '-fdpc-in-data=none': ['-fdpc-in-data', 'none'],
+            '-fdpc-in-data=json': ['-fdpc-in-data', 'json'],
+            '-fdpc-in-data=xml': ['-fdpc-in-data', 'xml'],
+            '-fdpc-in-data=all': ['-fdpc-in-data', 'all']}
 
 
 class Test:
@@ -169,8 +173,10 @@ def parse_file(path):
             pass
         elif name == 'AT_SKIP_IF':
             cond = expand(args[0]) if args else ''
-            if 'COB_HAS_ISAM' not in cond:          # yaccc has indexed files
-                m = re.search(r'COB_HAS_(\w+)', cond)
+            # features yaccc provides; a test gated on one of these is run
+            HAVE = ('ISAM', 'JSON')
+            m = re.search(r'COB_HAS_(\w+)', cond)
+            if not (m and m.group(1) in HAVE):
                 cur.skip_reason = cur.skip_reason or (f'needs {m.group(1).lower()}' if m else 'AT_SKIP_IF')
         elif name == 'AT_XFAIL_IF':
             cur.skip_reason = cur.skip_reason or 'expected failure in GnuCOBOL'

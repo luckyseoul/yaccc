@@ -493,7 +493,7 @@ PASS  run_misc.at:604              MOVE with group refmod
 PASS  run_misc.at:629              MOVE indexes
 SKIP  run_misc.at:655              MOVE X'00'
 PASS  run_misc.at:690              MOVE Z'literal'
-CERR  run_misc.at:732              Floating continuation indicator
+PASS  run_misc.at:732              Floating continuation indicator
 PASS  run_misc.at:754              Fixed continuation indicator
 PASS  run_misc.at:796              Concatenation operator
 PASS  run_misc.at:820              SOURCE FIXED/FREE directives
@@ -633,13 +633,13 @@ SKIP  run_ml.at:300                XML GENERATE record selection
 SKIP  run_ml.at:344                XML GENERATE trimming
 SKIP  run_ml.at:441                XML DPC-IN-DATA directive
 SKIP  run_ml.at:472                XML dpc-in-data config option
-SKIP  run_ml.at:516                JSON GENERATE general
-SKIP  run_ml.at:573                JSON GENERATE SUPPRESS
-SKIP  run_ml.at:612                JSON GENERATE exceptions
-SKIP  run_ml.at:677                JSON GENERATE record selection
-SKIP  run_ml.at:721                JSON GENERATE trimming
-SKIP  run_ml.at:821                JSON DPC-IN-DATA directive
-SKIP  run_ml.at:852                JSON dpc-in-data config option
+PASS  run_ml.at:516                JSON GENERATE general
+PASS  run_ml.at:573                JSON GENERATE SUPPRESS
+PASS  run_ml.at:612                JSON GENERATE exceptions
+PASS  run_ml.at:677                JSON GENERATE record selection
+PASS  run_ml.at:721                JSON GENERATE trimming
+PASS  run_ml.at:821                JSON DPC-IN-DATA directive
+PASS  run_ml.at:852                JSON dpc-in-data config option
 PASS  run_refmod.at:25             Static reference modification
 PASS  run_refmod.at:57             Dynamic reference modification
 PASS  run_refmod.at:94             Offset underflow
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 387  FAIL 25  CERR 71  XERR 0  SKIP 210
+PASS 395  FAIL 25  CERR 70  XERR 0  SKIP 203

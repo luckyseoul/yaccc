@@ -249,8 +249,35 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
                 prev.text = prev.text.rstrip() + s
                 continue
             emit(LogicalLine(text, loc, not raw[:1].isspace() and raw != '', len(text)))
+    _join_trailing_hyphen(out)
     _strip_comment_entries(out, fmt)
     return out, regions
+
+
+def _join_trailing_hyphen(lines):
+    """A line ending with '-' continues on the next one, which is how long
+    literals are split in source that has been formatted to fit. COBOL words
+    may contain hyphens, so joining without a space is right for both:
+    'ABCDEF'-  /  'GHIJ'  is one literal, and MY- / VAR is one word."""
+    i = 0
+    while i < len(lines) - 1:
+        t = lines[i].text.rstrip()
+        if not t.endswith('-'):
+            i += 1
+            continue
+        nxt = lines[i + 1].text.lstrip()
+        if len(t) > 1 and t[-2] in ('"', "'") and t[-2] == nxt[:1]:
+            # a quoted literal split after its closing quote: the quote and the
+            # hyphen are one continuation marker, and the next line opens the
+            # literal again, so both quotes go
+            lines[i].text = t[:-2] + nxt[1:]
+            del lines[i + 1]
+            continue
+        # Anything else is a hyphen in the code, not a continuation: the token
+        # stream already runs across lines, and joining would fuse an operator
+        # or a word-ending hyphen with the next line ("(10 -" + "NAME" must not
+        # become "-NAME").
+        i += 1
 
 
 def _directive(text, mode, loc, dirs=None):

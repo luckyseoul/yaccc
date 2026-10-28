@@ -929,13 +929,17 @@ class Parser:
         if not (1 <= level <= 49 or level in (66, 77, 78, 88)):
             raise CompileError(f"invalid level number {lt.val}", loc)
         name = None
+        src_name = None
         in_report = getattr(self, 'in_report', False)
         if self.accept('FILLER'):
             name = None
         elif self.is_user_word() and self.peek().kind == 'WORD' and \
                 not (in_report and self.peek().up in RW_CLAUSE_WORDS):
-            name = self.next().up
+            nt = self.next()
+            name = nt.up
+            src_name = nt.val          # as written: JSON GENERATE uses this case
         item = DataItem(level, name, loc)
+        item.src_name = src_name
         prog = self.prog
         while self.peek().kind not in ('.', 'EOF'):
             t = self.peek()
@@ -1599,6 +1603,64 @@ class Parser:
         return st
 
     # ---- DISPLAY / ACCEPT
+    def p_JSON(self, loc):
+        """JSON GENERATE out FROM src [NAME OF ...] [SUPPRESS ...] [COUNT IN n]
+        [ON EXCEPTION ...] [NOT ON EXCEPTION ...] [END-JSON]"""
+        if not self.accept('GENERATE'):
+            raise self.err("JSON PARSE is not supported (only JSON GENERATE)")
+        out = self.parse_identifier()
+        self.expect('FROM')
+        src = self.parse_identifier()
+        st = JsonGenerate(loc, out, src)
+        while True:
+            if self.accept('NAME'):
+                self.accept('OF')
+                while True:
+                    ref = self.parse_identifier()
+                    self.accept('IS')
+                    if self.accept('OMITTED'):
+                        st.names.append((ref, None))
+                    else:
+                        t = self.peek()
+                        if t.kind != 'STR':
+                            raise self.err("a JSON name must be a literal")
+                        self.next()
+                        st.names.append((ref, t.val.decode('latin-1')))
+                    # further entries follow after a comma or another OF
+                    if self.accept('OF'):
+                        continue
+                    if self.peek().kind == '.' or self.is_kind('EOF'):
+                        break
+                    if self.is_word('SUPPRESS', 'COUNT', 'ON', 'NOT', 'END-JSON'):
+                        break
+                    if self.is_user_word():
+                        continue
+                    break
+            elif self.accept('SUPPRESS'):
+                while self.is_user_word():
+                    st.suppress.append(self.parse_identifier())
+            elif self.is_word('COUNT') and self.is_word('IN', k=1):
+                self.next(); self.next()
+                st.count_in = self.parse_identifier()
+            elif self.accept('ON') and self.accept('EXCEPTION'):
+                st.on_exc = self.parse_statements()
+            elif self.is_word('NOT') and (self.is_word('ON', k=1)
+                                          or self.is_word('EXCEPTION', k=1)):
+                self.next()
+                if self.accept('ON'):
+                    pass
+                self.expect('EXCEPTION')
+                st.not_on_exc = self.parse_statements()
+            elif self.accept('EXCEPTION'):
+                st.on_exc = self.parse_statements()
+            else:
+                break
+        if self.accept('END_JSON'):
+            pass
+        elif self.is_word('END-JSON'):
+            self.next()
+        return st
+
     def p_DISPLAY(self, loc):
         items = []
         while self.is_operand_start() or self.is_word('ALL'):

@@ -28,6 +28,7 @@ class Directives:
         self.params = dict(self.vars)      # -D values, for AS PARAMETER
         # conditional state: list of [active, taken, kind] per open >>IF / >>EVALUATE
         self.stack = []
+        self.dpc_in_data = None
 
     @property
     def active(self):
@@ -148,6 +149,11 @@ class Directives:
         if parts and parts[0].upper() == 'CONSTANT' and len(parts) > 1:
             self._define(parts[1], loc)
             return True
+        if parts and parts[0].upper() == 'DPC-IN-DATA':
+            # $SET DPC-IN-DATA "JSON": the decimal comma inside JSON numbers
+            val = parts[1].strip().strip('"\'').lower() if len(parts) > 1 else 'all'
+            self.dpc_in_data = val if val in ('json', 'xml', 'all', 'none') else 'all'
+            return True
         return False
 
     def _dollar(self, s, loc):
@@ -173,6 +179,8 @@ class Directives:
             if self.active:
                 print(rest.strip())
             return True
+        if word == 'SET':
+            return self._set(rest, loc)
         return False
 
     # ------------------------------------------------------------ conditions

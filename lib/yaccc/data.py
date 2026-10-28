@@ -245,6 +245,7 @@ class DataItem:
         self.rw_line = None         # ('ABS', n) ('REL', n) ('ABSNP', n) ('NP', 0)
         self.rw_next_group = None   # ('ABS', n) ('REL', n) ('NP', 0)
         self.rw_type = None         # (kind, control-name|'FINAL'|None)
+        self.src_name = None            # name as written in the source
         self.rw_column = None
         self.rw_just = None             # COLUMN LEFT / RIGHT / CENTER: 'L', 'R', 'C'
         self.rw_source = None

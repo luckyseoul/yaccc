@@ -77,6 +77,7 @@ class Options:
         self.binary_truncate = True  # a BINARY item holds its PICTURE's digits
         self.missing_period = False  # accept a statement where '.' is required
         self.dialect = 'default'
+        self.dpc_in_data = 'none'    # -fdpc-in-data: '.' or ',' in JSON/XML numbers
         self.check = True
         self.source_name = ''
         self.debugging = False
@@ -587,7 +588,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 ('TALLY', '&cob_tally', T_NUM_BINARY, 5, 0, 4),
                 ('SORT-RETURN', '&cob_sort_return_reg', T_NUM_BINARY, 4, F_SIGNED, 4),
                 ('WHEN-COMPILED', '&cob_wc_reg', T_ALNUM, 0, 0, 16),
-                ('NUMBER-OF-CALL-PARAMETERS', '&cob_ncp_reg', T_NUM_BINARY, 9, F_SIGNED, 4)):
+                ('NUMBER-OF-CALL-PARAMETERS', '&cob_ncp_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
+                ('JSON-CODE', '&cob_json_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4)):
             if nm not in ctx.names:
                 it = DataItem(1, nm, prog.loc)
                 it.special = expr
@@ -2430,6 +2432,130 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("}")
 
     # ---------------------------------------------------------------- DISPLAY / ACCEPT
+    # ---------------------------------------------------------------- JSON
+    JSON_NUMERIC = (T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5,
+                    T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX)
+
+    def g_JsonGenerate(self, s):
+        em = self.em
+        src = self.resolve(s.src)
+        if isinstance(src, IndexName):
+            raise CompileError("JSON GENERATE needs a data item", s.loc)
+        self.check_receiving(s.out)
+        names, omitted, suppress = {}, set(), set()
+        for ref, nm in s.names:
+            it = self.resolve(ref)
+            if nm is None:
+                omitted.add(id(it))
+            else:
+                names[id(it)] = nm
+        for ref in s.suppress:
+            suppress.add(id(self.resolve(ref)))
+        em("{")
+        em.ind += 1
+        em("jsonw cob_jw;")
+        em("cob_json_code_reset();")
+        em(f"cob_json_init(&cob_jw, {self.field(s.out)});")
+        em("cob_json_obj_open(&cob_jw);")
+        self.json_member(src, names, omitted, suppress, [True], [], top=True)
+        em("cob_json_obj_close(&cob_jw);")
+        cin = self.field(s.count_in) if s.count_in is not None else 'NULL'
+        em(f"cob_json_finish(&cob_jw, {cin});")
+        em("int cob_jcode = cob_json_code_value();")
+        self.handlers('cob_jcode', s.on_exc, s.not_on_exc)
+        em("(void)cob_jcode;")
+        em.ind -= 1
+        em("}")
+
+    def json_name(self, it, names):
+        if id(it) in names:
+            return names[id(it)]
+        return getattr(it, 'src_name', None) or it.name
+
+    def json_members(self, it, names, omitted, suppress):
+        """The children of a group that JSON GENERATE writes: no FILLER, no
+        condition names, no RENAMES, only the first item of a REDEFINES set,
+        and no group left with nothing to write."""
+        out = []
+        for c in it.children:
+            if c.level in (66, 88) or not c.name or id(c) in suppress:
+                continue
+            if c.redefines is not None:
+                continue            # the item it redefines already covers it
+            if c.children and not self.json_members(c, names, omitted, suppress):
+                continue            # a group whose every member is suppressed
+            out.append(c)
+        return out
+
+    def json_member(self, it, names, omitted, suppress, first, subs, top=False):
+        em = self.em
+        name = self.json_name(it, names)
+        om = id(it) in omitted
+        group = bool(it.children)
+        if group:
+            members = self.json_members(it, names, omitted, suppress)
+            if not om:
+                if not first[0]:
+                    em("cob_json_comma(&cob_jw);")
+                first[0] = False
+                em(f'cob_json_key(&cob_jw, {c_string(name)});')
+            if not om or not top:
+                em("cob_json_obj_open(&cob_jw);")
+            inner = [True]
+            for c in members:
+                self.json_member(c, names, omitted, suppress, inner, subs)
+            if not om or not top:
+                em("cob_json_obj_close(&cob_jw);")
+            return
+        # an elementary item, possibly with OCCURS -> an array
+        occ = it.occurs
+        if occ is not None:
+            if not om:
+                if not first[0]:
+                    em("cob_json_comma(&cob_jw);")
+                first[0] = False
+                em(f'cob_json_key(&cob_jw, {c_string(name)});')
+            em("cob_json_arr_open(&cob_jw);")
+            i = self.sym('ji_')
+            em(f"for (cob_s64 {i} = 0; {i} < {occ.max}; {i}++) {{")
+            em.ind += 1
+            em(f"if ({i}) cob_json_comma(&cob_jw);")
+            self.json_value(it, subs + [(i, it.size)])
+            em.ind -= 1
+            em("}")
+            em("cob_json_arr_close(&cob_jw);")
+            return
+        if not om:
+            if not first[0]:
+                em("cob_json_comma(&cob_jw);")
+            first[0] = False
+            em(f'cob_json_key(&cob_jw, {c_string(name)});')
+        self.json_value(it, subs)
+
+    def json_value(self, it, subs):
+        em = self.em
+        field = self.json_field(it, subs)
+        if it.type in self.JSON_NUMERIC:
+            em(f"cob_json_num(&cob_jw, {field}, {self.json_dpc()});")
+        else:
+            just = 1 if (it.flags & F_JUSTIFIED) else 0
+            em(f"cob_json_str(&cob_jw, {field}, {just});")
+
+    def json_dpc(self):
+        """The decimal separator for JSON numbers: ',' only when a comma
+        decimal point is in force and -fdpc-in-data asks for it in JSON."""
+        prog = getattr(self.ctx, 'prog', None) or getattr(self, 'prog', None)
+        if prog is not None and getattr(prog, 'decimal_comma', False) \
+                and getattr(self.opts, 'dpc_in_data', 'none') in ('json', 'all'):
+            return "','"
+        return "'.'"
+
+    def json_field(self, it, subs):
+        """C expression for an elementary item, applying enclosing OCCURS."""
+        term = [str(it.offset)] + [f"{v} * {stride}" for v, stride in subs]
+        total = ' + '.join(term)
+        return f"CF({it.storage} + ({total}), {it.size}, &{self.item_attr(it)})"
+
     def g_Display(self, s):
         em = self.em
         upon = s.upon
