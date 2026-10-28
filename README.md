@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 59 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 60 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -96,7 +96,7 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 59 pass, built with gcc.
+All 60 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   424    26             44      199
+  693   425    28             41      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -436,6 +436,13 @@ stored truncated and the exception is still raised, so `COMPUTE X = 10` on
 `PIC 9` sets X to 0 and EXCEPTION-STATUS to EC-SIZE-OVERFLOW. `SET LAST
 EXCEPTION TO OFF` clears the last condition.
 
+**Pointers, BASED items.** A `USAGE POINTER` item holds an address.
+`SET ADDRESS OF item TO <pointer>` rebinds a LINKAGE item to storage chosen at
+run time, where the pointer is `ADDRESS OF x`, another POINTER item, or NULL;
+`SET pointer TO ...` does the same for the pointer itself, and `INITIALIZE`
+sets a pointer to NULL. Pointers compare against each other, against
+`ADDRESS OF`, and against NULL, and can be passed to a CALL.
+
 **Pointers, BASED items.** A level 01/77 item may be `BASED`: its storage is
 allocated by `ALLOCATE item [INITIALIZED]` (the VALUE clauses apply when
 `INITIALIZED` is given) and released by `FREE item`, which also clears the
@@ -496,8 +503,8 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
 - SCREEN SECTION and COMMUNICATION SECTION.
 - Report Writer features added by the 2002 standard such as PRESENT WHEN,
   and OCCURS with STEP in report groups.
-- SET ADDRESS OF a pointer to arbitrary storage. ADDRESS OF, BASED,
-  ALLOCATE and FREE are implemented.
+- SYNCHRONIZED alignment: items are laid out packed, so a `POINTER, SYNC`
+  item in a group is not aligned as it should be.
 - ANY LENGTH is implemented for LINKAGE items: the size comes from the
   calling program's argument.
 - JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.

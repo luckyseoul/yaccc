@@ -547,6 +547,19 @@ cob_field *cob_fn_exception_statement(void);
 cob_field *cob_fn_exception_status(void);
 void cob_clear_exception(void);
 const char *cob_chain_arg(int n);   /* CHAINING argument n, or NULL */
+/* a POINTER item holds the address itself */
+static inline unsigned char *cob_pointer_get(const cob_field *f)
+{
+	unsigned char *p = NULL;
+	memcpy(&p, f->data, f->size < sizeof p ? f->size : sizeof p);
+	return p;
+}
+static inline void cob_pointer_set(cob_field *f, const void *v)
+{
+	unsigned char *p = (unsigned char *)v;
+	memset(f->data, 0, f->size);
+	memcpy(f->data, &p, f->size < sizeof p ? f->size : sizeof p);
+}
 /* ALLOCATE / FREE */
 /* a BASED item that was never allocated is a clean error, not a wild write */
 static inline unsigned char *cob_based_ptr(unsigned char *p, const char *name)

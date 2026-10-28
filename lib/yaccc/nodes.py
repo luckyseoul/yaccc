@@ -398,10 +398,11 @@ class Initialize(Stmt):
 
 @dataclass(eq=False)
 class SetStmt(Stmt):
-    kind: str                       # TO UPDOWN TRUE FALSE
+    kind: str                       # TO UPDOWN TRUE FALSE ADDRESS EXCEPTION
     targets: List[Any]
     value: Any = None
     down: bool = False
+    addr_ref: Any = None            # SET ADDRESS OF addr_ref TO value
 
 
 @dataclass(eq=False)

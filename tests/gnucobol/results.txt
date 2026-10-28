@@ -38,7 +38,7 @@ SKIP  run_extensions.at:101        ACUCOBOL literals
 SKIP  run_extensions.at:127        HP COBOL octal literals
 PASS  run_extensions.at:188        Hexadecimal numeric literals
 CERR  run_extensions.at:217        Semi-parenthesized condition
-CERR  run_extensions.at:237        ADDRESS OF
+PASS  run_extensions.at:237        ADDRESS OF
 CERR  run_extensions.at:287        LENGTH OF
 PASS  run_extensions.at:451        SET TO SIZE OF
 PASS  run_extensions.at:488        WHEN-COMPILED
@@ -147,7 +147,7 @@ SKIP  run_file.at:1796             ASSIGN with COB_FILE_PATH
 PASS  run_file.at:1833             ASSIGN DYNAMIC with LOCAL-STORAGE item
 PASS  run_file.at:1870             ASSIGN DYNAMIC with LOCAL-STORAGE item and INITIAL prog
 CERR  run_file.at:1910             ASSIGN DYNAMIC with BASED data item
-CERR  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
+FAIL  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
 PASS  run_file.at:2168             ASSIGN DYNAMIC with empty data item
 PASS  run_file.at:2208             ASSIGN DYNAMIC with unset implicit data item
 CERR  run_file.at:2240             INDEXED file key-name
@@ -390,7 +390,7 @@ PASS  run_fundamental.at:3963      Numeric operations (7)
 PASS  run_fundamental.at:4255      Numeric operations (8)
 PASS  run_fundamental.at:4305      ADD CORRESPONDING
 PASS  run_fundamental.at:4353      ADD CORRESPONDING no match
-CERR  run_fundamental.at:4403      SYNC in OCCURS
+FAIL  run_fundamental.at:4403      SYNC in OCCURS
 PASS  run_fundamental.at:4443      88 level with THRU
 PASS  run_fundamental.at:4538      88 level with FILLER
 PASS  run_fundamental.at:4567      88 level with FALSE IS clause
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 424  FAIL 26  CERR 44  XERR 0  SKIP 199
+PASS 425  FAIL 28  CERR 41  XERR 0  SKIP 199

@@ -2314,10 +2314,18 @@ class Parser:
             self.next(); self.next()
             self.expect('TO')
             return SetStmt(loc, 'EXCEPTION', [], self.expect('OFF').up)
+        # SET ADDRESS OF item TO pointer: point a LINKAGE item at storage
+        if self.is_word('ADDRESS') and self.is_word('OF', k=1):
+            self.next(); self.next()
+            ref = self.parse_identifier()
+            self.expect('TO')
+            st = SetStmt(loc, 'ADDRESS', [], self.parse_operand())
+            st.addr_ref = ref
+            return st
         targets = []
         while self.is_user_word() or self.is_word('ADDRESS'):
             if self.is_word('ADDRESS'):
-                raise self.err("SET ADDRESS OF is not supported")
+                raise self.err("SET ADDRESS OF needs an item after OF")
             targets.append(self.parse_identifier())
         if not targets:
             raise self.err("SET target expected")

@@ -2073,7 +2073,8 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def rel(self, l, op, r):
         cop = CMP_OP[op]
-        if isinstance(l, AddressOf) or isinstance(r, AddressOf):
+        if isinstance(l, AddressOf) or isinstance(r, AddressOf) or \
+                self._is_pointer(l) or self._is_pointer(r):
             return f"({self._addr(l)} {cop} {self._addr(r)})"
         if self.is_numeric(l) and self.is_numeric(r):
             a = self.fx(l)
@@ -2103,11 +2104,25 @@ class CodeGen(ReportWriterGen, DebugGen):
             return f"(cob_d_cmp({self.dec(l)}, {self.dec(r)}) {cop} 0)"
         return f"(cob_cmp({self.field(l)}, {self.field(r)}) {cop} 0)"
 
+    def _is_pointer(self, e):
+        if not isinstance(e, DataRef):
+            return False
+        try:
+            it = self.resolve(e)
+        except Exception:
+            return False
+        return getattr(it, 'type', None) == T_POINTER
+
     def _addr(self, e):
         """A pointer value as a C expression, for comparing ADDRESS OF."""
         if isinstance(e, AddressOf):
             return f"((void *){self.address_of(e.ref)})"
         if isinstance(e, Figurative) and e.kind == 'NULL':
+            return "((void *)0)"
+        it = self.resolve(e) if isinstance(e, DataRef) else None
+        if it is not None and getattr(it, 'type', None) == T_POINTER:
+            return f"((void *)cob_pointer_get({self.field(e)}))"
+        if isinstance(e, NumLit) and int(e.digits or '0') == 0:
             return "((void *)0)"
         raise CompileError("ADDRESS OF can only be compared with NULL or "
                            "another ADDRESS OF", getattr(e, 'loc', None))
@@ -2648,6 +2663,18 @@ class CodeGen(ReportWriterGen, DebugGen):
                                s.target.loc)
         em(f"cob_free_chars({it.storage});")
         em(f"{it.storage} = NULL;")
+
+    def pointer_value(self, e):
+        """A pointer-valued expression, as an unsigned char*."""
+        if isinstance(e, AddressOf):
+            return self.address_of(e.ref)
+        if isinstance(e, Figurative) and e.kind == 'NULL':
+            return "NULL"
+        it = self.resolve(e) if isinstance(e, DataRef) else None
+        if it is not None and getattr(it, 'type', None) == T_POINTER:
+            return f"cob_pointer_get({self.field(e)})"
+        raise CompileError("a pointer value is needed here: ADDRESS OF item, "
+                           "a POINTER item, or NULL", getattr(e, 'loc', None))
 
     def address_of(self, ref):
         it = self.resolve(ref)
@@ -3522,8 +3549,8 @@ class CodeGen(ReportWriterGen, DebugGen):
             return
         t = it.type
         if t in (T_INDEX, T_POINTER):
-            if mode == 'init':
-                em(f"memset({base} + {off}, 0, {it.size});")
+            # INITIALIZE sets a pointer to NULL, in every mode
+            em(f"memset({base} + {off}, 0, {it.size});")
             return
         cat = it.category()
         if mode == 'init':
@@ -3571,6 +3598,14 @@ class CodeGen(ReportWriterGen, DebugGen):
         if s.kind == 'EXCEPTION':
             em("cob_clear_exception();")
             return
+        if s.kind == 'ADDRESS':
+            # SET ADDRESS OF item TO <pointer>: rebind a LINKAGE item's storage
+            it = self.resolve(s.addr_ref)
+            if it.section != 'LK':
+                raise CompileError(f"SET ADDRESS OF needs a LINKAGE item; "
+                                   f"'{s.addr_ref.name}' is not one", s.loc)
+            em(f"{it.storage} = (unsigned char *){self.pointer_value(s.value)};")
+            return
         if s.kind == 'SWITCH':
             for t in s.targets:
                 n = self.prog.switches.get(t.name)
@@ -3599,6 +3634,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 it = self.check_receiving(t)
                 if isinstance(it, IndexName):
                     em(f"{it.cname} = (int){self.int_expr(s.value)};")
+                elif it.type == T_POINTER:
+                    # SET pointer TO ADDRESS OF item / another pointer / NULL
+                    em(f"cob_pointer_set({self.field(t)}, {self.pointer_value(s.value)});")
                 else:
                     if it.type not in NUMERIC_TYPES:
                         raise CompileError(f"SET target '{t.name}' must be an index or numeric item", t.loc)
