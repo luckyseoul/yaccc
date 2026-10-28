@@ -13,3 +13,8 @@ __pycache__/
 /wordfreq
 /dayname
 /datefmt
+
+# data files a test program writes in the directory it runs in
+/*.idx
+/*.dat
+/*.txt
