@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# cobolc - convenience targets. The compiler itself needs no build step:
-# ./cobolc builds the runtime library (runtime/libcobrt.a) on first use.
+# YACCC - convenience targets. The compiler itself needs no build step:
+# ./yaccc builds the runtime library (runtime/libcobrt.a) on first use.
 
 PYTHON ?= python3
 # NIST CCVS85 suite as split into modules by opensource COBOL (see README)
@@ -15,7 +15,7 @@ OUT    ?= build/examples
 all: runtime
 
 runtime:
-	./cobolc --build-runtime
+	./yaccc --build-runtime
 
 # regression tests against the recorded GnuCOBOL baselines
 test: runtime
@@ -56,11 +56,11 @@ gctest-update: runtime $(GCSUITE)
 examples: runtime
 	mkdir -p $(OUT)
 	cp examples/*.dat examples/*.txt $(OUT)/
-	./cobolc examples/payroll.cbl    -o $(OUT)/payroll
-	./cobolc examples/bank.cbl       -o $(OUT)/bank
-	./cobolc examples/wordfreq.cbl   -o $(OUT)/wordfreq
-	./cobolc examples/mandelbrot.cbl -o $(OUT)/mandelbrot
-	./cobolc examples/dayname.cbl examples/datefmt.cbl -o $(OUT)/dayname
+	./yaccc examples/payroll.cbl    -o $(OUT)/payroll
+	./yaccc examples/bank.cbl       -o $(OUT)/bank
+	./yaccc examples/wordfreq.cbl   -o $(OUT)/wordfreq
+	./yaccc examples/mandelbrot.cbl -o $(OUT)/mandelbrot
+	./yaccc examples/dayname.cbl examples/datefmt.cbl -o $(OUT)/dayname
 	cd $(OUT) && ./payroll && cat payroll.rpt
 	cd $(OUT) && ./bank
 	cd $(OUT) && ./wordfreq

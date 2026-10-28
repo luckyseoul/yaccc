@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Differential tester: compiles each COBOL test with cobolc and (if available)
+"""Differential tester: compiles each COBOL test with yaccc and (if available)
 GnuCOBOL, runs both and compares output. Tests with an .expected file are
 checked against that file instead of (or in addition to) the reference."""
 import argparse
@@ -13,7 +13,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-COBOLC = os.path.join(ROOT, 'cobolc')
+YACCC = os.path.join(ROOT, 'yaccc')
 
 
 def run(cmd, stdin=None, cwd=None, timeout=60, env=None):
@@ -49,13 +49,13 @@ def compare_files(name, want_dir, mine_dir, names, nocmp):
         if not os.path.isfile(rp):
             continue
         if not os.path.exists(mp):
-            print(f"FILE {name}: '{fn}' not created by cobolc")
+            print(f"FILE {name}: '{fn}' not created by yaccc")
             extra += b'<missing file ' + fn.encode() + b'>'
         elif open(rp, 'rb').read() != open(mp, 'rb').read():
             print(f"FILE {name}: '{fn}' differs")
             rd = open(rp, 'rb').read().decode('latin-1').splitlines()
             md = open(mp, 'rb').read().decode('latin-1').splitlines()
-            for i, line in enumerate(difflib.unified_diff(rd, md, 'expected/' + fn, 'cobolc/' + fn,
+            for i, line in enumerate(difflib.unified_diff(rd, md, 'expected/' + fn, 'yaccc/' + fn,
                                                           lineterm='', n=1)):
                 if i > 30:
                     break
@@ -66,7 +66,7 @@ def compare_files(name, want_dir, mine_dir, names, nocmp):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Run the test programs with cobolc and compare their output with GnuCOBOL "
+        description="Run the test programs with yaccc and compare their output with GnuCOBOL "
                     "(--ref) or with the recorded baselines (.expected / .outfiles).")
     ap.add_argument('tests', nargs='*')
     ap.add_argument('--ref', action='store_true', help='compare against GnuCOBOL (cobc) run live')
@@ -106,9 +106,9 @@ def main():
                 for f in os.listdir(datadir):
                     shutil.copy(os.path.join(datadir, f), d)
         exe = os.path.join(mine_dir, name)
-        rc, out, err = run([COBOLC, t, '-o', exe] + [x for x in extra if not x.startswith('@ref:')])
+        rc, out, err = run([YACCC, t, '-o', exe] + [x for x in extra if not x.startswith('@ref:')])
         if rc != 0:
-            print(f"FAIL {name}: cobolc compile error\n{err.decode(errors='replace')}")
+            print(f"FAIL {name}: yaccc compile error\n{err.decode(errors='replace')}")
             failed += 1
             continue
         mrc, mout, merr = run([exe], stdin, cwd=mine_dir, env=env)
@@ -118,8 +118,11 @@ def main():
         noref = os.path.exists(base + '.noref')   # deliberate deviation from GnuCOBOL
         if not noref and (args.ref or (args.update and expected is None)):
             rexe = os.path.join(ref_dir, name)
+            # copybooks sit next to the test: give cobc the same include path
+            # yaccc derives from the source file's own directory
             rflags = [x[5:] for x in extra if x.startswith('@ref:')]
-            rc, out, err = run(['cobc', '-x', '-fbinary-size=2-4-8', '-o', rexe, t] + rflags)
+            rc, out, err = run(['cobc', '-x', '-fbinary-size=2-4-8', '-o', rexe, t,
+                                '-I', os.path.dirname(os.path.abspath(t))] + rflags)
             if rc != 0:
                 print(f"SKIP {name}: reference compile error\n{err.decode(errors='replace')}")
                 continue
@@ -151,7 +154,7 @@ def main():
             if merr:
                 print(merr.decode(errors='replace')[:2000])
             d = difflib.unified_diff(expected.decode('latin-1').splitlines(), mout.decode('latin-1').splitlines(),
-                                     'expected', 'cobolc', lineterm='', n=1)
+                                     'expected', 'yaccc', lineterm='', n=1)
             for i, line in enumerate(d):
                 if i > 60:
                     print('...')

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """Runs the runtime tests of the GnuCOBOL 3.1.2 testsuite (autotest .at files)
-with cobolc and compares exit status and standard output with the
+with yaccc and compares exit status and standard output with the
 testsuite's expectations.
 
 usage: run_gc.py [--cobc] [-k TEXT] [-v] [--log FILE] [--expect RESULTS]
@@ -12,7 +12,7 @@ from COBOL sources with plain $COMPILE / $COMPILE_MODULE steps and run with
 $COBCRUN_DIRECT are executed; tests that need C code, cobc dialect options,
 shell scripting or terminal input are reported as skipped.
 
-Results: PASS; FAIL (wrong output or exit status); CERR (cobolc rejected the
+Results: PASS; FAIL (wrong output or exit status); CERR (yaccc rejected the
 program); XERR (timeout); SKIP (not runnable by this harness).
 -v prints one line per test; that output is the results file read by
 --expect, which prints only the tests whose result changed and exits with
@@ -30,7 +30,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-COBOLC = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cobolc')
+YACCC = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'yaccc')
 
 STATUSES = ('PASS', 'FAIL', 'CERR', 'XERR', 'SKIP')
 
@@ -169,7 +169,7 @@ def parse_file(path):
             pass
         elif name == 'AT_SKIP_IF':
             cond = expand(args[0]) if args else ''
-            if 'COB_HAS_ISAM' not in cond:          # cobolc has indexed files
+            if 'COB_HAS_ISAM' not in cond:          # yaccc has indexed files
                 m = re.search(r'COB_HAS_(\w+)', cond)
                 cur.skip_reason = cur.skip_reason or (f'needs {m.group(1).lower()}' if m else 'AT_SKIP_IF')
         elif name == 'AT_XFAIL_IF':
@@ -200,11 +200,11 @@ class Runner:
             for m in modules:
                 cmd.append(m)
         else:
-            cmd = [COBOLC, main] + modules + ['-o', out, '--binary-size', '1-2-4-8'] + flags
+            cmd = [YACCC, main] + modules + ['-o', out, '--binary-size', '1-2-4-8'] + flags
         return run(cmd, cwd, timeout=120)
 
     def translate_flags(self, words):
-        """cobc options -> cobolc options; None if a test depends on one we lack."""
+        """cobc options -> yaccc options; None if a test depends on one we lack."""
         out = []
         it = iter(words)
         for w in it:
@@ -306,7 +306,7 @@ class Runner:
                     modules.extend(srcs)
                     continue
                 if verb == '$COMPILE_ONLY':
-                    rc, _, err = run([COBOLC, '-C', '-o', os.path.join(tmp, 'xx.c')] + srcs + flags, tmp)
+                    rc, _, err = run([YACCC, '-C', '-o', os.path.join(tmp, 'xx.c')] + srcs + flags, tmp)
                     if rc != 0 and not self.use_cobc:
                         return 'CERR', err.decode('latin-1', 'replace').strip()[-300:]
                     continue
@@ -388,7 +388,7 @@ class Runner:
 
 def diff_text(want, got, err):
     import difflib
-    d = list(difflib.unified_diff(want.splitlines(), got.splitlines(), 'expected', 'cobolc', lineterm='', n=1))
+    d = list(difflib.unified_diff(want.splitlines(), got.splitlines(), 'expected', 'yaccc', lineterm='', n=1))
     s = '\n'.join(d[:40])
     if err:
         s += '\nstderr: ' + err.decode('latin-1', 'replace')[-300:]
@@ -399,7 +399,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('suite')
     ap.add_argument('files', nargs='*')
-    ap.add_argument('--cobc', action='store_true', help='run with GnuCOBOL cobc instead of cobolc')
+    ap.add_argument('--cobc', action='store_true', help='run with GnuCOBOL cobc instead of yaccc')
     ap.add_argument('-k', dest='pattern', help='only tests whose title contains this text')
     ap.add_argument('-v', action='store_true', help='print every test')
     ap.add_argument('--keep', action='store_true', help='keep each test directory and print its path')

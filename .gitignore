@@ -5,3 +5,11 @@ __pycache__/
 /runtime/libcobrt.a
 /runtime/*.o
 /runtime/*.tmp
+
+# executables built in place by "yaccc examples/x.cbl --run"
+/mandelbrot
+/payroll
+/bank
+/wordfreq
+/dayname
+/datefmt

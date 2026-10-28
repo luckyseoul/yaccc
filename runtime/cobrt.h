@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* cobrt.h - runtime library for the cobolc COBOL compiler */
+/* cobrt.h - runtime library for the YACCC COBOL compiler */
 #ifndef COBRT_H
 #define COBRT_H
 

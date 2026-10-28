@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """Runs the NIST CCVS85 COBOL test suite (as split by opensource COBOL's
-expand.pl) with cobolc and tallies results like report.pl.
+expand.pl) with yaccc and tallies results like report.pl.
 
 usage: run_nist.py [--all] SUITE_DIR [MODULE ...]
 SUITE_DIR is the tests/cobol85 directory containing NC/, SM/, ... and copy/.
@@ -14,13 +14,13 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-COBOLC = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cobolc')
+YACCC = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'yaccc')
 
 # Programs the reference GnuCOBOL/opensource COBOL summary does not run.
-# All of them compile and run with cobolc; use --all to include them.
+# All of them compile and run with yaccc; use --all to include them.
 REF_SKIP = {'SQ207M', 'SG102A', 'SG103A', 'SG201A', 'SG202A', 'SG203A', 'OBNC1M', 'OBNC2M'}
 SKIP = set(os.environ.get('NIST_SKIP', ' '.join(sorted(REF_SKIP))).split())
-# Programs that need modules cobolc does not implement (Communication).
+# Programs that need modules yaccc does not implement (Communication).
 UNSUPPORTED = {'DB205A'}
 # Debug module programs run with the object-time debugging switch on, except
 # DB102A, which checks that debugging procedures stay inactive when it is off.
@@ -77,7 +77,7 @@ def run_module(suite, module, verbose=False):
                 need.append(subs[c])
                 todo.extend(calls(subs[c]))
         exe = os.path.join(mdir, name + '.exe')
-        cmd = [COBOLC, src] + need + ['-o', exe, '-I', os.path.join(suite, 'copy'), '-O1']
+        cmd = [YACCC, src] + need + ['-o', exe, '-I', os.path.join(suite, 'copy'), '-O1']
         if name == 'SM206A':
             cmd.append('--debugging-mode')
         r = subprocess.run(cmd, capture_output=True, cwd=mdir)

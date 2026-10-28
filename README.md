@@ -1,19 +1,19 @@
-# cobolc
+# YACCC
 
-A COBOL compiler. `cobolc` translates COBOL 85 source (plus the common
-extensions from the 1989 intrinsic-function amendment and later standards) into C,
-then builds a native executable with gcc or clang, linked against a small C
-runtime library.
+**Yet Another COBOL C compiler.** A COBOL compiler that translates COBOL 85
+source (plus the common extensions from the 1989 intrinsic-function amendment
+and later standards) into C, then builds a native executable with gcc or
+clang, linked against a small C runtime library.
 
-It passes the NIST CCVS85 conformance suite as packaged by opensource COBOL.
-Every module matches the suite's reference summary exactly, with zero
-failures, and it also passes the suite's Report Writer and Debug modules. On
-its own differential test programs, its output matches GnuCOBOL 3.1.2 apart
-from the deliberate differences listed below. GnuCOBOL's own testsuite is run
-as a compatibility check as well.
+The name is the joke; the conformance results are not. It passes the NIST
+CCVS85 suite — the one packaged by opensource COBOL — with zero failures:
+every module matches the suite's reference summary exactly, including the
+Report Writer and Debug modules. Its output matches GnuCOBOL 3.1.2 apart from
+the deliberate differences listed below, and GnuCOBOL's own testsuite is run
+as a compatibility check too.
 
 ```
-$ ./cobolc examples/mandelbrot.cbl --run
+$ ./yaccc examples/mandelbrot.cbl --run
 ```
 
 ## Results
@@ -52,7 +52,7 @@ checks that debugging procedures stay inactive when it's off. DB205A needs the
 Communication module and isn't run.
 
 The reference run skips eight programs: SQ207M, SG102A, SG103A, SG201A–SG203A,
-OBNC1M and OBNC2M. `make nist-all` includes them, and cobolc compiles and runs all
+OBNC1M and OBNC2M. `make nist-all` includes them, and YACCC compiles and runs all
 eight:
 
 - **SG102A–SG203A** (ALTER and segmentation): 117 more tests pass.
@@ -85,7 +85,7 @@ COLUMN clause.
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, the three
   Report Writer tests (`rw1`–`rw3`), `dbg2` and `dbg5`. They cover cases where
-  cobolc deliberately differs from GnuCOBOL, so their baselines were verified
+  YACCC deliberately differs from GnuCOBOL, so their baselines were verified
   by hand.
 - Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
   had no live `cobc` to record from, so their baselines were checked by hand
@@ -98,7 +98,7 @@ All 48 pass, built with gcc.
 ### GnuCOBOL 3.1.2 testsuite
 
 `make gctest` runs the runtime tests of GnuCOBOL's own testsuite (the
-`run_*.at` and `data_*.at` autotest files) with cobolc. It fetches them into
+`run_*.at` and `data_*.at` autotest files) with YACCC. It fetches them into
 `third_party/` with a sparse clone of the 3.1.2 release tag.
 `tests/gnucobol/run_gc.py` reads the autotest files directly and runs every
 test that is built from COBOL sources with plain compile steps, comparing exit
@@ -120,7 +120,7 @@ longer passes. `make gctest-update` records a new baseline.
   (`-std=ibm`, `-fnotrunc` and so on), C code, a terminal (SCREEN SECTION),
   XML or JSON support, or shell scripting.
 - **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
-  features cobolc doesn't have yet: pointers and BASED items, ANY LENGTH,
+  features YACCC doesn't have yet: pointers and BASED items, ANY LENGTH,
   FUNCTION-ID, CHAINING, ENTRY, TYPEDEF, COMP-6 and Report Writer PRESENT
   WHEN, STEP and OCCURS.
 - **Failures** include the deliberate differences listed below (WRITE
@@ -128,19 +128,19 @@ longer passes. `make gctest-update` records a new baseline.
   processes and a few library routines) and 7 Report Writer tests whose output
   differs only in blank lines: GnuCOBOL 3.1.2 starts a new page one line early
   after a page overflow and prints a PAGE FOOTING one line late after
-  TERMINATE, while cobolc follows the standard's page geometry. None of the 7
+  TERMINATE, while YACCC follows the standard's page geometry. None of the 7
   differs in any non-blank line. One more (`Sample REPORT with RIGHT/CENTER`)
   is a dialect difference, not an output difference: its first step expects
-  `cobc` to reject the program in its default dialect, and cobolc compiles it,
+  `cobc` to reject the program in its default dialect, and YACCC compiles it,
   as GnuCOBOL itself does with `-std=mf`.
 
 ### Performance
 
 `examples/mandelbrot.cbl` (COMP-5 and fixed-point arithmetic in tight loops) runs
-in about 40 ms with cobolc. The GnuCOBOL 3.1.2 build at `-O2` takes about 133 ms.
+in about 40 ms with YACCC. The GnuCOBOL 3.1.2 build at `-O2` takes about 133 ms.
 
 A loop of 100,000 iterations of `Y ** 12.5`, `FUNCTION SQRT` and `FUNCTION SIN`
-takes 4.2 seconds with cobolc and 136 seconds with GnuCOBOL, with identical
+takes 4.2 seconds with YACCC and 136 seconds with GnuCOBOL, with identical
 results.
 
 ## Requirements
@@ -157,11 +157,11 @@ time you compile. `make` builds it ahead of time.
 ## Usage
 
 ```
-./cobolc examples/payroll.cbl                 # builds ./payroll
-./cobolc examples/payroll.cbl -o payroll      # explicit output name
-./cobolc examples/mandelbrot.cbl --run        # build and run
-./cobolc -C examples/bank.cbl                 # translate only: writes bank.c
-./cobolc tests/cases/copy1.cbl -I tests/cases # copybook directory
+./yaccc examples/payroll.cbl                 # builds ./payroll
+./yaccc examples/payroll.cbl -o payroll      # explicit output name
+./yaccc examples/mandelbrot.cbl --run        # build and run
+./yaccc -C examples/bank.cbl                 # translate only: writes bank.c
+./yaccc tests/cases/copy1.cbl -I tests/cases # copybook directory
 ```
 
 To make an executable from several programs, pass all the sources on one
@@ -169,7 +169,7 @@ command line. The first source is the main program, and CALL / CANCEL resolve
 the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 
 ```
-./cobolc examples/dayname.cbl examples/datefmt.cbl --run
+./yaccc examples/dayname.cbl examples/datefmt.cbl --run
 ```
 
 | Option | Meaning |
@@ -212,7 +212,7 @@ With `-g`, the generated C carries `#line` directives, so a debugger shows and
 steps the COBOL source rather than the generated C:
 
 ```
-$ ./cobolc -g examples/payroll.cbl
+$ ./yaccc -g examples/payroll.cbl
 $ gdb ./payroll
 (gdb) break payroll.cbl:120
 Breakpoint 1 at 0x2bea: file payroll.cbl, line 120.
@@ -394,7 +394,7 @@ EXCEPTION for both).
 - Dynamic loading: a CALLed program must be compiled into the same executable.
 - Relative and indexed files are held in memory while open and written back on
   CLOSE. That's fine for batch-sized files, but there's no record locking or
-  sharing between processes, and the indexed format is cobolc's own (not
+  sharing between processes, and the indexed format is YACCC's own (not
   BDB/VBISAM compatible).
 
 ## Differences from GnuCOBOL
@@ -411,7 +411,7 @@ All of these were checked against GnuCOBOL 3.1.2:
    accepts a currency string of several characters (`"EUR"`), which GnuCOBOL
    3.1.2 rejects.
 3. **Alphanumeric data with signs or non-digits moved to a numeric item**: the
-   standard leaves the result undefined. cobolc reads the value the way NUMVAL
+   standard leaves the result undefined. YACCC reads the value the way NUMVAL
    does, so `" -42"` becomes -42. GnuCOBOL copies the characters as an
    unsigned integer.
 4. **Numeric intrinsic function results** are described as in GnuCOBOL, with
@@ -419,7 +419,7 @@ All of these were checked against GnuCOBOL 3.1.2:
    digits (GnuCOBOL 3.1.2 shows only the last nine). The irrational results
    (SQRT, LOG, SIN, ...) have 38 significant digits; GnuCOBOL computes about 96,
    so a DISPLAY of one shows fewer digits, and their last digits can differ.
-5. **Report Writer.** cobolc follows the standard's presentation rules. Each page
+5. **Report Writer.** YACCC follows the standard's presentation rules. Each page
    of a report with a PAGE clause occupies exactly PAGE LIMIT lines of the file.
    GnuCOBOL 3.1.2 differs in these ways:
    - it loses a line at each page break when the report has no page footing;
@@ -427,11 +427,11 @@ All of these were checked against GnuCOBOL 3.1.2:
    - it doesn't present CONTROL HEADING FINAL;
    - it ignores `SUM ... UPON` and `RESET ON`.
 
-   At TERMINATE, cobolc presents the control footings with the control values
+   At TERMINATE, YACCC presents the control footings with the control values
    of the last GENERATE, as the standard requires. GnuCOBOL uses whatever the
    program has moved into those fields since, which defeats the usual
    end-of-file HIGH-VALUES idiom.
-6. **Debug module.** Before each debugging procedure cobolc space-fills
+6. **Debug module.** Before each debugging procedure YACCC space-fills
    DEBUG-ITEM, as the standard requires, and DEBUG-LINE always names the
    statement that caused it (`tests/cases/dbg2.cbl`). GnuCOBOL 3.1.2 differs in
    these ways:
@@ -460,13 +460,13 @@ source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─�
 
 | File | Lines | Role |
 |---|---|---|
-| `compiler/source.py` | 272 | reference formats, continuations, directives, comment-entries, debugging lines |
-| `compiler/lexer.py` | 515 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `compiler/parser.py` | 2,602 | recursive-descent parser to the AST (`nodes.py`, 638) |
-| `compiler/data.py` | 510 | PICTURE analysis, USAGE resolution, storage layout |
-| `compiler/codegen.py` | 3,627 | name resolution, C generation, typed fast paths |
-| `compiler/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
-| `compiler/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
+| `lib/yaccc/source.py` | 272 | reference formats, continuations, directives, comment-entries, debugging lines |
+| `lib/yaccc/lexer.py` | 515 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
+| `lib/yaccc/parser.py` | 2,602 | recursive-descent parser to the AST (`nodes.py`, 638) |
+| `lib/yaccc/data.py` | 510 | PICTURE analysis, USAGE resolution, storage layout |
+| `lib/yaccc/codegen.py` | 3,627 | name resolution, C generation, typed fast paths |
+| `lib/yaccc/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
+| `lib/yaccc/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `runtime/cobrt_core.c` | 2,573 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_io.c` | 1,555 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_rw.c` | 417 | Report Writer control system: paging, control breaks, INITIATE/GENERATE/TERMINATE |
@@ -502,9 +502,9 @@ Design choices:
 ## Repository layout
 
 ```
-cobolc               compiler entry point
+yaccc                compiler entry point
 LICENSE              MIT licence
-compiler/            front end and code generator (Python)
+lib/yaccc/           front end and code generator (Python)
 runtime/             C runtime library
 examples/            payroll report with control breaks, indexed-file bank ledger,
                      word-frequency count (table SORT), Mandelbrot set,

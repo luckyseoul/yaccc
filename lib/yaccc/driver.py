@@ -12,8 +12,9 @@ from .errors import CompileError, DIAG
 from .lexer import SourceSet
 from .parser import Parser
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-RUNTIME_DIR = os.path.join(os.path.dirname(HERE), 'runtime')
+HERE = os.path.dirname(os.path.abspath(__file__))        # .../lib/yaccc
+PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
+RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c', 'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c']
 VERSION = '1.0'
 
@@ -23,7 +24,7 @@ def runtime_lib_dir():
     if os.access(RUNTIME_DIR, os.W_OK):
         return RUNTIME_DIR
     cache = os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache')
-    d = os.path.join(cache, 'cobolc')
+    d = os.path.join(cache, 'yaccc')
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -65,10 +66,10 @@ def safe_build_runtime(cc, verbose=False, force=False):
     try:
         return build_runtime(cc, verbose, force)
     except FileNotFoundError as e:
-        print(f"cobolc: cannot run '{e.filename or cc}': install gcc or clang, or name one with --cc",
+        print(f"yaccc: cannot run '{e.filename or cc}': install gcc or clang, or name one with --cc",
               file=sys.stderr)
     except subprocess.CalledProcessError as e:
-        print(f"cobolc: building the runtime library failed: {' '.join(e.cmd)}", file=sys.stderr)
+        print(f"yaccc: building the runtime library failed: {' '.join(e.cmd)}", file=sys.stderr)
     return None
 
 
@@ -86,7 +87,7 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog='cobolc', description='COBOL compiler (COBOL -> C -> native executable)')
+    ap = argparse.ArgumentParser(prog='yaccc', description='COBOL compiler (COBOL -> C -> native executable)')
     ap.add_argument('sources', nargs='*', help='COBOL source files')
     ap.add_argument('-o', dest='output', help='output file name')
     ap.add_argument('-x', action='store_true', help='build an executable (default)')
@@ -108,7 +109,7 @@ def main(argv=None):
                     help='C compiler to use (gcc or clang; default $CC, then gcc, then cc)')
     ap.add_argument('--build-runtime', action='store_true', help='(re)build the runtime library and exit')
     ap.add_argument('-v', '--verbose', action='store_true')
-    ap.add_argument('--version', action='version', version=f'cobolc {VERSION}')
+    ap.add_argument('--version', action='version', version=f'YACCC {VERSION}')
     args, run_args = ap.parse_known_args(argv)
 
     if args.build_runtime:
@@ -151,7 +152,7 @@ def main(argv=None):
         cpath = os.path.splitext(exe)[0] + '.c'
         tmpdir = None
     else:
-        tmpdir = tempfile.mkdtemp(prefix='cobolc_')
+        tmpdir = tempfile.mkdtemp(prefix='yaccc_')
         cpath = os.path.join(tmpdir, base + '.c')
     try:
         with open(cpath, 'w', encoding='latin-1') as f:
@@ -164,10 +165,10 @@ def main(argv=None):
         try:
             r = subprocess.run(cmd)
         except FileNotFoundError:
-            print(f"cobolc: cannot run '{args.cc}': install gcc or clang, or name one with --cc", file=sys.stderr)
+            print(f"yaccc: cannot run '{args.cc}': install gcc or clang, or name one with --cc", file=sys.stderr)
             return 1
         if r.returncode != 0:
-            print("cobolc: C compilation failed (generated code error)", file=sys.stderr)
+            print("yaccc: C compilation failed (generated code error)", file=sys.stderr)
             return 1
     finally:
         if tmpdir:

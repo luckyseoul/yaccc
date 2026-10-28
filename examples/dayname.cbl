@@ -2,7 +2,7 @@
        PROGRAM-ID. DAYNAME.
       * Two-file example: this main program CALLs DATEINFO, which is
       * compiled from datefmt.cbl into the same executable:
-      *     ./cobolc examples/dayname.cbl examples/datefmt.cbl --run
+      *     ./yaccc examples/dayname.cbl examples/datefmt.cbl --run
        DATA DIVISION.
        WORKING-STORAGE SECTION.
        01  DATES.
