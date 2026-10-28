@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   406    25             59      203
+  693   408    25             55      205
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -354,6 +354,7 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - ROUNDED and the COBOL 2014 ROUNDED MODE phrase: AWAY-FROM-ZERO,
   NEAREST-AWAY-FROM-ZERO (the default), NEAREST-EVEN, NEAREST-TOWARD-ZERO,
   TOWARD-GREATER, TOWARD-LESSER, TRUNCATION and PROHIBITED.
+- Entry: PROCEDURE DIVISION CHAINING items receive the command-line arguments.
 - Control flow: IF, EVALUATE (ALSO, THRU, ANY, TRUE/FALSE), all PERFORM formats
   (THRU, TIMES, UNTIL, UNTIL EXIT, FOREVER, VARYING/AFTER, WITH TEST AFTER,
   inline), GO TO /
