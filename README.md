@@ -274,7 +274,8 @@ Breakpoint 1, prog_1 (...) at payroll.cbl:120
 **Source.** Fixed, free and variable reference formats, continuation lines,
 `*>` comments, debugging lines, comment-entries. COPY ... REPLACING (pseudo-text,
 identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF. Boolean
-literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
+literals (`B"0101"`, `BX"5A"`), hexadecimal numeric literals (`H"FFFFFF"` is
+16777215) and floating-point literals (`1.5E3`).
 
 COPY is textual inclusion, and a copybook is expanded where it is written. A
 `>>IF` inside a copybook therefore sees the compilation variables as they stand
