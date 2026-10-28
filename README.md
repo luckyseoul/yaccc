@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   428    28             38      199
+  693   429    28             37      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -310,7 +310,8 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),
   REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
 - VALUE clauses, GLOBAL and EXTERNAL items and files; `EXTERNAL AS "name"`
-  shares storage under another name.
+  shares storage under another name. A GLOBAL constant is visible to the
+  programs contained in the one that declares it.
 - RECURSIVE, INITIAL, COMMON, GLOBAL and EXTERNAL are context words: after
   PROGRAM-ID they are clauses, elsewhere they are ordinary data names.
 - Constants: level 78 and `01 name CONSTANT AS ...` (COBOL 2002) with a literal,

@@ -1043,7 +1043,10 @@ class Parser:
                 self.accept('IS')
                 if self.accept('GLOBAL'):
                     item.is_global = True
-                if self.accept('FROM'):
+                if self.peek().kind == 'STR' or self.peek().kind == 'NUM' or \
+                        self.is_word('ALL') or self.peek().up in FIGURATIVES:
+                    item.value = self.parse_constant_value()
+                elif self.accept('FROM'):
                     vt = self.next()
                     v = self.compile_vars.get(vt.up)
                     if v is None or v is True:
@@ -1058,6 +1061,10 @@ class Parser:
                     item.value = self.parse_constant_value()
                 level = 78
                 item.level = 78
+                if item.name and item.value is not None:
+                    prog.constants[item.name] = item.value
+                    if getattr(item, 'is_global', False):
+                        prog.global_constants[item.name] = item.value
             elif w == 'RENAMES':
                 self.next()
                 a = self.parse_identifier()
@@ -1097,6 +1104,8 @@ class Parser:
             if item.value is None:
                 raise CompileError("level 78 requires a VALUE", loc)
             prog.constants[item.name] = item.value
+            if getattr(item, 'is_global', False):
+                prog.global_constants[item.name] = item.value
         return item
 
     def _usage(self, item):
@@ -1175,9 +1184,27 @@ class Parser:
             return self.parse_value_literal()
         return fold_constant(self.parse_expr())
 
+    def visible_constants(self):
+        """Constants this program can name: its own, and the GLOBAL ones of the
+        programs that contain it."""
+        out = {}
+        chain = []
+        p = self.prog.parent if self.prog is not None else None
+        while p is not None:
+            chain.append(p)
+            p = p.parent
+        for pc in reversed(chain):
+            out.update(getattr(pc, 'global_constants', {}))
+        out.update(self.prog.constants)
+        return out
+
     def const_int(self, what):
         """An integer literal or the name of an integer constant."""
         t = self.peek()
+        vc = self.visible_constants()
+        if t.kind == 'WORD' and t.up not in self.prog.constants and t.up in vc:
+            self.next()
+            return vc[t.up]
         if t.kind == 'WORD' and t.up in self.prog.constants:
             v = self.prog.constants[t.up]
             if isinstance(v, NumLit) and v.scale == 0 and not v.neg:
@@ -2037,7 +2064,8 @@ class Parser:
                 raise self.err("UNTIL or VARYING expected")
         elif self.accept('FOREVER'):
             st.until = ConstCond(False)        # as UNTIL EXIT: only EXIT PERFORM
-        elif self.peek().kind == 'NUM' or self.is_user_word() or self.is_word('FUNCTION'):
+        elif self.peek().kind == 'NUM' or self.is_user_word() or \
+                self.is_word('FUNCTION', 'LENGTH', 'BYTE-LENGTH'):
             st.times = self.parse_expr()
             self.expect('TIMES')
         if first is None:
@@ -2690,8 +2718,9 @@ class Parser:
             u = t.up
             if u in FIGURATIVES or u == 'FUNCTION':
                 return True
-            if u == 'LENGTH' and self.is_word('OF', k=k + 1):
-                return True
+            if u in ('LENGTH', 'BYTE-LENGTH'):
+                if self.is_word('OF', k=k + 1) or self.is_operand_start(k + 1):
+                    return True
             if u not in RESERVED or u in SPECIAL_REGISTERS or u in CONTEXT_WORDS:
                 return True
             return False
@@ -2737,6 +2766,10 @@ class Parser:
             if u in self.prog.constants:
                 self.next()
                 return self.prog.constants[u]
+            vcx = self.visible_constants()
+            if u in vcx:
+                self.next()
+                return vcx[u]
             return self.parse_identifier()
         raise self.err("operand expected")
 
@@ -2744,6 +2777,11 @@ class Parser:
         t = self.peek()
         if t.kind == 'WORD' and t.up == 'FUNCTION':
             return self.parse_function()
+        if t.kind == 'WORD' and t.up in ('LENGTH', 'BYTE-LENGTH') and not self.is_word('OF', k=1) \
+                and self.is_operand_start(1):
+            # LENGTH X without OF: a GnuCOBOL extension
+            self.next()
+            return LengthOf(self.parse_identifier())
         if t.kind == 'WORD' and t.up in ('LENGTH', 'BYTE-LENGTH') and self.is_word('OF', k=1):
             self.next(); self.next()
             if self.peek().kind == 'STR':           # LENGTH OF literal

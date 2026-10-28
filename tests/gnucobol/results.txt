@@ -39,7 +39,7 @@ SKIP  run_extensions.at:127        HP COBOL octal literals
 PASS  run_extensions.at:188        Hexadecimal numeric literals
 CERR  run_extensions.at:217        Semi-parenthesized condition
 PASS  run_extensions.at:237        ADDRESS OF
-CERR  run_extensions.at:287        LENGTH OF
+PASS  run_extensions.at:287        LENGTH OF
 PASS  run_extensions.at:451        SET TO SIZE OF
 PASS  run_extensions.at:488        WHEN-COMPILED
 SKIP  run_extensions.at:517        Complex OCCURS DEPENDING ON (1)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 428  FAIL 28  CERR 38  XERR 0  SKIP 199
+PASS 429  FAIL 28  CERR 37  XERR 0  SKIP 199
