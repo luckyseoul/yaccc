@@ -1,0 +1,22 @@
+delete missing: 35 35
+write file: 00
+start last: 00
+  previous: 50Cfifty
+  previous: 40Bdata 
+  previous: 30Bdata 
+  previous: 20Adata 
+  previous: 10Adata 
+  previous: at end 10
+first: 10Adata 
+next, previous: 10Adata 
+start < 35, previous: 30Bdata 
+previous: 20Adata 
+alternate B: 30Bdata 
+alternate previous: 20Adata 
+delete: 00
+rel last: 00 key 11
+  11   key 11
+  08   key 08
+rel first: 02   key 02
+  before first: 10
+delete: 00

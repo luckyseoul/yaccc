@@ -4,9 +4,12 @@
 PYTHON ?= python3
 # NIST CCVS85 suite as split into modules by opensource COBOL (see README)
 SUITE  ?= third_party/opensourcecobol4j/tests/cobol85
+# GnuCOBOL 3.1.2 testsuite sources (autotest .at files)
+GCSUITE ?= third_party/gnucobol/tests/testsuite.src
+GCTAG   ?= gnucobol-3.1.2
 OUT    ?= build/examples
 
-.PHONY: all runtime test test-ref nist nist-all examples clean
+.PHONY: all runtime test test-ref nist nist-all gctest gctest-update examples clean
 
 all: runtime
 
@@ -33,6 +36,20 @@ nist: runtime $(SUITE)
 # NIST CCVS85 including the programs the reference summary skips
 nist-all: runtime $(SUITE)
 	$(PYTHON) tests/nist/run_nist.py --all $(SUITE)
+
+$(GCSUITE):
+	git clone --depth 1 --filter=blob:none --sparse --branch $(GCTAG) \
+	    https://github.com/OCamlPro/gnucobol.git third_party/gnucobol
+	git -C third_party/gnucobol sparse-checkout set tests/testsuite.src
+
+# GnuCOBOL's own runtime tests; fails if a test recorded as passing no longer passes
+gctest: runtime $(GCSUITE)
+	$(PYTHON) tests/gnucobol/run_gc.py --expect tests/gnucobol/results.txt $(GCSUITE)
+
+# rerun them and record the results as the new expectation
+gctest-update: runtime $(GCSUITE)
+	$(PYTHON) tests/gnucobol/run_gc.py -v $(GCSUITE) > tests/gnucobol/results.txt.new
+	mv tests/gnucobol/results.txt.new tests/gnucobol/results.txt
 
 # build and run the example programs in $(OUT)
 examples: runtime

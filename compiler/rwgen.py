@@ -291,7 +291,7 @@ class ReportWriterGen:
 
     def rw_emit_report(self, prog, ri):
         n = ri.sym
-        cname = self.prog_syms[prog.name.upper()]
+        cname = self.prog_syms[id(prog)]
         # tables
         rows = []
         for g in ri.groups:

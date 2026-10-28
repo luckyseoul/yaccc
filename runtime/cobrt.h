@@ -312,6 +312,13 @@ static inline int cob_d_cmp(cob_dec a, cob_dec b)
 int cob_d_sign(cob_dec a);
 #define COB_ROUNDED    1
 #define COB_SIZE_CHECK 2
+/* ROUNDED MODE (with COB_ROUNDED; NEAREST-AWAY-FROM-ZERO is the default) */
+#define COB_RM_AWAY       (1 << 4)
+#define COB_RM_EVEN       (2 << 4)
+#define COB_RM_TOWARD0    (3 << 4)   /* NEAREST-TOWARD-ZERO */
+#define COB_RM_GREATER    (4 << 4)
+#define COB_RM_LESSER     (5 << 4)
+#define COB_RM_PROHIBITED (6 << 4)
 int cob_d_set(cob_field *f, cob_dec d, int opt);
 cob_s64 cob_d_to_int(cob_dec d);
 double cob_d_to_double(cob_dec d);
@@ -343,6 +350,8 @@ void cob_display_lit(int dev, const char *s, size_t n);
 void cob_display_dec(int dev, cob_dec d);
 void cob_display_end(int dev, int newline);
 int cob_accept(cob_field *f);
+struct tm;
+void cob_now(struct tm *tm, int *hundredths, long *utc_off);
 void cob_accept_date(cob_field *f, int fmt);
 void cob_accept_time(cob_field *f);
 void cob_accept_cmdline(cob_field *f);
@@ -525,6 +534,7 @@ typedef struct cob_file {
 int cob_open(cob_file *f, int mode);
 int cob_close(cob_file *f);
 int cob_close_opt(cob_file *f, int opt);
+int cob_delete_file(cob_file *f);
 void cob_close_quiet(cob_file *f);
 int cob_read(cob_file *f, int next, int key_index);
 int cob_write(cob_file *f, size_t recsize, int adv_when, int adv_lines);

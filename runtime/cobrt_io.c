@@ -28,12 +28,13 @@ typedef struct {
 	unsigned char pos_key[4096];
 	size_t pos_keylen;
 	cob_u64 pos_seq;
-	int pos_mode;             /* 0 start, 1 after pos, 2 at pos (generic) */
+	int pos_mode;             /* 0 start, 1 after pos, 2 at pos (generic), 3 at pos (START) */
 	cob_irec *last_read;
 	int modified;
 	unsigned char last_written[4096];
 	int have_last_written;
 	cob_s64 rel_pos;          /* relative: last slot read/positioned (0 = before first) */
+	int rel_incl;             /* relative: rel_pos set by START, the next READ returns it */
 	cob_s64 rel_last_read;
 } ixstate;
 
@@ -451,6 +452,7 @@ int cob_open(cob_file *f, int mode)
 	s->key_ref = 0;
 	s->pos_mode = 0;
 	s->rel_pos = 0;
+	s->rel_incl = 0;
 	const char *st = "00";
 	if (mode != COB_OPEN_OUTPUT) {
 		FILE *fp = fopen(f->path, "rb");
@@ -459,6 +461,14 @@ int cob_open(cob_file *f, int mode)
 				if (!f->optional)
 					return set_st(f, "35");
 				st = "05";
+				/* OPEN I-O / EXTEND creates a missing optional file */
+				if (mode != COB_OPEN_INPUT) {
+					fp = fopen(f->path, "ab");
+					if (!fp)
+						return set_st(f, errno == EACCES ? "37" : "30");
+					fclose(fp);
+					s->modified = 1;
+				}
 			} else
 				return set_st(f, errno == EACCES ? "37" : "30");
 		} else {
@@ -469,6 +479,11 @@ int cob_open(cob_file *f, int mode)
 			fclose(fp);
 		}
 	} else {
+		/* the file is written at CLOSE; make sure it can be created now */
+		FILE *fp = fopen(f->path, "ab");
+		if (!fp)
+			return set_st(f, errno == EACCES ? "37" : "30");
+		fclose(fp);
 		s->modified = 1;
 	}
 	f->open_mode = mode;
@@ -510,7 +525,9 @@ static int open_seq(cob_file *f, int mode)
 						return set_st(f, "05");
 					}
 				}
-				return set_st(f, e == ENOENT ? "35" : (e == EACCES ? "37" : "30"));
+				if (e == EACCES)
+					return set_st(f, "37");
+				return set_st(f, e == ENOENT && mode != COB_OPEN_OUTPUT ? "35" : "30");
 			}
 		}
 		f->open_mode = mode;
@@ -541,6 +558,25 @@ int cob_close(cob_file *f)
 	}
 	f->open_mode = 0;
 	unlink_open(f);
+	return set_st(f, "00");
+}
+
+/* DELETE FILE (extension): remove the closed file */
+int cob_delete_file(cob_file *f)
+{
+	if (f->open_mode)
+		return set_st(f, "41");
+	if (f->assign_kind)
+		return set_st(f, "30");
+	resolve_path(f);
+	if (unlink(f->path) != 0) {
+		if (errno == ENOENT) {
+			/* nothing to delete: reported in FILE STATUS, not an error */
+			set_st(f, f->optional ? "05" : "35");
+			return COB_IO_OK;
+		}
+		return set_st(f, errno == EACCES ? "37" : "30");
+	}
 	return set_st(f, "00");
 }
 
@@ -751,6 +787,11 @@ static int write_seq(cob_file *f, size_t recsize, int adv_when, int adv_lines)
 	if (!f->fp)
 		return set_st(f, "48");
 	unsigned char *rec = f->record;
+	if (f->organization == COB_ORG_LINE_SEQ && f->size_field) {
+		/* RECORD VARYING ... DEPENDING ON: the line has that many characters */
+		cob_s64 l = cob_get_int(f->size_field);
+		recsize = l < 0 ? 0 : (l > (cob_s64)f->record_max ? f->record_max : (size_t)l);
+	}
 	if (f->organization == COB_ORG_LINE_SEQ && f->linage_ctr) {
 		size_t n = recsize;
 		while (n && rec[n - 1] == ' ')
@@ -879,10 +920,27 @@ static int read_rel(cob_file *f, int next)
 	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
 		return set_st(f, "47");
 	cob_s64 slot;
-	if (next || f->access == COB_ACC_SEQUENTIAL) {
+	if (next == 2) {
+		/* READ PREVIOUS */
 		if (f->at_end)
 			return set_st(f, "46");
-		slot = s->rel_pos + 1;
+		slot = s->rel_incl ? s->rel_pos : s->rel_pos - 1;
+		if (slot > (cob_s64)s->n)
+			slot = (cob_s64)s->n;
+		while (slot >= 1 && !s->recs[slot - 1])
+			slot--;
+		if (slot < 1) {
+			f->at_end = 1;
+			return set_st(f, "10");
+		}
+		if (f->relative_key)
+			cob_set_int(f->relative_key, slot);
+	} else if (next || f->access == COB_ACC_SEQUENTIAL) {
+		if (f->at_end)
+			return set_st(f, "46");
+		slot = s->rel_incl ? s->rel_pos : s->rel_pos + 1;
+		if (slot < 1)
+			slot = 1;
 		while (slot <= (cob_s64)s->n && !s->recs[slot - 1])
 			slot++;
 		if (slot > (cob_s64)s->n) {
@@ -905,6 +963,7 @@ static int read_rel(cob_file *f, int next)
 	if (f->size_field)
 		cob_set_int(f->size_field, (cob_s64)f->cur_size);
 	s->rel_pos = slot;
+	s->rel_incl = 0;
 	s->rel_last_read = slot;
 	f->last_read_ok = 1;
 	return set_st(f, "00");
@@ -977,7 +1036,16 @@ static int start_rel(cob_file *f, int op)
 	ixstate *s = ixs(f);
 	cob_s64 k = rel_key(f);
 	cob_s64 found = 0;
-	if (op == 0 || op == 2 || op == 1) {
+	if (op == 5 || op == 6) {
+		/* START FIRST / LAST */
+		for (cob_s64 i = 1; i <= (cob_s64)s->n; i++) {
+			cob_s64 j = op == 5 ? i : (cob_s64)s->n + 1 - i;
+			if (s->recs[j - 1]) {
+				found = j;
+				break;
+			}
+		}
+	} else if (op == 0 || op == 2 || op == 1) {
 		/* EQ GE GT */
 		for (cob_s64 i = 1; i <= (cob_s64)s->n; i++) {
 			if (!s->recs[i - 1])
@@ -999,7 +1067,10 @@ static int start_rel(cob_file *f, int op)
 	}
 	if (!found)
 		return set_st(f, "23");
-	s->rel_pos = found - 1;
+	s->rel_pos = found;
+	s->rel_incl = 1;
+	if (f->relative_key && (op == 5 || op == 6))
+		cob_set_int(f->relative_key, found);
 	f->at_end = 0;
 	return set_st(f, "00");
 }
@@ -1032,7 +1103,28 @@ static int read_idx(cob_file *f, int next, int key_index)
 	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
 		return set_st(f, "47");
 	cob_irec *r;
-	if (next || f->access == COB_ACC_SEQUENTIAL) {
+	if (next == 2) {
+		/* READ PREVIOUS: the record before the position (at it after a START) */
+		if (f->at_end)
+			return set_st(f, "46");
+		int k = s->key_ref;
+		cob_irec **ord = get_order(f, k);
+		size_t j;
+		if (s->pos_mode == 0)
+			j = 0;
+		else if (s->pos_mode == 1)
+			j = lower_bound(f, k, s->pos_key, s->pos_keylen, s->pos_seq, k != 0, 0);
+		else if (s->pos_mode == 3)
+			j = lower_bound(f, k, s->pos_key, s->pos_keylen, s->pos_seq, k != 0, 1);
+		else
+			j = lower_bound(f, k, s->pos_key, s->pos_keylen, 0, 0, 1);
+		if (j == 0) {
+			f->at_end = 1;
+			return set_st(f, "10");
+		}
+		r = ord[j - 1];
+		set_pos(s, f, r, k, 1);
+	} else if (next || f->access == COB_ACC_SEQUENTIAL) {
 		if (f->at_end)
 			return set_st(f, "46");
 		int k = s->key_ref;
@@ -1042,6 +1134,8 @@ static int read_idx(cob_file *f, int next, int key_index)
 			i = 0;
 		else if (s->pos_mode == 1)
 			i = lower_bound(f, k, s->pos_key, s->pos_keylen, s->pos_seq, k != 0, 1);
+		else if (s->pos_mode == 3)
+			i = lower_bound(f, k, s->pos_key, s->pos_keylen, s->pos_seq, k != 0, 0);
 		else
 			i = lower_bound(f, k, s->pos_key, s->pos_keylen, 0, 0, 0);
 		if (i >= s->n) {
@@ -1171,6 +1265,12 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 	cob_irec **ord = get_order(f, k);
 	size_t i;
 	switch (op) {
+	case 5: /* FIRST */
+	case 6: /* LAST */
+		if (s->n == 0)
+			return set_st(f, "23");
+		i = op == 5 ? 0 : s->n - 1;
+		break;
 	case 0: /* EQ */
 		i = lower_bound(f, k, key, keylen, 0, 0, 0);
 		if (i >= s->n || memcmp(ord[i]->data + f->keys[k].offset, key, keylen) != 0)
@@ -1199,20 +1299,13 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 		i--;
 		break;
 	}
+	/* the position indicator points at record i: READ NEXT and READ
+	   PREVIOUS both return it */
 	s->key_ref = k;
 	s->pos_keylen = f->keys[k].size;
 	memcpy(s->pos_key, ord[i]->data + f->keys[k].offset, s->pos_keylen);
 	s->pos_seq = ord[i]->kseq[k];
-	s->pos_mode = 1;
-	/* position so that next READ NEXT returns record i */
-	if (i == 0)
-		s->pos_mode = 0;
-	else {
-		cob_irec *prev = ord[i - 1];
-		memcpy(s->pos_key, prev->data + f->keys[k].offset, s->pos_keylen);
-		s->pos_seq = prev->kseq[k];
-		s->pos_mode = 1;
-	}
+	s->pos_mode = 3;
 	f->at_end = 0;
 	return set_st(f, "00");
 }
@@ -1364,6 +1457,8 @@ static void sort_add(cob_file *sd, const unsigned char *rec, size_t n)
 void cob_sort_using(cob_file *sd, cob_file *in)
 {
 	int rc = cob_open(in, COB_OPEN_INPUT);
+	if (rc != COB_IO_OK && in->stat[0] == '3' && in->stat[1] == '5')
+		return;     /* a missing USING file contributes no records */
 	if (rc != COB_IO_OK) {
 		cob_io_unhandled(in, rc, "SORT USING");
 		return;

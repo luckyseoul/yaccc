@@ -20,7 +20,7 @@ ORG = {'SEQUENTIAL': 'COB_ORG_SEQUENTIAL', 'LINE SEQUENTIAL': 'COB_ORG_LINE_SEQ'
 ACC = {'SEQUENTIAL': 'COB_ACC_SEQUENTIAL', 'RANDOM': 'COB_ACC_RANDOM', 'DYNAMIC': 'COB_ACC_DYNAMIC'}
 OPEN_MODE = {'INPUT': 'COB_OPEN_INPUT', 'OUTPUT': 'COB_OPEN_OUTPUT', 'I-O': 'COB_OPEN_IO',
              'EXTEND': 'COB_OPEN_EXTEND'}
-START_OP = {'EQ': 0, 'GT': 1, 'GE': 2, 'LT': 3, 'LE': 4, 'NE': 0}
+START_OP = {'EQ': 0, 'GT': 1, 'GE': 2, 'LT': 3, 'LE': 4, 'NE': 0, 'FIRST': 5, 'LAST': 6}
 MATH_FN = {'EXP': 0, 'EXP10': 1, 'LOG': 2, 'LOG10': 3, 'SIN': 4, 'COS': 5, 'TAN': 6,
            'ASIN': 7, 'ACOS': 8, 'ATAN': 9}
 AGG_FN = {'SUM': 0, 'MEAN': 1, 'MEDIAN': 2, 'MIDRANGE': 3, 'RANGE': 4, 'VARIANCE': 5,
@@ -160,14 +160,16 @@ class CodeGen(ReportWriterGen, DebugGen):
                 walk(q)
         for p in self.programs:
             walk(p)
+        seen = set()
         for p in self.all_progs:
-            if p.name.upper() in self.prog_syms:
-                raise CompileError(f"duplicate program name '{p.name}'", p.loc)
-            self.prog_syms[p.name.upper()] = self.sym('prog_')
+            if p.ext_name in seen:
+                raise CompileError(f"duplicate program name '{p.ext_name}'", p.loc)
+            seen.add(p.ext_name)
+            self.prog_syms[id(p)] = self.sym('prog_')
         for p in self.all_progs:
-            self.protos.append(f"static int {self.prog_syms[p.name.upper()]}(int cob_argc, unsigned char **cob_argv);")
+            self.protos.append(f"static int {self.prog_syms[id(p)]}(int cob_argc, unsigned char **cob_argv);")
             flag = self.sym('cob_inited_')
-            self.init_flags[p.name.upper()] = flag
+            self.init_flags[id(p)] = flag
             self.protos.append(f"static int {flag};")
         for p in self.all_progs:
             self.gen_program(p)
@@ -182,7 +184,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         for p in self.all_progs:
             self.protos.append(f"static void {p._cancel_sym}(void);")
             body = [f"static void {p._cancel_sym}(void)", "{"]
-            flag = self.init_flags[p.name.upper()]
+            flag = self.init_flags[id(p)]
             body.append(f"\tif (!{flag}) return;")
             for fs in p._cancel_files:
                 body.append(f"\tif ({fs}.open_mode) cob_close_quiet(&{fs});")
@@ -207,7 +209,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append('static void cob_register_all(void)')
         out.append('{')
         for p in self.all_progs:
-            out.append(f'\tcob_register_program({c_string(p.name)}, {self.prog_syms[p.name.upper()]}, {p._cancel_sym});')
+            out.append(f'\tcob_register_program({c_string(p.ext_name)}, {self.prog_syms[id(p)]}, {p._cancel_sym});')
         out.append('}')
         out.append('')
         out.append('int main(int argc, char **argv)')
@@ -215,7 +217,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append('\tcob_init(argc, argv);')
         out.append(f'\tcob_when_compiled = {c_string(wc)};')
         out.append('\tcob_register_all();')
-        out.append(f'\tint rc = {self.prog_syms[main.name.upper()]}(-1, NULL);')
+        out.append(f'\tint rc = {self.prog_syms[id(main)]}(-1, NULL);')
         out.append('\tcob_stop_run(rc);')
         out.append('\treturn rc;')
         out.append('}')
@@ -282,15 +284,25 @@ class CodeGen(ReportWriterGen, DebugGen):
         return '&' + s
 
     # ================================================================ data analysis
+    def find_program(self, name):
+        """C function of the program a CALL literal names: the exact external
+        name, else the only one that matches ignoring case (None: resolve at
+        run time)."""
+        for p in self.all_progs:
+            if p.ext_name == name:
+                return self.prog_syms[id(p)]
+        cands = [p for p in self.all_progs if p.ext_name.upper() == name.upper()]
+        return self.prog_syms[id(cands[0])] if len(cands) == 1 else None
+
     def gen_program(self, prog):
         ctx = ProgCtx(prog)
         self.ctx = ctx
         self.prog = prog
-        ctx.cname = self.prog_syms[prog.name.upper()]
+        ctx.cname = self.prog_syms[id(prog)]
         ctx.coll = None
         if prog.collating:
             self.build_collating(prog)
-        ctx.init_flag = self.init_flags[prog.name.upper()]
+        ctx.init_flag = self.init_flags[id(prog)]
         self.cur_loc = prog.loc
         self.glob.append(f"/* ---------------- program {prog.name} */")
         self.analyze_data(prog)
@@ -321,7 +333,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         if isinstance(spec, str):
             if spec in ('NATIVE', 'ASCII', 'STANDARD-1', 'STANDARD-2'):
                 return None
-            raise CompileError(f"alphabet {spec} is not supported", loc)
+            if spec != 'EBCDIC':
+                raise CompileError(f"alphabet {spec} is not supported", loc)
+            # EBCDIC (code page 037) order of the native characters
+            spec = [('LIT', [bytes([c])]) for c in sorted(range(256), key=lambda c: bytes([c]).decode('latin-1').encode('cp037')[0])]
         cache = self.__dict__.setdefault('_coll_cache', {})
         if id(spec) in cache:
             return cache[id(spec)]
@@ -848,6 +863,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         if gdecls:
             em("if (cob_argc == COB_DECL_ENTRY) goto L_decl_entry;")
         em(f"cob_set_collating({ctx.coll or 'NULL'});")
+        if prog.parent is None:
+            # each outermost program has its own RETURN-CODE, zero on entry;
+            # contained programs share their container's
+            em("cob_set_int(&cob_return_code, 0);")
         if prog.is_initial:
             em(f"{init_name}();")
         else:
@@ -1902,10 +1921,30 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("}")
 
     # ---------------------------------------------------------------- arithmetic
+    RMODE_C = {'NEAREST-AWAY-FROM-ZERO': 'COB_ROUNDED', 'AWAY-FROM-ZERO': 'COB_ROUNDED|COB_RM_AWAY',
+               'NEAREST-EVEN': 'COB_ROUNDED|COB_RM_EVEN', 'NEAREST-TOWARD-ZERO': 'COB_ROUNDED|COB_RM_TOWARD0',
+               'TOWARD-GREATER': 'COB_ROUNDED|COB_RM_GREATER', 'TOWARD-LESSER': 'COB_ROUNDED|COB_RM_LESSER',
+               'PROHIBITED': 'COB_ROUNDED|COB_RM_PROHIBITED', 'TRUNCATION': None}
+
+    def rounding(self, t):
+        """Rounding mode of an arithmetic target (None: truncation)."""
+        if not t.rounded:
+            return None
+        mode = t.rounded if isinstance(t.rounded, str) else self.prog.default_rounded
+        return None if mode == 'TRUNCATION' else mode
+
+    def fast_rounding(self, t):
+        """Rounding flag for the inline fixed-point path; None if the mode needs the runtime."""
+        mode = self.rounding(t)
+        if mode is None:
+            return False
+        return True if mode == 'NEAREST-AWAY-FROM-ZERO' else None
+
     def target_opt(self, t, chk):
         o = []
-        if t.rounded:
-            o.append('COB_ROUNDED')
+        mode = self.rounding(t)
+        if mode is not None:
+            o.append(self.RMODE_C[mode])
         if chk:
             o.append('COB_SIZE_CHECK')
         return '|'.join(o) if o else '0'
@@ -1934,6 +1973,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         if s.verb == 'DIVIDE':
             return False
         targets = s.to + s.giving
+        if any(self.fast_rounding(t) is None for t in targets):
+            return False
         fks = []
         for t in targets:
             fk = self.fast_kind(t.ref)
@@ -1986,7 +2027,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         em.ind += 1
         em(f"cob_s64 cob_ft = {av[0]};")
         for fk, t, (val, sc, wide) in zip(fks, targets, vals):
-            em(self.fast_set(fk, val, sc, wide, t.rounded))
+            em(self.fast_set(fk, val, sc, wide, self.fast_rounding(t)))
         em.ind -= 1
         em("}")
         return True
@@ -2089,20 +2130,20 @@ class CodeGen(ReportWriterGen, DebugGen):
         chk = s.on_error is not None or s.not_on_error is not None
         for t in s.targets:
             self.check_numeric_target(t.ref)
-        if not chk:
+        if not chk and all(self.fast_rounding(t) is not None for t in s.targets):
             fks = [self.fast_kind(t.ref) for t in s.targets]
             if all(fk is not None and fk[0] != 'IX' for fk in fks):
                 ts = max(self.fast_scale(fk) for fk in fks)
                 fv = self.fast_value(s.expr, ts)
                 if fv is not None:
                     if len(fks) == 1:
-                        em(self.fast_set(fks[0], fv[0], fv[1], fv[2], s.targets[0].rounded))
+                        em(self.fast_set(fks[0], fv[0], fv[1], fv[2], self.fast_rounding(s.targets[0])))
                     else:
                         em("{")
                         em.ind += 1
                         em(f"{'cob_s128' if fv[2] else 'cob_s64'} cob_fc = {fv[0]};")
                         for fk, t in zip(fks, s.targets):
-                            em(self.fast_set(fk, 'cob_fc', fv[1], fv[2], t.rounded))
+                            em(self.fast_set(fk, 'cob_fc', fv[1], fv[2], self.fast_rounding(t)))
                         em.ind -= 1
                         em("}")
                     return
@@ -2131,7 +2172,7 @@ class CodeGen(ReportWriterGen, DebugGen):
                 v = it.value
                 em(f"cob_display_lit({dev}, {c_string(v)}, {len(v)});")
             elif isinstance(it, NumLit):
-                t = it.text
+                t = it.text.replace('.', ',') if self.prog.decimal_comma else it.text
                 em(f"cob_display_lit({dev}, {c_string(t)}, {len(t)});")
             elif isinstance(it, Figurative):
                 v = FIG_BYTES[it.kind]
@@ -2456,7 +2497,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         if s.kind == '':
             em(";")
         elif s.kind == 'PROGRAM':
-            em("if (cob_argc >= 0) goto L_exit;")
+            ret = getattr(s, 'returning', None)
+            if ret is not None:
+                em(f"if (cob_argc >= 0) {{ cob_set_int(&cob_return_code, {self.int_expr(ret)}); goto L_exit; }}")
+            else:
+                em("if (cob_argc >= 0) goto L_exit;")
         elif s.kind in ('PERFORM', 'CYCLE'):
             if not self.inline_stack:
                 raise CompileError(f"EXIT PERFORM{' CYCLE' if s.kind == 'CYCLE' else ''} outside of an inline PERFORM", s.loc)
@@ -2861,7 +2906,7 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em.ind -= 1
                 em("}")
                 return
-            sym = self.prog_syms.get(name.upper())
+            sym = self.find_program(name)
             fn = sym if sym else f"cob_resolve_name({c_string(name)})"
         else:
             fn = f"cob_resolve({self.field(s.prog)})"
@@ -2989,7 +3034,7 @@ class CodeGen(ReportWriterGen, DebugGen):
                 self.perform_section(sec)
             else:
                 em(f"cob_decl_which = {sec.id};")
-                em(f"{self.prog_syms[owner.name.upper()]}(COB_DECL_ENTRY, NULL);")
+                em(f"{self.prog_syms[id(owner)]}(COB_DECL_ENTRY, NULL);")
                 em(f"cob_set_collating({self.ctx.coll or 'NULL'});")
         first = True
         for mode, owner, sec in conds:
@@ -3043,6 +3088,16 @@ class CodeGen(ReportWriterGen, DebugGen):
             opt = s.opts[i] if i < len(s.opts) else 0
             self.io_result(fi, f"cob_close_opt(&{fi.sym}, {opt})", flush=False)
 
+    def file_record(self, s):
+        """WRITE/REWRITE FILE file-name: the file's (first) record."""
+        fname = getattr(s, 'file_name', None)
+        if fname is not None and s.record.item is None:
+            fi = self.file_info(fname, s.loc)
+            if not fi.fd.records:
+                raise CompileError(f"file '{fname}' has no record description", s.loc)
+            s.record.item = fi.fd.records[0]
+        return self.record_of(s.record)
+
     def record_of(self, ref):
         it = self.resolve(ref)
         fi = getattr(it, 'file', None)
@@ -3063,10 +3118,12 @@ class CodeGen(ReportWriterGen, DebugGen):
     def g_Read(self, s):
         fi = self.file_info(s.file, s.loc)
         next_ = 1 if s.direction == 'NEXT' or fi.fc.access == 'SEQUENTIAL' else 0
-        if s.direction == 'PREVIOUS':
-            raise CompileError("READ PREVIOUS is not supported", s.loc)
         if fi.fc.organization == 'LINE SEQUENTIAL' or fi.fc.organization == 'SEQUENTIAL':
+            if s.direction == 'PREVIOUS':
+                raise CompileError("READ PREVIOUS requires a relative or indexed file", s.loc)
             next_ = 1
+        elif s.direction == 'PREVIOUS':
+            next_ = 2
         kidx = -1
         if s.key is not None:
             kidx, _ = self.key_index(fi, s.key)
@@ -3079,7 +3136,7 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def g_Write(self, s):
         em = self.em
-        rec, fi = self.record_of(s.record)
+        rec, fi = self.file_record(s)
         if fi.is_sort:
             raise CompileError("use RELEASE for sort files", s.loc)
         if s.frm is not None:
@@ -3099,7 +3156,7 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def g_Rewrite(self, s):
         em = self.em
-        rec, fi = self.record_of(s.record)
+        rec, fi = self.file_record(s)
         if s.frm is not None:
             em(f"cob_move({self.field(s.frm)}, {self.field(s.record)});")
         self.dbg_flush('before')
@@ -3108,6 +3165,13 @@ class CodeGen(ReportWriterGen, DebugGen):
     def g_Delete(self, s):
         fi = self.file_info(s.file, s.loc)
         self.io_result(fi, f"cob_delete(&{fi.sym})", None, None, s.invalid, s.not_invalid)
+
+    def g_DeleteFile(self, s):
+        for fn in s.files:
+            fi = self.file_info(fn, s.loc)
+            if fi.is_sort:
+                raise CompileError(f"cannot DELETE FILE sort file '{fn}'", s.loc)
+            self.io_result(fi, f"cob_delete_file(&{fi.sym})", flush=False)
 
     def g_Start(self, s):
         fi = self.file_info(s.file, s.loc)
@@ -3121,6 +3185,11 @@ class CodeGen(ReportWriterGen, DebugGen):
     def sort_keys_array(self, keys, base_item, loc):
         parts = []
         for k in keys:
+            if k.ref is None:
+                if base_item is None:
+                    raise CompileError("SORT key name expected", loc)
+                parts.append(f"{{0, {base_item.size}, &{self.attr(T_ALNUM)}, {1 if k.descending else 0}}}")
+                continue
             it = self.resolve(k.ref)
             if not isinstance(it, DataItem):
                 raise CompileError(f"invalid sort key '{k.ref.name}'", loc)
@@ -3140,7 +3209,13 @@ class CodeGen(ReportWriterGen, DebugGen):
             if not keys and tbl.occurs.keys:
                 keys = []
                 for desc, nm in tbl.occurs.keys:
+                    if nm == tbl.name:
+                        keys.append(SortKey(desc, None))    # KEY is the element itself
+                        continue
                     r = DataRef(nm, [tbl.name] if tbl.name else [], [], None, s.loc)
+                    found = [x for x in tbl.walk() if x.name == nm]
+                    if len(found) == 1:
+                        r.item = found[0]           # the key within this table
                     keys.append(SortKey(desc, r))
             if keys:
                 arr = self.sort_keys_array(keys, tbl, s.loc)
@@ -3156,7 +3231,15 @@ class CodeGen(ReportWriterGen, DebugGen):
             if len(r2.subs) != len(chain):
                 raise CompileError("table SORT requires subscripts for outer tables", s.loc)
             n = self.int_expr(tbl.occurs.depending) if tbl.occurs.depending is not None else str(tbl.occurs.max)
+            coll = None
+            if getattr(s, 'collating', None):
+                res = self.collating_table(self.prog, s.collating, s.loc)
+                coll = res[0] if res else 'NULL'
+            if coll is not None:
+                em(f"{{ const unsigned short *cob_sv = cob_get_collating(); cob_set_collating({coll});")
             em(f"cob_table_sort({self.data_ptr(r2)}, (size_t)({n}), {tbl.size}, {nk}, {arr});")
+            if coll is not None:
+                em("cob_set_collating(cob_sv); }")
             return
         sd = self.file_info(s.file, s.loc)
         if not sd.is_sort:

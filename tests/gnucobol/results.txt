@@ -1,0 +1,695 @@
+SKIP  data_binary.at:23            BINARY: 2-4-8 big-endian
+SKIP  data_binary.at:205           BINARY: 2-4-8 native
+SKIP  data_binary.at:393           BINARY: 1-2-4-8 big-endian
+SKIP  data_binary.at:575           BINARY: 1-2-4-8 native
+SKIP  data_binary.at:763           BINARY: 1--8 big-endian
+SKIP  data_binary.at:945           BINARY: 1--8 native
+SKIP  data_binary.at:1133          BINARY: full-print
+PASS  data_binary.at:1185          BINARY: 64bit unsigned compare
+SKIP  data_binary.at:1210          BINARY: 64bit unsigned arithmetic notrunc
+SKIP  data_binary.at:1240          BINARY: 64bit signed negative constant range
+PASS  data_binary.at:1261          COMP-4 Truncate
+SKIP  data_binary.at:1322          COMP-4 No Truncate
+SKIP  data_display.at:21           DISPLAY: Sign ASCII
+SKIP  data_display.at:80           DISPLAY: Sign ASCII (2)
+SKIP  data_display.at:126          DISPLAY: Sign EBCDIC
+CERR  data_display.at:171          DISPLAY: unsigned
+SKIP  data_packed.at:25            PACKED-DECIMAL dump
+PASS  data_packed.at:161           PACKED-DECIMAL used with DISPLAY
+PASS  data_packed.at:216           PACKED-DECIMAL used with MOVE
+PASS  data_packed.at:273           PACKED-DECIMAL used with INITIALIZE
+PASS  data_packed.at:312           PACKED-DECIMAL arithmetic
+FAIL  data_packed.at:348           PACKED-DECIMAL numeric test (1)
+SKIP  data_packed.at:490           PACKED-DECIMAL numeric test (2)
+CERR  data_packed.at:606           COMP-6 used with DISPLAY
+CERR  data_packed.at:643           COMP-6 used with MOVE
+CERR  data_packed.at:690           COMP-6 arithmetic
+CERR  data_packed.at:722           COMP-6 numeric test
+SKIP  data_pointer.at:21           POINTER: display
+CERR  run_accept.at:28             ACCEPT OMITTED (simple)
+PASS  run_accept.at:50             ACCEPT FROM TIME / DATE / DAY / DAY-OF-WEEK (1)
+SKIP  run_accept.at:117            ACCEPT FROM TIME / DATE / DAY / DAY-OF-WEEK (2)
+PASS  run_accept.at:200            ACCEPT DATE / DAY and intrinsic functions (1)
+SKIP  run_accept.at:237            ACCEPT DATE / DAY and intrinsic functions (2)
+SKIP  run_accept.at:284            ACCEPT OMITTED (SCREEN)
+SKIP  run_extensions.at:25         CALL BY CONTENT binary and literal
+PASS  run_extensions.at:72         Numeric Boolean literals
+SKIP  run_extensions.at:101        ACUCOBOL literals
+SKIP  run_extensions.at:127        HP COBOL octal literals
+CERR  run_extensions.at:188        Hexadecimal numeric literals
+CERR  run_extensions.at:217        Semi-parenthesized condition
+CERR  run_extensions.at:237        ADDRESS OF
+CERR  run_extensions.at:287        LENGTH OF
+CERR  run_extensions.at:451        SET TO SIZE OF
+CERR  run_extensions.at:488        WHEN-COMPILED
+SKIP  run_extensions.at:517        Complex OCCURS DEPENDING ON (1)
+SKIP  run_extensions.at:546        Complex OCCURS DEPENDING ON (2)
+SKIP  run_extensions.at:609        Complex OCCURS DEPENDING ON (3)
+SKIP  run_extensions.at:672        Complex OCCURS DEPENDING ON (4)
+SKIP  run_extensions.at:738        Complex OCCURS DEPENDING ON (5)
+SKIP  run_extensions.at:804        Complex OCCURS DEPENDING ON (6)
+SKIP  run_extensions.at:845        OCCURS UNBOUNDED (1)
+SKIP  run_extensions.at:906        OCCURS UNBOUNDED (2)
+CERR  run_extensions.at:1060       INITIALIZE OCCURS UNBOUNDED
+SKIP  run_extensions.at:1134       INITIALIZE OCCURS ODOSLIDE
+SKIP  run_extensions.at:1231       DEPENDING ON with ODOSLIDE
+SKIP  run_extensions.at:1446       DEPENDING ON with ODOSLIDE for IBM
+CERR  run_extensions.at:1551       INITIALIZE level 01
+SKIP  run_extensions.at:1603       MOVE of non-integer to alphanumeric
+SKIP  run_extensions.at:1693       CALL USING file-name
+PASS  run_extensions.at:1738       CALL unusual PROGRAM-ID.
+PASS  run_extensions.at:1802       CALL / GOBACK with LOCAL-STORAGE
+PASS  run_extensions.at:1852       CALL BY VALUE alphanumeric item
+CERR  run_extensions.at:1889       CALL BY VALUE numeric literal WITH SIZE
+PASS  run_extensions.at:1993       Case-sensitive PROGRAM-ID
+PASS  run_extensions.at:2018       Quoted PROGRAM-ID
+PASS  run_extensions.at:2041       PROGRAM-ID AS clause
+CERR  run_extensions.at:2064       NUMBER-OF-CALL-PARAMETERS
+SKIP  run_extensions.at:2119       TALLY register
+SKIP  run_extensions.at:2153       Redefining TALLY
+PASS  run_extensions.at:2189       PROCEDURE DIVISION USING BY ...
+CERR  run_extensions.at:2242       PROCEDURE DIVISION CHAINING
+PASS  run_extensions.at:2365       STOP RUN RETURNING/GIVING
+PASS  run_extensions.at:2421       GOBACK/EXIT PROGRAM RETURNING/GIVING
+SKIP  run_extensions.at:2471       ENTRY
+FAIL  run_extensions.at:2517       LINE SEQUENTIAL write
+PASS  run_extensions.at:2563       LINE SEQUENTIAL read
+SKIP  run_extensions.at:2630       ASSIGN to KEYBOARD/DISPLAY
+SKIP  run_extensions.at:2688       SORT ASSIGN KEYBOARD to ASSIGN DISPLAY
+PASS  run_extensions.at:2750       Environment/Argument variable
+PASS  run_extensions.at:2796       78 Level (1)
+PASS  run_extensions.at:2819       78 Level (2)
+PASS  run_extensions.at:2845       78 Level (3)
+SKIP  run_extensions.at:2869       SWITCHES with non-standard names
+SKIP  run_extensions.at:2982       Larger REDEFINES lengths
+PASS  run_extensions.at:3066       REDEFINES: non-referenced ambiguous item
+SKIP  run_extensions.at:3092       Obsolete 2002 keywords with COBOL2014
+FAIL  run_extensions.at:3122       System routine with wrong number of parameters
+FAIL  run_extensions.at:3165       System routine C$NARG
+CERR  run_extensions.at:3242       System routine C$PARAMSIZE
+FAIL  run_extensions.at:3284       System routine C$CALLEDBY
+FAIL  run_extensions.at:3330       System routine C$JUSTIFY
+FAIL  run_extensions.at:3355       System routine C$PRINTABLE
+FAIL  run_extensions.at:3384       System routine C$MAKEDIR
+FAIL  run_extensions.at:3405       System routine C$GETPID
+FAIL  run_extensions.at:3430       System routine C$TOUPPER
+FAIL  run_extensions.at:3455       System routine C$TOLOWER
+FAIL  run_extensions.at:3480       System routine CBL_OR
+FAIL  run_extensions.at:3507       System routine CBL_NOR
+FAIL  run_extensions.at:3534       System routine CBL_AND
+FAIL  run_extensions.at:3561       System routine CBL_XOR
+FAIL  run_extensions.at:3588       System routine CBL_IMP
+FAIL  run_extensions.at:3615       System routine CBL_NIMP
+FAIL  run_extensions.at:3642       System routine CBL_NOT
+FAIL  run_extensions.at:3668       System routine CBL_EQ
+FAIL  run_extensions.at:3695       System routine CBL_GC_GETOPT
+FAIL  run_extensions.at:4132       System routine CBL_GC_FORK
+FAIL  run_extensions.at:4200       System routine CBL_GC_WAITPID
+SKIP  run_extensions.at:4252       System routine CBL_GC_HOSTED
+CERR  run_extensions.at:4382       System routine SYSTEM, parameter handling
+CERR  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
+SKIP  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
+SKIP  run_extensions.at:4673       DISPLAY DIRECTIVE and $DISPLAY
+FAIL  run_extensions.at:4706       Conditional / define directives (1)
+SKIP  run_extensions.at:4731       Conditional / define directives (2)
+SKIP  run_extensions.at:4756       Conditional / define directives (3)
+SKIP  run_extensions.at:4784       Conditional / define directives (4)
+PASS  run_extensions.at:4810       Variable format
+SKIP  run_extensions.at:4832       Binary COMP-1 (1)
+SKIP  run_extensions.at:4863       Binary COMP-1 (2)
+CERR  run_extensions.at:4899       EXHIBIT statement
+PASS  run_file.at:23               OPEN EXTEND and CLOSE, SEQUENTIAL
+PASS  run_file.at:89               DELETE FILE, SEQUENTIAL
+PASS  run_file.at:159              OUTPUT on SEQUENTIAL file to missing directory
+PASS  run_file.at:195              OPEN EXTEND and CLOSE, INDEXED
+PASS  run_file.at:267              DELETE FILE, INDEXED
+PASS  run_file.at:340              OUTPUT on INDEXED file to missing directory
+PASS  run_file.at:379              READ INTO data item AT-END sequence
+PASS  run_file.at:416              First READ on empty SEQUENTIAL INDEXED file
+PASS  run_file.at:456              READ NEXT without previous START
+PASS  run_file.at:534              REWRITE a RELATIVE file with RANDOM access
+PASS  run_file.at:601              File SORT, SEQUENTIAL
+PASS  run_file.at:651              File SORT, SEQUENTIAL variable records
+PASS  run_file.at:733              File SORT, LINE SEQUENTIAL
+FAIL  run_file.at:792              LINAGE and LINAGE-COUNTER sample
+PASS  run_file.at:1078             File SORT, LINE SEQUENTIAL same file
+PASS  run_file.at:1125             File SORT, LINE SEQUENTIAL variable records
+PASS  run_file.at:1189             File MERGE, LINE SEQUENTIAL variable records
+PASS  run_file.at:1280             SORT nonexistent file
+PASS  run_file.at:1315             SORT with INPUT/OUTPUT PROCEDUREs
+PASS  run_file.at:1405             SORT with key1 ASCENDING, key2 DESCENDING
+SKIP  run_file.at:1472             ASSIGN DYNAMIC and EXTERNAL
+SKIP  run_file.at:1520             ASSIGN EXTERNAL parsing
+SKIP  run_file.at:1554             ASSIGN directive
+SKIP  run_file.at:1597             ASSIGNfilename expansion
+SKIP  run_file.at:1624             ASSIGN filename mapping
+SKIP  run_file.at:1796             ASSIGN with COB_FILE_PATH
+PASS  run_file.at:1833             ASSIGN DYNAMIC with LOCAL-STORAGE item
+PASS  run_file.at:1870             ASSIGN DYNAMIC with LOCAL-STORAGE item and INITIAL prog
+CERR  run_file.at:1910             ASSIGN DYNAMIC with BASED data item
+CERR  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
+CERR  run_file.at:2168             ASSIGN DYNAMIC with empty data item
+PASS  run_file.at:2208             ASSIGN DYNAMIC with unset implicit data item
+CERR  run_file.at:2240             INDEXED file key-name
+CERR  run_file.at:2282             INDEXED file sparse/split keys
+CERR  run_file.at:2802             INDEXED file split keys WITH DUPLICATES
+CERR  run_file.at:2960             INDEXED file variable length record
+SKIP  run_file.at:3236             INDEXED sample
+PASS  run_file.at:3639             WRITE + REWRITE FILE name
+PASS  run_file.at:3792             START RELATIVE (1)
+PASS  run_file.at:3841             START RELATIVE (2)
+PASS  run_file.at:3917             START RELATIVE (3)
+PASS  run_file.at:3993             READ on OPTIONAL missing RELATIVE / SEQUENTIAL
+PASS  run_file.at:4115             READ on OPTIONAL missing INDEXED file
+PASS  run_file.at:4165             EXTERNAL RELATIVE file
+PASS  run_file.at:4201             DECLARATIVES procedure referencing
+PASS  run_file.at:4241             DECLARATIVES procedure referencing (multiple)
+FAIL  run_file.at:4285             System routines for directories (1)
+CERR  run_file.at:4327             System routines for directories (2)
+CERR  run_file.at:4424             System routines for files
+FAIL  run_file.at:4698             System routine CBL_COPY_FILE
+SKIP  run_file.at:4733             Default file external name
+PASS  run_file.at:4807             SEQUENTIAL basic I/O
+PASS  run_file.at:4841             LINE SEQUENTIAL basic I/O
+PASS  run_file.at:4907             LINE SEQUENTIAL record truncation
+PASS  run_file.at:4954             SEQUENTIAL file I/O with variable records
+PASS  run_file.at:5029             LINE SEQUENTIAL file I/O with variable records
+PASS  run_file.at:5103             SEQUENTIAL file REWRITE
+SKIP  run_file.at:5215             SEQUENTIAL file with LOCK MODE EXCLUSIVE
+SKIP  run_file.at:5283             SEQUENTIAL file with OPEN WITH LOCK
+SKIP  run_file.at:5349             SEQUENTIAL file with SHARING NO
+FAIL  run_file.at:5417             SEQUENTIAL file with SHARING READ ONLY
+SKIP  run_file.at:5490             SEQUENTIAL file with blocked lock
+PASS  run_file.at:5561             RELATIVE SEQUENTIAL basic I/O
+PASS  run_file.at:5595             RELATIVE RANDOM basic I/O
+PASS  run_file.at:5645             RELATIVE SEQUENTIAL with variable records
+PASS  run_file.at:5719             INDEXED SEQUENTIAL basic I/O
+PASS  run_file.at:5757             INDEXED SEQUENTIAL with variable records
+SKIP  run_file.at:5839             INDEXED file with LOCK MODE EXCLUSIVE
+SKIP  run_file.at:5916             INDEXED file with OPEN WITH LOCK
+SKIP  run_file.at:5992             INDEXED file with SHARING NO
+SKIP  run_file.at:6069             INDEXED file with SHARING READ ONLY
+SKIP  run_file.at:6153             INDEXED file with blocked lock
+SKIP  run_file.at:6233             INDEXED file with LOCK AUTOMATIC (1)
+PASS  run_file.at:6322             INDEXED file with LOCK AUTOMATIC (2)
+SKIP  run_file.at:6412             INDEXED file with LOCK MANUAL
+PASS  run_file.at:6500             START INDEXED
+PASS  run_file.at:6579             INDEXED partial keys
+SKIP  run_file.at:6726             INDEXED undeclared keys
+SKIP  run_file.at:6897             READ INPUT pipe & WRITE OUTPUT pipe
+SKIP  run_file.at:6995             EXTFH: using ISAM callback
+SKIP  run_file.at:7695             EXTFH: SEQUENTIAL files
+SKIP  run_file.at:8105             EXTFH: LINE SEQUENTIAL files, direct EXTFH
+CERR  run_file.at:8287             INDEXED File READ/DELETE/READ
+SKIP  run_file.at:9084             TURN EC-I-O
+FAIL  run_functions.at:24          FUNCTION ABS
+FAIL  run_functions.at:46          FUNCTION ACOS
+FAIL  run_functions.at:70          FUNCTION ANNUITY
+FAIL  run_functions.at:94          FUNCTION ASIN
+FAIL  run_functions.at:118         FUNCTION ATAN
+FAIL  run_functions.at:142         FUNCTION BYTE-LENGTH
+PASS  run_functions.at:212         FUNCTION CHAR
+CERR  run_functions.at:250         FUNCTION COMBINED-DATETIME
+CERR  run_functions.at:275         FUNCTION CONCAT / CONCATENATE
+PASS  run_functions.at:322         FUNCTION CONCATENATE with reference modding
+CERR  run_functions.at:350         FUNCTION CONTENT-LENGTH
+CERR  run_functions.at:384         FUNCTION CONTENT-OF
+CERR  run_functions.at:459         FUNCTION as CALL parameter BY CONTENT
+FAIL  run_functions.at:495         FUNCTION COS
+CERR  run_functions.at:519         FUNCTION CURRENCY-SYMBOL
+PASS  run_functions.at:542         FUNCTION CURRENT-DATE
+PASS  run_functions.at:613         FUNCTION DATE-OF-INTEGER
+PASS  run_functions.at:638         FUNCTION DATE-TO-YYYYMMDD
+PASS  run_functions.at:663         FUNCTION DAY-OF-INTEGER
+PASS  run_functions.at:688         FUNCTION DAY-TO-YYYYDDD
+PASS  run_functions.at:713         FUNCTION E
+CERR  run_functions.at:737         FUNCTION EXCEPTION-FILE
+CERR  run_functions.at:772         FUNCTION EXCEPTION-LOCATION
+CERR  run_functions.at:811         FUNCTION EXCEPTION-STATEMENT
+CERR  run_functions.at:846         FUNCTION EXCEPTION-STATUS
+FAIL  run_functions.at:881         FUNCTION EXP
+PASS  run_functions.at:905         FUNCTION EXP10
+PASS  run_functions.at:930         FUNCTION FACTORIAL
+CERR  run_functions.at:955         FUNCTION FORMATTED-CURRENT-DATE
+CERR  run_functions.at:983         FUNCTION FORMATTED-DATE
+CERR  run_functions.at:1046        FUNCTION FORMATTED-DATE with ref modding
+CERR  run_functions.at:1071        FUNCTION FORMATTED-DATETIME
+CERR  run_functions.at:1128        FUNCTION FORMATTED-DATETIME with ref modding
+CERR  run_functions.at:1154        FUNCTION FORMATTED-TIME
+CERR  run_functions.at:1241        FUNCTION FORMATTED-TIME DP.COMMA
+CERR  run_functions.at:1272        FUNCTION FORMATTED-TIME with ref modding
+PASS  run_functions.at:1297        FUNCTION FRACTION-PART
+CERR  run_functions.at:1328        FUNCTION HIGHEST-ALGEBRAIC
+PASS  run_functions.at:1396        FUNCTION INTEGER
+PASS  run_functions.at:1429        FUNCTION INTEGER-OF-DATE
+PASS  run_functions.at:1454        FUNCTION INTEGER-OF-DAY
+CERR  run_functions.at:1479        FUNCTION INTEGER-OF-FORMATTED-DATE
+PASS  run_functions.at:1529        FUNCTION INTEGER-PART
+PASS  run_functions.at:1555        FUNCTION LENGTH
+CERR  run_functions.at:1623        FUNCTION LOCALE-COMPARE
+CERR  run_functions.at:1653        FUNCTION LOCALE-DATE
+CERR  run_functions.at:1679        FUNCTION LOCALE-TIME
+CERR  run_functions.at:1705        FUNCTION LOCALE-TIME-FROM-SECONDS
+FAIL  run_functions.at:1731        FUNCTION LOG
+FAIL  run_functions.at:1755        FUNCTION LOG10
+PASS  run_functions.at:1779        FUNCTION LOWER-CASE
+PASS  run_functions.at:1807        FUNCTION LOWER-CASE with reference modding
+CERR  run_functions.at:1833        FUNCTION LOWEST-ALGEBRAIC
+PASS  run_functions.at:1886        FUNCTION MAX
+FAIL  run_functions.at:1908        FUNCTION MEAN
+PASS  run_functions.at:1930        FUNCTION MEDIAN
+FAIL  run_functions.at:1952        FUNCTION MIDRANGE
+PASS  run_functions.at:1974        FUNCTION MIN
+PASS  run_functions.at:1996        FUNCTION MOD (valid)
+CERR  run_functions.at:2026        FUNCTION MOD (invalid)
+CERR  run_functions.at:2057        FUNCTION MODULE-CALLER-ID
+CERR  run_functions.at:2091        FUNCTION MODULE-DATE
+CERR  run_functions.at:2116        FUNCTION MODULE-FORMATTED-DATE
+CERR  run_functions.at:2141        FUNCTION MODULE-ID
+CERR  run_functions.at:2162        FUNCTION MODULE-PATH
+CERR  run_functions.at:2187        FUNCTION MODULE-SOURCE
+CERR  run_functions.at:2208        FUNCTION MODULE-TIME
+CERR  run_functions.at:2233        FUNCTION MONETARY-DECIMAL-POINT
+CERR  run_functions.at:2256        FUNCTION MONETARY-THOUSANDS-SEPARATOR
+CERR  run_functions.at:2279        FUNCTION NUMERIC-DECIMAL-POINT
+CERR  run_functions.at:2302        FUNCTION NUMERIC-THOUSANDS-SEPARATOR
+PASS  run_functions.at:2325        FUNCTION NUMVAL
+FAIL  run_functions.at:2356        FUNCTION NUMVAL-C
+FAIL  run_functions.at:2387        FUNCTION NUMVAL-C DP.COMMA
+FAIL  run_functions.at:2417        FUNCTION NUMVAL-F
+FAIL  run_functions.at:2440        FUNCTION ORD
+FAIL  run_functions.at:2462        FUNCTION ORD-MAX
+FAIL  run_functions.at:2484        FUNCTION ORD-MIN
+PASS  run_functions.at:2506        FUNCTION PI
+FAIL  run_functions.at:2530        FUNCTION PRESENT-VALUE
+PASS  run_functions.at:2552        FUNCTION RANDOM
+PASS  run_functions.at:2576        FUNCTION RANGE
+PASS  run_functions.at:2600        FUNCTION REM (valid)
+CERR  run_functions.at:2623        FUNCTION REM (invalid)
+PASS  run_functions.at:2654        FUNCTION REVERSE
+PASS  run_functions.at:2679        FUNCTION REVERSE with reference modding
+CERR  run_functions.at:2704        FUNCTION SECONDS-FROM-FORMATTED-TIME
+PASS  run_functions.at:2771        FUNCTION SECONDS-PAST-MIDNIGHT
+PASS  run_functions.at:2795        FUNCTION SIGN
+FAIL  run_functions.at:2834        FUNCTION SIN
+FAIL  run_functions.at:2858        FUNCTION SQRT
+FAIL  run_functions.at:2882        FUNCTION STANDARD-DEVIATION
+FAIL  run_functions.at:2906        FUNCTION STORED-CHAR-LENGTH
+PASS  run_functions.at:2932        FUNCTION SUBSTITUTE
+PASS  run_functions.at:2961        FUNCTION SUBSTITUTE with reference modding
+CERR  run_functions.at:2989        FUNCTION SUBSTITUTE-CASE
+CERR  run_functions.at:3016        FUNCTION SUBSTITUTE-CASE with reference mod
+PASS  run_functions.at:3044        FUNCTION SUM
+FAIL  run_functions.at:3068        FUNCTION TAN
+FAIL  run_functions.at:3092        FUNCTION TEST-DATE-YYYYMMDD
+FAIL  run_functions.at:3114        FUNCTION TEST-DAY-YYYYDDD
+CERR  run_functions.at:3136        FUNCTION TEST-FORMATTED-DATETIME with dates
+CERR  run_functions.at:3263        FUNCTION TEST-FORMATTED-DATETIME with times
+CERR  run_functions.at:3344        FUNCTION TEST-FORMATTED-DATETIME with datetimes
+CERR  run_functions.at:3397        FUNCTION TEST-FORMATTED-DATETIME DP.COMMA
+FAIL  run_functions.at:3438        FUNCTION TEST-NUMVAL
+CERR  run_functions.at:3536        FUNCTION TEST-NUMVAL-C
+CERR  run_functions.at:3634        FUNCTION TEST-NUMVAL-F
+PASS  run_functions.at:3732        FUNCTION TRIM
+PASS  run_functions.at:3758        FUNCTION TRIM with reference modding
+PASS  run_functions.at:3784        FUNCTION TRIM zero length
+PASS  run_functions.at:3811        FUNCTION UPPER-CASE
+PASS  run_functions.at:3836        FUNCTION UPPER-CASE with reference modding
+PASS  run_functions.at:3861        FUNCTION VARIANCE
+FAIL  run_functions.at:3885        FUNCTION WHEN-COMPILED
+PASS  run_functions.at:3939        FUNCTION YEAR-TO-YYYY
+CERR  run_functions.at:3963        Formatted funcs w/ invalid variable format
+CERR  run_functions.at:4044        FORMATTED-(DATE)TIME with SYSTEM-OFFSET
+SKIP  run_functions.at:4082        Intrinsics without FUNCTION keyword (1)
+SKIP  run_functions.at:4103        Intrinsics without FUNCTION keyword (2)
+CERR  run_functions.at:4126        User-Defined FUNCTION with/without parameter
+CERR  run_functions.at:4177        UDF in COMPUTE
+SKIP  run_functions.at:4220        UDF replacing intrinsic function
+SKIP  run_functions.at:4263        UDF with recursion
+PASS  run_fundamental.at:24        DISPLAY literals
+PASS  run_fundamental.at:86        DISPLAY literals, DECIMAL-POINT is COMMA
+SKIP  run_fundamental.at:125       Hexadecimal literal
+PASS  run_fundamental.at:166       DISPLAY data items with VALUE clause
+PASS  run_fundamental.at:213       DISPLAY data items with MOVE statement
+PASS  run_fundamental.at:267       MOVE to edited item (1)
+PASS  run_fundamental.at:316       MOVE to edited item (2)
+PASS  run_fundamental.at:365       MOVE to item with simple and floating insertion
+PASS  run_fundamental.at:400       MOVE to JUSTIFIED item
+PASS  run_fundamental.at:445       MOVE integer literal to alphanumeric
+CERR  run_fundamental.at:470       Compare FLOAT-LONG with floating-point literal
+FAIL  run_fundamental.at:523       Check for equality of FLOAT-SHORT / FLOAT-LONG
+PASS  run_fundamental.at:646       Overlapping MOVE
+PASS  run_fundamental.at:747       Overlapping MOVE
+SKIP  run_fundamental.at:789       IBM MOVE
+PASS  run_fundamental.at:828       ALPHABETIC test
+PASS  run_fundamental.at:860       ALPHABETIC-UPPER test
+PASS  run_fundamental.at:892       ALPHABETIC-LOWER test
+PASS  run_fundamental.at:924       GLOBAL at same level
+PASS  run_fundamental.at:973       GLOBAL at lower level
+CERR  run_fundamental.at:1022      GLOBAL CONSTANT
+CERR  run_fundamental.at:1106      GLOBAL identifiers from ENVIRONMENT DIVISION
+SKIP  run_fundamental.at:1187      function with variable-length RETURNING item
+CERR  run_fundamental.at:1270      Entry point visibility (1)
+SKIP  run_fundamental.at:1302      Entry point visibility (2)
+FAIL  run_fundamental.at:1336      Contained program visibility (1)
+FAIL  run_fundamental.at:1391      Contained program visibility (2)
+PASS  run_fundamental.at:1444      Contained program visibility (3)
+CERR  run_fundamental.at:1495      Contained program visibility (4)
+SKIP  run_fundamental.at:1550      CALL/CANCEL with program-prototype-name
+SKIP  run_fundamental.at:1623      GLOBAL FD (1)
+SKIP  run_fundamental.at:1673      GLOBAL FD (2)
+PASS  run_fundamental.at:1723      GLOBAL FD (3)
+PASS  run_fundamental.at:1773      GLOBAL FD (4)
+FAIL  run_fundamental.at:1823      CANCEL test (1)
+FAIL  run_fundamental.at:1850      CANCEL test (2)
+SKIP  run_fundamental.at:1890      CANCEL test (3)
+PASS  run_fundamental.at:1933      Separate sign positions (1)
+SKIP  run_fundamental.at:1957      Separate sign positions (2)
+CERR  run_fundamental.at:1990      Context sensitive words (1)
+PASS  run_fundamental.at:2013      Context sensitive words (2)
+PASS  run_fundamental.at:2037      Context sensitive words (3)
+PASS  run_fundamental.at:2061      Context sensitive words (4)
+CERR  run_fundamental.at:2086      Context sensitive words (5)
+PASS  run_fundamental.at:2109      Context sensitive words (6)
+PASS  run_fundamental.at:2131      Context sensitive words (7)
+SKIP  run_fundamental.at:2158      Context sensitive words (8)
+PASS  run_fundamental.at:2185      ROUNDED AWAY-FROM-ZERO
+PASS  run_fundamental.at:2248      ROUNDED NEAREST-AWAY-FROM-ZERO
+PASS  run_fundamental.at:2311      ROUNDED NEAREST-EVEN
+PASS  run_fundamental.at:2374      ROUNDED NEAREST-TOWARD-ZERO
+PASS  run_fundamental.at:2437      ROUNDED TOWARD-GREATER
+PASS  run_fundamental.at:2500      ROUNDED TOWARD-LESSER
+PASS  run_fundamental.at:2563      ROUNDED TRUNCATION
+PASS  run_fundamental.at:2626      Numeric operations (1)
+PASS  run_fundamental.at:2670      Numeric operations (2)
+PASS  run_fundamental.at:2976      Numeric operations (3)
+PASS  run_fundamental.at:3282      Numeric operations (4)
+PASS  run_fundamental.at:3588      Numeric operations (5)
+SKIP  run_fundamental.at:3894      Numeric operations (6)
+PASS  run_fundamental.at:3963      Numeric operations (7)
+PASS  run_fundamental.at:4255      Numeric operations (8)
+PASS  run_fundamental.at:4305      ADD CORRESPONDING
+PASS  run_fundamental.at:4353      ADD CORRESPONDING no match
+CERR  run_fundamental.at:4403      SYNC in OCCURS
+PASS  run_fundamental.at:4443      88 level with THRU
+PASS  run_fundamental.at:4538      88 level with FILLER
+PASS  run_fundamental.at:4567      88 level with FALSE IS clause
+PASS  run_fundamental.at:4595      BLANK WHEN ZERO
+PASS  run_fundamental.at:4625      MULTIPLY BY literal in INITIAL program
+PASS  run_fundamental.at:4649      debugging lines (not active)
+PASS  run_fundamental.at:4672      debugging lines (-fdebugging-line)
+PASS  run_fundamental.at:4695      debugging lines (WITH DEBUGGING MODE)
+PASS  run_fundamental.at:4721      debugging lines, free format (not active)
+PASS  run_fundamental.at:4744      debugging lines, free format (-fdebugging-line)
+PASS  run_fundamental.at:4767      USE FOR DEBUGGING (no DEBUGGING MODE)
+PASS  run_fundamental.at:4812      USE FOR DEBUGGING (COB_SET_DEBUG deactivated)
+FAIL  run_fundamental.at:4857      USE FOR DEBUGGING ON ALL PROCEDURES
+PASS  run_fundamental.at:4908      USE FOR DEBUGGING ON procedure
+CERR  run_fundamental.at:4956      USE FOR DEBUGGING (COB_SET_DEBUG switched)
+SKIP  run_fundamental.at:5005      USE FOR DEBUGGING ON [ALL] REFERENCES OF field
+PASS  run_fundamental.at:5073      USE FOR DEBUGGING, reference within DEBUGGING
+SKIP  run_fundamental.at:5114      USE FOR DEBUGGING, time of execution
+PASS  run_fundamental.at:5164      USE FOR DEBUGGING, reference with OCCURS
+SKIP  run_fundamental.at:5197      USE FOR DEBUGGING, referencing BASED item
+PASS  run_fundamental.at:5234      USE FOR DEBUGGING file
+PASS  run_fundamental.at:5277      Abbreviated Expressions
+PASS  run_fundamental.at:5383      integer arithmetic on floating-point var
+CERR  run_fundamental.at:5425      TYPEDEF application
+PASS  run_initialize.at:27         INITIALIZE group entry with OCCURS
+PASS  run_initialize.at:55         INITIALIZE OCCURS with numeric edited
+SKIP  run_initialize.at:88         INITIALIZE OCCURS with SIGN LEADING / TRAILING
+PASS  run_initialize.at:159        INITIALIZE complex group (1)
+PASS  run_initialize.at:187        INITIALIZE complex group (2)
+PASS  run_initialize.at:215        INITIALIZE group item
+PASS  run_initialize.at:325        INITIALIZE with REDEFINES
+FAIL  run_initialize.at:352        INITIALIZE with FILLER
+PASS  run_initialize.at:419        INITIALIZE of EXTERNAL data items
+FAIL  run_initialize.at:470        INITIALIZE with reference modification
+SKIP  run_manual_screen.at:24      LINE
+SKIP  run_manual_screen.at:71      COLUMN (1)
+SKIP  run_manual_screen.at:121     COLUMN (2)
+SKIP  run_manual_screen.at:168     LINE non-zero, COLUMN zero
+SKIP  run_manual_screen.at:207     LINE zero, COLUMN non-zero
+SKIP  run_manual_screen.at:247     LINE zero, COLUMN zero
+SKIP  run_manual_screen.at:289     DISPLAY AT
+SKIP  run_manual_screen.at:332     DISPLAY LOW-VALUES (one statement)
+SKIP  run_manual_screen.at:370     DISPLAY LOW-VALUES (two statements)
+SKIP  run_manual_screen.at:409     DISPLAY SPACES
+SKIP  run_manual_screen.at:464     DISPLAY ALL X'01'
+SKIP  run_manual_screen.at:519     DISPLAY ALL X'02'
+SKIP  run_manual_screen.at:580     DISPLAY ALL X'07'
+SKIP  run_manual_screen.at:637     Screen position after field display
+SKIP  run_manual_screen.at:677     Overridden clauses (1)
+SKIP  run_manual_screen.at:725     Overridden clauses (2)
+SKIP  run_manual_screen.at:766     AUTO
+SKIP  run_manual_screen.at:818     BACKGROUND- / FOREGROUND-COLOUR
+SKIP  run_manual_screen.at:889     BEEP
+SKIP  run_manual_screen.at:946     BLANK LINE
+SKIP  run_manual_screen.at:1004    BLANK SCREEN
+SKIP  run_manual_screen.at:1061    BLANK ignored in ACCEPT
+SKIP  run_manual_screen.at:1103    BLINK
+SKIP  run_manual_screen.at:1142    ERASE EOS
+SKIP  run_manual_screen.at:1200    ERASE EOL
+SKIP  run_manual_screen.at:1258    ERASE ignored in ACCEPT
+SKIP  run_manual_screen.at:1313    FULL and REQUIRED
+SKIP  run_manual_screen.at:1354    HIGHLIGHT
+SKIP  run_manual_screen.at:1394    INITIAL
+SKIP  run_manual_screen.at:1441    LEFTLINE
+SKIP  run_manual_screen.at:1484    LOWLIGHT
+SKIP  run_manual_screen.at:1523    OVERLINE
+SKIP  run_manual_screen.at:1565    REVERSE-VIDEO
+SKIP  run_manual_screen.at:1606    SECURE
+SKIP  run_manual_screen.at:1648    SIZE with items
+SKIP  run_manual_screen.at:1692    SIZE with figurative constants
+SKIP  run_manual_screen.at:1733    UPDATE
+SKIP  run_manual_screen.at:1774    UNDERLINE
+SKIP  run_manual_screen.at:1813    HOME key
+SKIP  run_manual_screen.at:1860    END key
+SKIP  run_manual_screen.at:1907    INSERT key
+SKIP  run_manual_screen.at:1956    BACKSPACE key
+SKIP  run_manual_screen.at:2005    DELETE key
+SKIP  run_manual_screen.at:2054    ALT DELETE key
+SKIP  run_manual_screen.at:2101    ALT LEFT-ARROW key
+SKIP  run_manual_screen.at:2148    ALT RIGHT-ARROW key
+SKIP  run_manual_screen.at:2195    CURSOR clause
+SKIP  run_manual_screen.at:2294    CRT STATUS clause
+PASS  run_misc.at:23               Comma separator without space
+PASS  run_misc.at:44               DECIMAL-POINT is COMMA (1)
+PASS  run_misc.at:72               DECIMAL-POINT is COMMA (2)
+PASS  run_misc.at:100              DECIMAL-POINT is COMMA (3)
+PASS  run_misc.at:128              DECIMAL-POINT is COMMA (4)
+PASS  run_misc.at:156              DECIMAL-POINT is COMMA (5)
+PASS  run_misc.at:190              CURRENCY SIGN
+SKIP  run_misc.at:221              CURRENCY SIGN WITH PICTURE SYMBOL
+PASS  run_misc.at:268              LOCAL-STORAGE (1)
+PASS  run_misc.at:304              LOCAL-STORAGE (2)
+PASS  run_misc.at:352              EXTERNAL data item
+CERR  run_misc.at:394              EXTERNAL AS data item
+SKIP  run_misc.at:443              EXTERNAL data item size mismatch
+PASS  run_misc.at:528              MOVE to itself
+PASS  run_misc.at:554              MOVE with refmod
+PASS  run_misc.at:578              MOVE with refmod (variable)
+PASS  run_misc.at:604              MOVE with group refmod
+PASS  run_misc.at:629              MOVE indexes
+SKIP  run_misc.at:655              MOVE X'00'
+PASS  run_misc.at:690              MOVE Z'literal'
+CERR  run_misc.at:732              Floating continuation indicator
+PASS  run_misc.at:754              Fixed continuation indicator
+PASS  run_misc.at:796              Concatenation operator
+CERR  run_misc.at:820              SOURCE FIXED/FREE directives
+FAIL  run_misc.at:856              TURN directive
+SKIP  run_misc.at:897              Level 01 subscripts
+PASS  run_misc.at:919              Class check with reference modification
+PASS  run_misc.at:943              Index and parenthesized expression
+PASS  run_misc.at:967              Alphanumeric and binary numeric
+SKIP  run_misc.at:992              Non-numeric data in numeric items
+SKIP  run_misc.at:1066             Dynamic call with static linking
+SKIP  run_misc.at:1095             Static call with static linking
+PASS  run_misc.at:1126             Dynamic CALL with ON EXCEPTION
+SKIP  run_misc.at:1158             Static CALL with ON EXCEPTION
+PASS  run_misc.at:1198             CALL m1. CALL m2. CALL m1.
+PASS  run_misc.at:1253             Recursive CALL of RECURSIVE program
+FAIL  run_misc.at:1311             Recursive CALL of INITIAL program
+SKIP  run_misc.at:1362             Recursive CALL with RECURSIVE assumed
+CERR  run_misc.at:1408             Recursive CALL with ON EXCEPTION
+FAIL  run_misc.at:1465             Multiple calls of INITIAL program
+SKIP  run_misc.at:1522             CALL binary literal parameter/LENGTH OF
+PASS  run_misc.at:1576             INSPECT REPLACING LEADING ZEROS BY SPACES
+PASS  run_misc.at:1598             INSPECT No repeat conversion check
+CERR  run_misc.at:1624             INSPECT CONVERTING alphabet
+PASS  run_misc.at:1659             INSPECT CONVERTING TO figurative constant
+PASS  run_misc.at:1683             INSPECT CONVERTING NULL
+PASS  run_misc.at:1707             INSPECT CONVERTING TO NULL
+PASS  run_misc.at:1731             INSPECT REPLACING figurative constant
+PASS  run_misc.at:1755             INSPECT TALLYING BEFORE
+PASS  run_misc.at:1790             INSPECT TALLYING AFTER
+CERR  run_misc.at:1825             INSPECT REPLACING TRAILING ZEROS BY SPACES
+CERR  run_misc.at:1849             INSPECT REPLACING complex
+SKIP  run_misc.at:1875             SWITCHES (environment COB_SWITCH_n and SET)
+PASS  run_misc.at:1972             Nested PERFORM
+PASS  run_misc.at:1996             PERFORM VARYING BY -0.2
+SKIP  run_misc.at:2023             PERFORM VARYING BY phrase omitted
+PASS  run_misc.at:2054             EXIT PERFORM
+PASS  run_misc.at:2079             EXIT PERFORM CYCLE
+PASS  run_misc.at:2104             EXIT PARAGRAPH
+PASS  run_misc.at:2136             EXIT SECTION
+CERR  run_misc.at:2170             PERFORM FOREVER / PERFORM UNTIL EXIT
+SKIP  run_misc.at:2211             PERFORM inline (1)
+SKIP  run_misc.at:2238             PERFORM inline (2)
+PASS  run_misc.at:2263             Non-overflow after overflow
+SKIP  run_misc.at:2293             PERFORM ... CONTINUE
+PASS  run_misc.at:2310             STRING with subscript reference
+CERR  run_misc.at:2337             STRING / UNSTRING NOT ON OVERFLOW
+PASS  run_misc.at:2454             UNSTRING DELIMITED ALL LOW-VALUE
+PASS  run_misc.at:2489             UNSTRING DELIMITED ALL SPACE-2
+PASS  run_misc.at:2554             UNSTRING DELIMITED POINTER
+SKIP  run_misc.at:2608             UNSTRING DELIMITER IN
+CERR  run_misc.at:2650             UNSTRING with FUNCTION / literal
+PASS  run_misc.at:2720             SORT: table sort
+PASS  run_misc.at:2762             SORT: table sort (2)
+PASS  run_misc.at:2887             SORT: table sort (3)
+PASS  run_misc.at:2980             SORT: EBCDIC table sort
+PASS  run_misc.at:3047             PIC ZZZ-, ZZZ+
+SKIP  run_misc.at:3100             PERFORM type OSVS
+SKIP  run_misc.at:3137             Sticky LINKAGE
+PASS  run_misc.at:3184             COB_PRE_LOAD
+CERR  run_misc.at:3210             COB_PRE_LOAD with entry points
+CERR  run_misc.at:3281             Lookup ENTRY from main executable
+SKIP  run_misc.at:3322             COB_LOAD_CASE=UPPER test
+CERR  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
+CERR  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
+CERR  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
+SKIP  run_misc.at:3463             Initialized value with defaultbyte
+CERR  run_misc.at:3488             CALL with OMITTED parameter
+SKIP  run_misc.at:3527             CALL in from C, cob_call_params explicitly set
+SKIP  run_misc.at:3588             CALL in from C, cob_call_params unknown
+SKIP  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTERN
+SKIP  run_misc.at:3713             CALL C with callback, ENTRY-CONVENTION EXTERN
+SKIP  run_misc.at:3864             CALL in from C with init missing / implicit
+SKIP  run_misc.at:3916             CALL STATIC C from COBOL
+CERR  run_misc.at:3972             ANY LENGTH (1)
+CERR  run_misc.at:4015             ANY LENGTH (2)
+CERR  run_misc.at:4059             ANY LENGTH (3)
+CERR  run_misc.at:4102             ANY LENGTH (4)
+CERR  run_misc.at:4145             ANY LENGTH (5)
+CERR  run_misc.at:4170             access to BASED item without allocation
+FAIL  run_misc.at:4211             access to OPTIONAL LINKAGE item not passed
+PASS  run_misc.at:4253             STOP RUN WITH NORMAL STATUS
+PASS  run_misc.at:4271             STOP RUN WITH ERROR STATUS
+FAIL  run_misc.at:4289             SYMBOLIC clause
+PASS  run_misc.at:4326             OCCURS clause with 1 entry
+CERR  run_misc.at:4375             Computing of different USAGEs w/o decimal point
+CERR  run_misc.at:5011             Computing of different USAGEs w/- decimal point
+SKIP  run_misc.at:5646             C/C++ reserved words/predefined identifiers
+SKIP  run_misc.at:6106             ON EXCEPTION clause of DISPLAY
+SKIP  run_misc.at:6131             EC-SCREEN-LINE-NUMBER and -STARTING-COLUMN
+SKIP  run_misc.at:6172             LINE/COLUMN 0 exceptions
+CERR  run_misc.at:6210             SET LAST EXCEPTION TO OFF
+CERR  run_misc.at:6246             void PROCEDURE
+SKIP  run_misc.at:6275             Figurative constants to numeric field
+SKIP  run_misc.at:6337             MF FIGURATIVE to NUMERIC
+SKIP  run_misc.at:6472             CALL RETURNING
+SKIP  run_misc.at:6511             void PROCEDURE, NOTHING return
+SKIP  run_misc.at:6546             READY TRACE / RESET TRACE
+SKIP  run_misc.at:6908             Trace feature with subroutine
+SKIP  run_misc.at:8977             stack and dump feature
+SKIP  run_misc.at:9700             Test dump feature (2)
+CERR  run_misc.at:9965             CALL with program prototypes
+PASS  run_misc.at:10021            REDEFINES values on FILLER and INITIALIZE
+CERR  run_misc.at:10076            PICTURE with constant-name
+PASS  run_misc.at:10104            Quote marks in comment paragraphs
+CERR  run_misc.at:10130            Numeric MOVE with/without -fbinary-truncate
+PASS  run_misc.at:10190            Alphanumeric MOVE with truncation
+PASS  run_misc.at:10241            PROGRAM-ID / CALL literal/variable with spaces
+SKIP  run_misc.at:10309            C-API Test (param based)
+SKIP  run_misc.at:10544            C-API Test (field based)
+PASS  run_misc.at:10771            DEFAULT ROUNDED MODE
+SKIP  run_misc.at:10801            OCCURS INDEXED ASCENDING
+FAIL  run_misc.at:10899            ZERO unsigned and negative binary subscript
+PASS  run_misc.at:10963            Default Arithmetic (1)
+PASS  run_misc.at:11067            Default Arithmetic Test (2)
+SKIP  run_misc.at:11118            OSVS Arithmetic (1)
+SKIP  run_misc.at:11235            OSVS Arithmetic Test (2)
+SKIP  run_misc.at:11292            SET CONSTANT directive
+SKIP  run_misc.at:11395            DEFINE OVERRIDE
+SKIP  run_misc.at:11461            DEFINE Defaults
+CERR  run_misc.at:11527            78 VALUE
+CERR  run_misc.at:11595            01 CONSTANT
+SKIP  run_misc.at:11675            DISPLAY UPON
+CERR  run_misc.at:11767            FLOAT-DECIMAL w/o SIZE ERROR
+CERR  run_misc.at:11941            FLOAT-SHORT / FLOAT-LONG w/o SIZE ERROR
+SKIP  run_misc.at:12140            FLOAT-SHORT with SIZE ERROR
+SKIP  run_misc.at:12191            FLOAT-LONG with SIZE ERROR
+CERR  run_misc.at:12248            EC-SIZE-ZERO-DIVIDE
+CERR  run_misc.at:12291            EC-SIZE-OVERFLOW
+CERR  run_misc.at:12322            Constant Expressions
+SKIP  run_misc.at:12408            ENTRY FOR GO TO / GO TO ENTRY
+CERR  run_misc.at:12498            runtime checks within conditions
+SKIP  run_misc.at:12612            libcob version check
+SKIP  run_ml.at:19                 XML GENERATE general
+SKIP  run_ml.at:127                XML GENERATE SUPPRESS
+SKIP  run_ml.at:204                XML GENERATE exceptions
+SKIP  run_ml.at:300                XML GENERATE record selection
+SKIP  run_ml.at:344                XML GENERATE trimming
+SKIP  run_ml.at:441                XML DPC-IN-DATA directive
+SKIP  run_ml.at:472                XML dpc-in-data config option
+SKIP  run_ml.at:516                JSON GENERATE general
+SKIP  run_ml.at:573                JSON GENERATE SUPPRESS
+SKIP  run_ml.at:612                JSON GENERATE exceptions
+SKIP  run_ml.at:677                JSON GENERATE record selection
+SKIP  run_ml.at:721                JSON GENERATE trimming
+SKIP  run_ml.at:821                JSON DPC-IN-DATA directive
+SKIP  run_ml.at:852                JSON dpc-in-data config option
+PASS  run_refmod.at:25             Static reference modification
+PASS  run_refmod.at:57             Dynamic reference modification
+PASS  run_refmod.at:94             Offset underflow
+SKIP  run_refmod.at:118            Offset overflow
+SKIP  run_refmod.at:145            Length underflow
+PASS  run_refmod.at:189            Length overflow
+PASS  run_refmod.at:231            Length overflow with offset (1)
+PASS  run_refmod.at:254            Length overflow with offset (2)
+PASS  run_refmod.at:280            Length overflow with offset (3)
+CERR  run_refmod.at:313            enable / disable ref-mod check
+SKIP  run_refmod.at:388            MF SSRANGE and NOSSRANGE directives
+FAIL  run_reportwriter.at:23       Report Line Order
+CERR  run_reportwriter.at:120      REPORT COL PLUS
+PASS  run_reportwriter.at:189      Report Overlapping Fields
+CERR  run_reportwriter.at:258      EMPTY REPORT
+CERR  run_reportwriter.at:327      PAGE LIMIT REPORT
+CERR  run_reportwriter.at:389      PAGE LIMIT REPORT 2
+CERR  run_reportwriter.at:461      Sample Customer Report
+CERR  run_reportwriter.at:776      Sample Charge Report
+CERR  run_reportwriter.at:1129     Sample Charge Report 2
+CERR  run_reportwriter.at:1499     Sample Charge Report 3
+CERR  run_reportwriter.at:1799     Sample Charge Report 4
+CERR  run_reportwriter.at:2215     Sample Payroll Report
+SKIP  run_reportwriter.at:2900     Sample REPORT with RIGHT/CENTER
+CERR  run_reportwriter.at:3068     STUDENT REPORT with INITIAL
+CERR  run_reportwriter.at:3220     ORDER REPORT; Test substring
+CERR  run_reportwriter.at:3568     Sample Control Break
+CERR  run_reportwriter.at:3797     Sample Inventory Report
+PASS  run_reportwriter.at:3990     Duplicate Detail Line
+CERR  run_reportwriter.at:4118     Report with OCCURS
+SKIP  run_reportwriter.at:4223     Report CODE and LIMIT COLUMNS
+CERR  run_reportwriter.at:4444     Duplicate INITIATE
+CERR  run_reportwriter.at:4511     Missing INITIATE and GENERATE
+CERR  run_reportwriter.at:4571     Missing INITIATE and TERMINATE
+FAIL  run_reportwriter.at:4625     Next Group Next Page
+SKIP  run_reportwriter.at:8948     Report PRESENT AFTER
+PASS  run_returncode.at:23         RETURN-CODE moving
+PASS  run_returncode.at:49         RETURN-CODE passing
+PASS  run_returncode.at:101        RETURN-CODE nested
+PASS  run_subscripts.at:26         Subscript out of bounds
+FAIL  run_subscripts.at:71         Value of DEPENDING ON N out of bounds
+FAIL  run_subscripts.at:122        Subscript bounds with OCCURS DEPENDING ON (1)
+FAIL  run_subscripts.at:148        Subscript bounds with OCCURS DEPENDING ON (2)
+FAIL  run_subscripts.at:176        Subscript bounds with OCCURS DEPENDING ON (3)
+PASS  run_subscripts.at:211        Subscript by arithmetic expression
+PASS  run_subscripts.at:242        length of ODO w/- reference modification
+PASS  run_subscripts.at:298        SEARCH ALL with OCCURS DEPENDING ON
+CERR  run_subscripts.at:351        enable / disable subscript check
+SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
+SKIP  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
+PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
+
+PASS 253  FAIL 75  CERR 149  XERR 0  SKIP 216

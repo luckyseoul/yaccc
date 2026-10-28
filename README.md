@@ -9,7 +9,8 @@ It passes the NIST CCVS85 conformance suite as packaged by opensource COBOL.
 Every module matches the suite's reference summary exactly, with zero
 failures, and it also passes the suite's Report Writer and Debug modules. On
 its own differential test programs, its output matches GnuCOBOL 3.1.2 apart
-from the deliberate differences listed below.
+from the deliberate differences listed below. GnuCOBOL's own testsuite is run
+as a compatibility check as well.
 
 ```
 $ ./cobolc examples/mandelbrot.cbl --run
@@ -71,11 +72,12 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 36 programs covering moves, editing, arithmetic, PERFORM,
-EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH, intrinsic functions, COPY
-and REPLACING, free format, ACCEPT, CALL and CANCEL, ALTER, declaratives,
-sequential, relative and indexed files, SORT, Report Writer and the Debug
-module.
+`tests/cases/` holds 40 programs covering moves, editing, arithmetic and
+rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
+intrinsic functions, COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
+ACCEPT, CALL and CANCEL, ALTER, declaratives, sequential, relative and indexed
+files (including READ PREVIOUS, START FIRST/LAST and DELETE FILE), SORT, Report
+Writer and the Debug module.
 
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, the three
@@ -84,7 +86,41 @@ module.
   by hand.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 36 pass in both modes, built with gcc and with clang.
+All 40 pass in both modes, built with gcc and with clang.
+
+### GnuCOBOL 3.1.2 testsuite
+
+`make gctest` runs the runtime tests of GnuCOBOL's own testsuite (the
+`run_*.at` and `data_*.at` autotest files) with cobolc. It fetches them into
+`third_party/` with a sparse clone of the 3.1.2 release tag.
+`tests/gnucobol/run_gc.py` reads the autotest files directly and runs every
+test that is built from COBOL sources with plain compile steps, comparing exit
+status, standard output and the files the test checks.
+
+```
+Tests  Pass  Fail  Compile error  Skipped
+  693   253    75            149      216
+```
+
+For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
+(`run_gc.py --cobc`), passes 441 and fails 22, mostly tests that depend on how
+it was built or on the environment.
+
+The run fails if a test recorded as passing in `tests/gnucobol/results.txt` no
+longer passes. `make gctest-update` records a new baseline.
+
+- **Skipped** tests need things the harness can't provide: cobc dialect options
+  (`-std=ibm`, `-fnotrunc` and so on), C code, a terminal (SCREEN SECTION),
+  XML or JSON support, or shell scripting.
+- **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
+  features cobolc doesn't have yet: pointers and BASED items, ANY LENGTH,
+  CONSTANT and 78-level entries, `>>IF`/`>>DEFINE`, FUNCTION-ID, TYPEDEF, and
+  intrinsic functions such as FORMATTED-DATETIME and the EXCEPTION- and LOCALE-
+  families.
+- **Failures** are mostly system routines (`CBL_AND`, `C$JUSTIFY`, ...), the
+  printed form of numeric function results (difference 4 below), and the
+  trigonometric and logarithmic functions, which cobolc computes in double
+  precision while GnuCOBOL's tests check 35 decimal places.
 
 ### Performance
 
@@ -142,6 +178,7 @@ Runtime environment:
 | `DD_name`, `dd_name`, `name` | file name for `ASSIGN TO name` when *name* is not a literal |
 | `COB_SWITCH_n=ON\|OFF` | external switches (SPECIAL-NAMES `SWITCH-n`/`UPSI-n`) |
 | `COB_SET_DEBUG=Y` | object-time debugging switch: USE FOR DEBUGGING procedures run only when it's set (`Y`, `YES`, `ON`, `TRUE` or `1`), as in GnuCOBOL |
+| `COB_CURRENT_DATE` | fixed date and time for ACCEPT FROM DATE/DAY/TIME and the date functions, for reproducible test runs: `YYYY/MM/DD hh:mm:ss`, optionally followed by `+hhmm` (the time part is optional) |
 
 Runtime errors, such as a subscript out of range or an I/O error with no FILE
 STATUS or USE procedure, print `cobrt: runtime error: file:line: ...` and exit
@@ -151,13 +188,15 @@ with status 1.
 
 **Source.** Fixed, free and variable reference formats, continuation lines,
 `*>` comments, debugging lines, comment-entries. COPY ... REPLACING (pseudo-text,
-identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF.
+identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF. Boolean
+literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
 
 **Environment division.**
 - SPECIAL-NAMES: DECIMAL-POINT IS COMMA, CURRENCY SIGN, CLASS (with THRU), SYMBOLIC
-  CHARACTERS, ALPHABET (NATIVE, STANDARD-1/2 or literal lists with THRU/ALSO),
-  switches with ON/OFF STATUS, mnemonic names.
+  CHARACTERS, ALPHABET (NATIVE, STANDARD-1/2, EBCDIC or literal lists with
+  THRU/ALSO), switches with ON/OFF STATUS, mnemonic names.
 - OBJECT-COMPUTER PROGRAM COLLATING SEQUENCE.
+- OPTIONS paragraph: DEFAULT ROUNDED MODE.
 - FILE-CONTROL: ASSIGN, OPTIONAL, ORGANIZATION, ACCESS MODE, RECORD KEY,
   ALTERNATE RECORD KEY [WITH DUPLICATES], RELATIVE KEY, FILE STATUS (other
   clauses such as RESERVE and PADDING are accepted and ignored).
@@ -206,19 +245,24 @@ identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF.
 
 **Procedure division.**
 - Arithmetic and data movement: MOVE (incl. CORRESPONDING), ADD, SUBTRACT,
-  MULTIPLY, DIVIDE (REMAINDER), COMPUTE (ROUNDED, ON SIZE ERROR), INITIALIZE
+  MULTIPLY, DIVIDE (REMAINDER), COMPUTE (ON SIZE ERROR), INITIALIZE
   (REPLACING), SET (index, condition, switch).
+- ROUNDED and the COBOL 2014 ROUNDED MODE phrase: AWAY-FROM-ZERO,
+  NEAREST-AWAY-FROM-ZERO (the default), NEAREST-EVEN, NEAREST-TOWARD-ZERO,
+  TOWARD-GREATER, TOWARD-LESSER, TRUNCATION and PROHIBITED.
 - Control flow: IF, EVALUATE (ALSO, THRU, ANY, TRUE/FALSE), all PERFORM formats
   (THRU, TIMES, UNTIL, VARYING/AFTER, WITH TEST AFTER, inline), GO TO /
   DEPENDING ON, ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH / SECTION /
-  PERFORM / PROGRAM], STOP RUN, STOP literal, GOBACK.
+  PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
+  NORMAL STATUS], STOP literal, GOBACK [RETURNING].
 - Strings and tables: STRING, UNSTRING, INSPECT (TALLYING / REPLACING /
   CONVERTING, BEFORE/AFTER), SEARCH, SEARCH ALL.
 - Terminal I/O and program calls: DISPLAY, ACCEPT (incl. FROM DATE/DAY/TIME/
   DAY-OF-WEEK/ENVIRONMENT), CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION,
   `CALL "SYSTEM"`), CANCEL.
-- File I/O: OPEN, CLOSE (REEL/UNIT, NO REWIND, LOCK), READ, WRITE (ADVANCING,
-  END-OF-PAGE), REWRITE, DELETE, START.
+- File I/O: OPEN, CLOSE (REEL/UNIT, NO REWIND, LOCK), READ (NEXT, PREVIOUS),
+  WRITE (ADVANCING, END-OF-PAGE), REWRITE, DELETE, START (KEY, FIRST, LAST),
+  WRITE FILE / REWRITE FILE, DELETE FILE.
 - SORT / MERGE: USING, GIVING, INPUT/OUTPUT PROCEDURE, RELEASE, RETURN,
   COLLATING SEQUENCE; table SORT.
 - Declaratives: USE [GLOBAL] AFTER ERROR on files and open modes, USE BEFORE
@@ -232,8 +276,8 @@ identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF.
 - FILE STATUS codes follow the standard, including 04/05/07/14/24/35/38/41–49.
 
 **Programs.** Nested and contained programs (COMMON, INITIAL, GLOBAL names, USE
-GLOBAL), RECURSIVE, several source files and programs built into one
-executable. Segmentation: an independent segment (50–99) returns to its initial
+GLOBAL), RECURSIVE, PROGRAM-ID ... AS "name", several source files and programs
+built into one executable. Segmentation: an independent segment (50–99) returns to its initial
 state whenever it's entered from another segment.
 
 **Intrinsic functions (67).** ABS, ACOS, ANNUITY, ASIN, ATAN, BYTE-LENGTH,
@@ -253,8 +297,7 @@ UPPER-CASE, VARIANCE, WHEN-COMPILED, YEAR-TO-YYYY.
 - Report Writer features added by the 2002 standard, such as PRESENT WHEN,
   COLUMN RIGHT/CENTER and LINE LIMIT.
 - Pointers: ADDRESS OF, BASED, SET ADDRESS OF.
-- READ PREVIOUS, START FIRST/LAST, split keys, the EBCDIC alphabet, ENTRY,
-  object-oriented COBOL, EXEC SQL/CICS.
+- Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.
 - Relative and indexed files are held in memory while open and written back on
   CLOSE. That's fine for batch-sized files, but there's no record locking or
@@ -314,18 +357,18 @@ source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─�
 | File | Lines | Role |
 |---|---|---|
 | `compiler/source.py` | 272 | reference formats, continuations, directives, comment-entries, debugging lines |
-| `compiler/lexer.py` | 507 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `compiler/parser.py` | 2,532 | recursive-descent parser to the AST (`nodes.py`, 631) |
+| `compiler/lexer.py` | 515 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
+| `compiler/parser.py` | 2,594 | recursive-descent parser to the AST (`nodes.py`, 638) |
 | `compiler/data.py` | 495 | PICTURE analysis, USAGE resolution, storage layout |
-| `compiler/codegen.py` | 3,217 | name resolution, C generation, typed fast paths |
+| `compiler/codegen.py` | 3,300 | name resolution, C generation, typed fast paths |
 | `compiler/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
 | `compiler/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 2,133 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, DEBUG-ITEM |
-| `runtime/cobrt_io.c` | 1,457 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_core.c` | 2,248 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, DEBUG-ITEM |
+| `runtime/cobrt_io.c` | 1,552 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_rw.c` | 417 | Report Writer control system: paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 424 | STRING, UNSTRING, INSPECT |
-| `runtime/cobrt_fn.c` | 734 | intrinsic functions |
-| `runtime/cobrt.h` | 606 | runtime interface and inline fast paths |
+| `runtime/cobrt_fn.c` | 731 | intrinsic functions |
+| `runtime/cobrt.h` | 616 | runtime interface and inline fast paths |
 
 Design choices:
 
@@ -333,7 +376,7 @@ Design choices:
   explicit scale (up to 38 digits), so results are exact; it never touches
   binary floating point except for the COMP-1/COMP-2 types and the
   transcendental functions.
-  - ROUNDED rounds half away from zero.
+  - ROUNDED rounds half away from zero unless a ROUNDED MODE says otherwise.
   - Division keeps 37 significant digits.
   - ON SIZE ERROR leaves the target unchanged; without it, high-order digits
     are truncated.
@@ -361,5 +404,6 @@ examples/            payroll report with control breaks, indexed-file bank ledge
 tests/cases/         differential tests and recorded GnuCOBOL baselines
 tests/difftest.py    differential test runner
 tests/nist/          NIST CCVS85 runner and the result logs of the runs above
-Makefile             make test | test-ref | nist | nist-all | examples | clean
+tests/gnucobol/      GnuCOBOL testsuite runner and the recorded results
+Makefile             make test | test-ref | nist | nist-all | gctest | examples | clean
 ```

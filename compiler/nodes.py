@@ -437,6 +437,11 @@ class Delete(Stmt):
 
 
 @dataclass(eq=False)
+class DeleteFile(Stmt):
+    files: List[str]
+
+
+@dataclass(eq=False)
 class Start(Stmt):
     file: str
     op: str                         # EQ GT GE LT LE (or '' for default EQ)
@@ -593,6 +598,8 @@ class Program:
     nested: list = field(default_factory=list)
     parent: Any = None
     debugging: bool = False
+    ext_name: str = ''              # name CALL uses (PROGRAM-ID ... AS literal)
+    default_rounded: str = 'NEAREST-AWAY-FROM-ZERO'
 
 
 @dataclass(eq=False)

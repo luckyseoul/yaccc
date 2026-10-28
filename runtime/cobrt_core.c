@@ -469,8 +469,10 @@ cob_dec cob_d_str(const char *s)
 	return r;
 }
 
-/* round/truncate v (scale from) to scale to */
-static cob_s128 rescale(cob_s128 v, int from, int to, int rounded, int *ovf)
+/* round/truncate v (scale from) to scale to. opt: COB_ROUNDED and a
+ * COB_RM_* rounding mode. Sets *ovf bit 1 on overflow, bit 2 when
+ * ROUNDED MODE PROHIBITED meets digits that would be lost. */
+static cob_s128 rescale(cob_s128 v, int from, int to, int opt, int *ovf)
 {
 	if (from == to)
 		return v;
@@ -490,12 +492,24 @@ static cob_s128 rescale(cob_s128 v, int from, int to, int rounded, int *ovf)
 	}
 	cob_s128 p = P10[k];
 	cob_s128 q = v / p;
-	if (rounded) {
+	if (opt & COB_ROUNDED) {
 		cob_s128 r = v % p;
 		if (r < 0)
 			r = -r;
-		if (r >= p - r)
-			q += (v < 0) ? -1 : 1;
+		if (r) {
+			int inc = 0;
+			switch (opt & 0xF0) {
+			case 0:                 inc = r >= p - r; break;          /* NEAREST-AWAY-FROM-ZERO */
+			case COB_RM_AWAY:       inc = 1; break;
+			case COB_RM_EVEN:       inc = r > p - r || (r == p - r && (q & 1)); break;
+			case COB_RM_TOWARD0:    inc = r > p - r; break;
+			case COB_RM_GREATER:    inc = v > 0; break;
+			case COB_RM_LESSER:     inc = v < 0; break;
+			case COB_RM_PROHIBITED: *ovf |= 2; break;
+			}
+			if (inc)
+				q += (v < 0) ? -1 : 1;
+		}
 	}
 	return q;
 }
@@ -793,11 +807,12 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 	case COB_NUM_BINARY:
 	case COB_NUM_COMP5:
 	case COB_INDEX: {
-		v = rescale(d.v, d.scale, a->scale, opt & COB_ROUNDED, &ovf);
+		v = rescale(d.v, d.scale, a->scale, opt, &ovf);
 		if (ovf) {
 			if (opt & COB_SIZE_CHECK)
 				return 1;
-			v = 0;
+			if (ovf & 1)
+				v = 0;
 		}
 		if (!(a->flags & COB_F_SIGNED) && a->type != COB_INDEX && v < 0)
 			v = -v;
@@ -850,7 +865,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		if (opt & (COB_ROUNDED | COB_SIZE_CHECK)) {
 			/* rounding / size check against the edited digits */
 			int sc = a->scale;
-			v = rescale(d.v, d.scale, sc, opt & COB_ROUNDED, &ovf);
+			v = rescale(d.v, d.scale, sc, opt, &ovf);
 			if (ovf || (a->digits < 38 && (v >= P10[a->digits] || v <= -P10[a->digits]))) {
 				if (opt & COB_SIZE_CHECK)
 					return 1;
@@ -1838,12 +1853,107 @@ static void move_text(const char *s, cob_field *f)
 	cob_move(&tmp, f);
 }
 
+/* The current date and time: the system clock, or the fixed moment given by
+   COB_CURRENT_DATE ("YYYY/MM/DD hh:mm:ss[.nn] [+hhmm]" or the same digits
+   without separators; the parts after the date are optional), as GnuCOBOL. */
+static int fixed_now = -1;
+static struct tm fixed_tm;
+static int fixed_hs;
+static long fixed_off;
+static int fixed_has_off;
+
+static void parse_fixed_now(void)
+{
+	const char *s = getenv("COB_CURRENT_DATE");
+	fixed_now = 0;
+	if (!s || !*s)
+		return;
+	static const int width[7] = { 4, 2, 2, 2, 2, 2, 2 };
+	long v[7] = { 0, 1, 1, 0, 0, 0, 0 };
+	int n = 0;
+	const char *p = s;
+	while (*p && n < 7) {
+		while (*p == ' ' || *p == '/' || *p == '-' || *p == ':' || *p == '.' || *p == 'T')
+			p++;
+		if (!isdigit((unsigned char)*p))
+			break;
+		long x = 0;
+		int k = 0;
+		while (isdigit((unsigned char)p[k]) && k < width[n])
+			x = x * 10 + (p[k++] - '0');
+		v[n++] = x;
+		p += k;
+		while (n == 7 && isdigit((unsigned char)*p))   /* finer fractions */
+			p++;
+		if (*p == ' ' && (p[1] == '+' || p[1] == '-'))
+			p++;
+		if (*p == '+' || (*p == '-' && n >= 6))
+			break;
+	}
+	if (n < 3)
+		return;
+	while (*p == ' ')
+		p++;
+	if ((*p == '+' || *p == '-') && isdigit((unsigned char)p[1])) {
+		int sg = *p == '-' ? -1 : 1;
+		long hh = 0, mm = 0;
+		p++;
+		for (int k = 0; k < 2 && isdigit((unsigned char)*p); k++)
+			hh = hh * 10 + (*p++ - '0');
+		if (*p == ':')
+			p++;
+		for (int k = 0; k < 2 && isdigit((unsigned char)*p); k++)
+			mm = mm * 10 + (*p++ - '0');
+		fixed_off = sg * (hh * 60 + mm);
+		fixed_has_off = 1;
+	}
+	memset(&fixed_tm, 0, sizeof fixed_tm);
+	fixed_tm.tm_year = (int)v[0] - 1900;
+	fixed_tm.tm_mon = (int)v[1] - 1;
+	fixed_tm.tm_mday = (int)v[2];
+	fixed_tm.tm_hour = (int)v[3];
+	fixed_tm.tm_min = (int)v[4];
+	fixed_tm.tm_sec = (int)v[5];
+	fixed_tm.tm_isdst = -1;
+	fixed_hs = (int)v[6];
+	struct tm t = fixed_tm;
+	time_t tt = mktime(&t);              /* fills in the day of week and of year */
+	fixed_tm.tm_wday = t.tm_wday;
+	fixed_tm.tm_yday = t.tm_yday;
+	if (!fixed_has_off && tt != (time_t)-1) {
+		fixed_off = t.tm_gmtoff / 60;
+		fixed_has_off = 1;
+	}
+	fixed_now = 1;
+}
+
+/* local time, hundredths of a second and the UTC offset in minutes */
+void cob_now(struct tm *tm, int *hundredths, long *utc_off)
+{
+	if (fixed_now < 0)
+		parse_fixed_now();
+	if (fixed_now) {
+		*tm = fixed_tm;
+		if (hundredths)
+			*hundredths = fixed_hs;
+		if (utc_off)
+			*utc_off = fixed_off;
+		return;
+	}
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	localtime_r(&tv.tv_sec, tm);
+	if (hundredths)
+		*hundredths = (int)(tv.tv_usec / 10000);
+	if (utc_off)
+		*utc_off = tm->tm_gmtoff / 60;
+}
+
 void cob_accept_date(cob_field *f, int fmt)
 {
-	time_t t = time(NULL);
 	struct tm tm;
 	char buf[32];
-	localtime_r(&t, &tm);
+	cob_now(&tm, NULL, NULL);
 	switch (fmt) {
 	case 0: /* YYMMDD */
 		snprintf(buf, sizeof buf, "%02d%02d%02d", tm.tm_year % 100, tm.tm_mon + 1, tm.tm_mday);
@@ -1868,13 +1978,11 @@ void cob_accept_date(cob_field *f, int fmt)
 
 void cob_accept_time(cob_field *f)
 {
-	struct timeval tv;
 	struct tm tm;
+	int hs;
 	char buf[16];
-	gettimeofday(&tv, NULL);
-	localtime_r(&tv.tv_sec, &tm);
-	snprintf(buf, sizeof buf, "%02d%02d%02d%02d", tm.tm_hour, tm.tm_min, tm.tm_sec,
-		 (int)(tv.tv_usec / 10000));
+	cob_now(&tm, &hs, NULL);
+	snprintf(buf, sizeof buf, "%02d%02d%02d%02d", tm.tm_hour, tm.tm_min, tm.tm_sec, hs);
 	move_text(buf, f);
 }
 
@@ -2068,12 +2176,15 @@ void cob_register_program(const char *name, cob_prog_fn fn, cob_cancel_fn cancel
 
 void cob_cancel_name(const char *name)
 {
-	for (int i = 0; i < nprogs; i++)
-		if (strcasecmp(progs[i].name, name) == 0) {
-			if (progs[i].cancel)
-				progs[i].cancel();
-			return;
-		}
+	int k = -1;
+	for (int i = 0; i < nprogs && k < 0; i++)
+		if (strcmp(progs[i].name, name) == 0)
+			k = i;
+	for (int i = 0; i < nprogs && k < 0; i++)
+		if (strcasecmp(progs[i].name, name) == 0)
+			k = i;
+	if (k >= 0 && progs[k].cancel)
+		progs[k].cancel();
 }
 
 void cob_cancel(const cob_field *name)
@@ -2092,6 +2203,10 @@ void cob_cancel(const cob_field *name)
 
 cob_prog_fn cob_resolve_name(const char *name)
 {
+	/* the exact name first: literal PROGRAM-IDs are case-sensitive */
+	for (int i = 0; i < nprogs; i++)
+		if (strcmp(progs[i].name, name) == 0)
+			return progs[i].fn;
 	for (int i = 0; i < nprogs; i++)
 		if (strcasecmp(progs[i].name, name) == 0)
 			return progs[i].fn;

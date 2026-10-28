@@ -50,6 +50,14 @@ def make_numlit(text, loc=None):
     return NumLit(text=text, digits=(ip + fp) if (ip + fp) else '0', scale=len(fp), neg=neg)
 
 
+SELECT_CLAUSE_WORDS = {'ORGANIZATION', 'ACCESS', 'RECORD', 'ALTERNATE', 'RELATIVE', 'FILE', 'STATUS',
+                       'LOCK', 'RESERVE', 'PADDING', 'SHARING', 'COLLATING', 'INDEXED', 'SEQUENTIAL',
+                       'LINE', 'OPTIONAL'}
+
+ROUNDING_MODES = ('AWAY-FROM-ZERO', 'NEAREST-AWAY-FROM-ZERO', 'NEAREST-EVEN', 'NEAREST-TOWARD-ZERO',
+                  'PROHIBITED', 'TOWARD-GREATER', 'TOWARD-LESSER', 'TRUNCATION')
+
+
 class Parser:
     def __init__(self, toks):
         self.toks = toks
@@ -160,18 +168,22 @@ class Parser:
         self.accept_kind('.')
         t = self.next()
         if t.kind == 'STR':
-            name = t.val.decode('latin-1')
+            name = ext = t.val.decode('latin-1').strip()
         elif t.kind == 'WORD':
-            name = t.up
+            name, ext = t.up, t.val     # CALL matches the name as written first
         else:
             raise self.err("program name expected", t)
         prog = Program(name=name, loc=loc)
+        prog.ext_name = ext
         prog.parent = parent
         self.prog = prog
         self.class_names = set()
         self.mnemonics = {}
         if self.accept('AS'):
-            self.next()
+            t = self.next()
+            if t.kind != 'STR':
+                raise self.err("literal expected after AS", t)
+            prog.ext_name = t.val.decode('latin-1').strip()
         self.accept('IS')
         while self.is_word('INITIAL', 'RECURSIVE', 'COMMON'):
             w = self.next().up
@@ -187,6 +199,8 @@ class Parser:
                            'SECURITY', 'REMARKS'):
             self.next()
             self.accept_kind('.')
+        if self.is_word('OPTIONS') and self.peek(1).kind == '.':
+            self._options_paragraph(prog)
         if self.is_word('ENVIRONMENT'):
             self.parse_environment(prog)
         if self.is_word('DATA'):
@@ -201,11 +215,30 @@ class Parser:
             self.next()
             self.next()
             t = self.next()
-            ename = t.val.decode('latin-1') if t.kind == 'STR' else t.up
+            ename = t.val.decode('latin-1').strip() if t.kind == 'STR' else t.up
             if ename.upper() != name.upper():
                 DIAG.warn(f"END PROGRAM name '{ename}' does not match '{name}'", t.loc)
             self.accept_kind('.')
         return prog
+
+    def _options_paragraph(self, prog):
+        """OPTIONS paragraph (COBOL 2014): DEFAULT ROUNDED MODE; other entries
+        are accepted and ignored."""
+        self.next()
+        self.next()
+        while self.peek().kind != 'EOF' and not (self.is_word('ENVIRONMENT', 'DATA', 'PROCEDURE')
+                                                 and self.is_word('DIVISION', k=1)):
+            if self.is_word('DEFAULT') and self.is_word('ROUNDED', k=1):
+                self.next()
+                self.next()
+                self.accept('MODE')
+                self.accept('IS')
+                t = self.next()
+                if t.up not in ROUNDING_MODES:
+                    raise ParseError(f"invalid rounding mode '{t.val}'", t.loc)
+                prog.default_rounded = t.up
+            else:
+                self.next()
 
     def _end_program_ahead(self, name):
         depth = 0
@@ -213,7 +246,7 @@ class Parser:
             t = self.toks[i]
             if t.kind == 'WORD' and t.up == 'END' and self.toks[i + 1].kind == 'WORD' and self.toks[i + 1].up == 'PROGRAM':
                 nt = self.toks[i + 2]
-                nm = nt.val.decode('latin-1') if nt.kind == 'STR' else nt.up
+                nm = nt.val.decode('latin-1').strip() if nt.kind == 'STR' else nt.up
                 if nm.upper() == name.upper():
                     return True
         return False
@@ -418,9 +451,9 @@ class Parser:
                 if t.kind == 'STR':
                     self.next()
                     fc.assign = StrLit(t.val)
-                elif t.kind == 'WORD' and t.up not in RESERVED:
+                elif t.kind == 'WORD' and t.up not in RESERVED and t.up not in SELECT_CLAUSE_WORDS:
                     fc.assign = self.parse_identifier()
-            elif self.accept('ORGANIZATION'):
+            elif self.accept('ORGANIZATION', 'ORGANISATION'):
                 self.accept('IS')
                 self._parse_org(fc)
             elif (self.is_word('LINE', 'SEQUENTIAL', 'RELATIVE', 'INDEXED') and
@@ -1267,10 +1300,13 @@ class Parser:
             ref = self.parse_identifier()
             r = False
             if allow_rounded and self.accept('ROUNDED'):
-                r = True
+                r = True                # the program's default rounding mode
                 if self.accept('MODE'):
                     self.accept('IS')
-                    self.next()
+                    w = self.next()
+                    if w.up not in ROUNDING_MODES:
+                        raise ParseError(f"invalid rounding mode '{w.val}'", w.loc)
+                    r = w.up
             out.append(Target(ref, r))
         return out
 
@@ -1621,7 +1657,9 @@ class Parser:
             ret = None
             if self.accept('RETURNING', 'GIVING'):
                 ret = self.parse_operand()
-            elif self.accept('WITH'):
+            elif self.is_operand_start():
+                ret = self.parse_operand()      # STOP RUN 4 (extension)
+            elif self.accept('WITH') or self.is_word('ERROR', 'NORMAL'):
                 w = self.expect('ERROR', 'NORMAL').up
                 self.accept('STATUS')
                 ret = make_numlit('1' if w == 'ERROR' else '0')
@@ -1641,9 +1679,10 @@ class Parser:
 
     def p_EXIT(self, loc):
         if self.accept('PROGRAM'):
+            ex = Exit(loc, 'PROGRAM')
             if self.accept('RETURNING', 'GIVING'):
-                self.parse_operand()
-            return Exit(loc, 'PROGRAM')
+                ex.returning = self.parse_operand()
+            return ex
         if self.accept('PERFORM'):
             if self.accept('CYCLE'):
                 return Exit(loc, 'CYCLE')
@@ -2005,7 +2044,13 @@ class Parser:
         return st
 
     def p_WRITE(self, loc):
-        rec = self.parse_identifier()
+        file_name = None
+        if self.accept('FILE'):
+            # WRITE FILE file-name FROM ... (COBOL 2014): the file's record area
+            file_name = self.user_word('file name')
+            rec = DataRef(file_name, [], [], None, loc)
+        else:
+            rec = self.parse_identifier()
         frm = None
         if self.accept('FROM'):
             frm = self.parse_operand()
@@ -2023,6 +2068,7 @@ class Parser:
                 lines = self.parse_operand()
                 self.accept('LINE', 'LINES')
         st = Write(loc, rec, frm, when, lines, None, None)
+        st.file_name = file_name
         while True:
             progress = False
             if (self.is_word('AT') and self.is_word('END-OF-PAGE', 'EOP', k=1)) or self.is_word('END-OF-PAGE', 'EOP'):
@@ -2046,7 +2092,12 @@ class Parser:
         return st
 
     def p_REWRITE(self, loc):
-        rec = self.parse_identifier()
+        file_name = None
+        if self.accept('FILE'):
+            file_name = self.user_word('file name')
+            rec = DataRef(file_name, [], [], None, loc)
+        else:
+            rec = self.parse_identifier()
         frm = None
         if self.accept('FROM'):
             frm = self.parse_operand()
@@ -2054,9 +2105,19 @@ class Parser:
             self.next()
         i, ni = self._invalid_key()
         self._end('END-REWRITE')
-        return Rewrite(loc, rec, frm, i, ni)
+        st = Rewrite(loc, rec, frm, i, ni)
+        st.file_name = file_name
+        return st
 
     def p_DELETE(self, loc):
+        if self.accept('FILE'):
+            files = []
+            while self.is_user_word():
+                files.append(self.next().up)
+            if not files:
+                raise self.err("file name expected")
+            self._end('END-DELETE')
+            return DeleteFile(loc, files)
         f = self.user_word('file name')
         self.accept('RECORD')
         i, ni = self._invalid_key()
@@ -2067,13 +2128,11 @@ class Parser:
         f = self.user_word('file name')
         op = 'EQ'
         key = None
-        if self.accept('KEY'):
-            if self.is_word('FIRST', 'LAST'):
-                raise self.err("START FIRST/LAST is not supported")
+        if self.is_word('FIRST', 'LAST'):
+            op = self.next().up
+        elif self.accept('KEY'):
             op = self.parse_relop()
             key = self.parse_identifier()
-        elif self.is_word('FIRST', 'LAST'):
-            raise self.err("START FIRST/LAST is not supported")
         i, ni = self._invalid_key()
         self._end('END-START')
         return Start(loc, f, op, key, i, ni)
@@ -2093,8 +2152,11 @@ class Parser:
                 desc = self.next().up == 'DESCENDING'
                 self.accept('KEY')
                 self.accept('IS')
+                n = len(keys)
                 while self.is_user_word():
                     keys.append(SortKey(desc, self.parse_identifier()))
+                if len(keys) == n:
+                    keys.append(SortKey(desc, None))    # table SORT: the whole element
             else:
                 break
         dups = False

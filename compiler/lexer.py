@@ -87,8 +87,7 @@ class Lexer:
                 i = j
                 continue
             if c in ',;':
-                if (c == ',' and self.decimal_comma and i + 1 < n and text[i + 1].isdigit()
-                        and i > 0 and text[i - 1] in ' (+-='):
+                if c == ',' and self.decimal_comma and i + 1 < n and text[i + 1].isdigit():
                     pass  # decimal-comma number like ,5 handled below
                 else:
                     self.sep_at = len(toks)
@@ -97,6 +96,15 @@ class Lexer:
             if c in '"\'':
                 val, i = self._literal(text, i, loc)
                 toks.append(Tok('STR', val, loc))
+                continue
+            if c in 'Bb' and i + 2 < n and (text[i + 1] in '"\'' or (text[i + 1] in 'Xx' and text[i + 2] in '"\'')):
+                # boolean literals B"0101" / BX"EC": numeric value of the bits (as GnuCOBOL)
+                hexa = text[i + 1] in 'Xx'
+                val, i = self._literal(text, i + (2 if hexa else 1), loc)
+                bits = val.decode('latin-1')
+                if not re.fullmatch(r'[0-9A-Fa-f]+' if hexa else r'[01]+', bits):
+                    raise CompileError(f"invalid boolean literal {'BX' if hexa else 'B'}\"{bits}\"", loc)
+                toks.append(Tok('NUM', str(int(bits, 16 if hexa else 2)), loc))
                 continue
             if c in 'XxZzNn' and i + 1 < n and text[i + 1] in '"\'':
                 val, i = self._literal(text, i + 1, loc)
@@ -234,7 +242,7 @@ class Lexer:
 
 
 def _float_to_fixed(mant, expo):
-    neg = mant.startswith('-')
+    sign = mant[0] if mant[:1] in ('+', '-') else ''
     mant = mant.lstrip('+-')
     if '.' in mant:
         ip, fp = mant.split('.')
@@ -243,12 +251,12 @@ def _float_to_fixed(mant, expo):
     digits = ip + fp
     point = len(ip) + expo
     if point <= 0:
-        s = '0.' + '0' * (-point) + digits
+        s = '.' + '0' * (-point) + digits
     elif point >= len(digits):
         s = digits + '0' * (point - len(digits))
     else:
         s = digits[:point] + '.' + digits[point:]
-    return ('-' if neg else '') + s
+    return sign + s
 
 
 # ---------------------------------------------------------------- driver

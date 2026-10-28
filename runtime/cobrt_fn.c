@@ -511,9 +511,8 @@ cob_dec cob_fn_test_day(cob_dec a)
 
 static int current_year(void)
 {
-	time_t t = time(NULL);
 	struct tm tm;
-	localtime_r(&t, &tm);
+	cob_now(&tm, NULL, NULL);
 	return tm.tm_year + 1900;
 }
 
@@ -549,9 +548,8 @@ cob_dec cob_fn_day_to_yyyyddd(int n, cob_dec a, cob_dec b, cob_dec c)
 
 cob_dec cob_fn_seconds_past_midnight(void)
 {
-	time_t t = time(NULL);
 	struct tm tm;
-	localtime_r(&t, &tm);
+	cob_now(&tm, NULL, NULL);
 	return cob_d_int(tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec);
 }
 
@@ -625,18 +623,17 @@ cob_field *cob_fn_char(cob_dec a)
 
 cob_field *cob_fn_current_date(void)
 {
-	struct timeval tv;
 	struct tm tm;
+	int hs;
+	long off;
 	char buf[96];
-	gettimeofday(&tv, NULL);
-	localtime_r(&tv.tv_sec, &tm);
-	long off = tm.tm_gmtoff / 60;
+	cob_now(&tm, &hs, &off);
 	char sg = off < 0 ? '-' : '+';
 	if (off < 0)
 		off = -off;
 	snprintf(buf, sizeof buf, "%04d%02d%02d%02d%02d%02d%02d%c%02ld%02ld",
 		 tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec,
-		 (int)(tv.tv_usec / 10000), sg, off / 60, off % 60);
+		 hs, sg, off / 60, off % 60);
 	cob_field *r = cob_tmp_field(21, &cob_attr_alnum);
 	memcpy(r->data, buf, 21);
 	return r;

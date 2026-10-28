@@ -37,3 +37,14 @@ jobs:
           python-version: '3.12'
       - name: Run the suite (fails on any failed test, compile error or crash)
         run: make nist
+
+  gnucobol:
+    name: GnuCOBOL 3.1.2 testsuite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run the runtime tests (fails if a test recorded as passing no longer passes)
+        run: make gctest
