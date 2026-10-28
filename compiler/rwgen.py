@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Report Writer: analysis of the REPORT SECTION and generation of the report
 tables and callbacks driven by the runtime RWCS (runtime/cobrt_rw.c)."""
 from .data import DataItem, Picture, layout, resolve_types, T_NUM_BINARY, T_NUM_EDITED

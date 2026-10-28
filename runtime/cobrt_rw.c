@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_rw.c - Report Writer Control System (RWCS)
  *
  * The compiler describes each report with static tables (groups, print line

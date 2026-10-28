@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_str.c - STRING, UNSTRING, INSPECT */
 #include "cobrt.h"
 

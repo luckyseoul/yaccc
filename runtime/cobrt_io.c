@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_io.c - file I/O (sequential, line sequential, relative, indexed) and SORT */
 #include "cobrt.h"
 #include <errno.h>

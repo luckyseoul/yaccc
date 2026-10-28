@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Recursive-descent parser for COBOL."""
 import re
 from decimal import Decimal

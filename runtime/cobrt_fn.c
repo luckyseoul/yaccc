@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_fn.c - intrinsic functions */
 #include "cobrt.h"
 #include <ctype.h>

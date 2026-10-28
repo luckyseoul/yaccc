@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Tokenizer, COPY and REPLACE processing."""
 import os
 import re

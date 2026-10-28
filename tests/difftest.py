@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Differential tester: compiles each COBOL test with cobolc and (if available)
 GnuCOBOL, runs both and compares output. Tests with an .expected file are
 checked against that file instead of (or in addition to) the reference."""

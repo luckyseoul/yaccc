@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_sys.c - library routines that programs CALL by name, with the Micro
  * Focus (CBL_...) and ACUCOBOL (C$...) conventions GnuCOBOL provides:
  * bitwise operations on bytes, case conversion, justification, directory

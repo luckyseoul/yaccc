@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Runs the NIST CCVS85 COBOL test suite (as split by opensource COBOL's
 expand.pl) with cobolc and tallies results like report.pl.
 

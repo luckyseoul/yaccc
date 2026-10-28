@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_math.c - high-precision evaluation of the transcendental functions
  *
  * SQRT, EXP, EXP10, LOG, LOG10, SIN, COS, TAN, ASIN, ACOS, ATAN, ANNUITY,

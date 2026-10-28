@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* cobrt_core.c - core runtime: decimal arithmetic, field access, MOVE,
  * comparison, editing, DISPLAY/ACCEPT, CALL registry. */
 #include "cobrt.h"

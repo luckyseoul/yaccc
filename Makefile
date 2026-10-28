@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 # cobolc - convenience targets. The compiler itself needs no build step:
 # ./cobolc builds the runtime library (runtime/libcobrt.a) on first use.
 

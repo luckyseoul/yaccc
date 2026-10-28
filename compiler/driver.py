@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Command-line driver: parse, generate C, invoke the C compiler."""
 import argparse
 import os

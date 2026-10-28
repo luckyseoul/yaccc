@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Debug module: the DEBUG-ITEM special register and USE FOR DEBUGGING
 declaratives in programs compiled WITH DEBUGGING MODE.
 

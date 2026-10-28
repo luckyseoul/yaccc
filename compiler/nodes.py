@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """AST node definitions for the COBOL compiler."""
 from dataclasses import dataclass, field
 from typing import Any, List, Optional

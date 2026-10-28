@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Data items, PICTURE analysis, storage layout."""
 from .errors import CompileError, DIAG
 

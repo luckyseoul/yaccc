@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Semantic analysis and C code generation."""
 import datetime
 

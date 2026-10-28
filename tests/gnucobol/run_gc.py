@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Runs the runtime tests of the GnuCOBOL 3.1.2 testsuite (autotest .at files)
 with cobolc and compares exit status and standard output with the
 testsuite's expectations.

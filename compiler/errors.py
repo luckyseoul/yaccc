@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Diagnostics."""
 import sys
 

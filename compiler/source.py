@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Source reading: fixed/free reference formats, continuation lines,
 floating comments, compiler directives and comment-entries."""
 import re

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Reserved words and keyword classes."""
 
 RESERVED = set("""
