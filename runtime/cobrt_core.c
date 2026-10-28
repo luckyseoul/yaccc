@@ -2074,6 +2074,30 @@ cob_field *cob_fn_exception_statement(void)
 	return padded(exc_name && exc_loc ? exc_loc->stmt : NULL, 31);
 }
 
+/* FUNCTION CONTENT-LENGTH(pointer): the bytes before the NUL, 0 for NULL */
+size_t cob_fn_content_length(const unsigned char *p)
+{
+	return p ? strlen((const char *)p) : 0;
+}
+
+/* FUNCTION CONTENT-OF(pointer[, length]): those bytes; a NULL pointer raises
+ * EC-DATA-PTR-NULL and yields an empty value */
+cob_field *cob_fn_content_of(const unsigned char *p, cob_s64 len)
+{
+	if (!p) {
+		cob_set_exception("EC-DATA-PTR-NULL");
+		return padded(NULL, 0);
+	}
+	/* a successful call leaves no exception behind */
+	cob_clear_exception();
+	size_t n = strlen((const char *)p);
+	if (len >= 0 && (cob_u64)len < n)
+		n = (size_t)len;
+	cob_field *r = cob_tmp_field(n, &cob_attr_alnum);
+	memcpy(r->data, p, n);
+	return r;
+}
+
 cob_field *cob_fn_exception_status(void)
 {
 	return padded(exc_name, 31);

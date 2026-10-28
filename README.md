@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 60 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 61 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -96,7 +96,7 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 60 pass, built with gcc.
+All 61 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   425    28             41      199
+  693   428    28             38      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -311,6 +311,8 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
 - VALUE clauses, GLOBAL and EXTERNAL items and files; `EXTERNAL AS "name"`
   shares storage under another name.
+- RECURSIVE, INITIAL, COMMON, GLOBAL and EXTERNAL are context words: after
+  PROGRAM-ID they are clauses, elsewhere they are ordinary data names.
 - Constants: level 78 and `01 name CONSTANT AS ...` (COBOL 2002) with a literal,
   an arithmetic expression of literals and constants (integer valued, as in
   GnuCOBOL), `LENGTH OF` / `BYTE-LENGTH OF`, or `FROM` a compilation variable;
@@ -397,7 +399,14 @@ into one executable. Special registers RETURN-CODE, TALLY, SORT-RETURN,
 WHEN-COMPILED and NUMBER-OF-CALL-PARAMETERS. Segmentation: an independent segment (50–99) returns to its initial
 state whenever it's entered from another segment.
 
-**Intrinsic functions (101).** ABS, ACOS, ANNUITY, ASIN, ATAN, BYTE-LENGTH,
+**CONTENT functions.** `FUNCTION CONTENT-LENGTH(pointer)` is the number of
+bytes a POINTER addresses before its NUL, and 0 for a null pointer;
+`FUNCTION CONTENT-OF(pointer[, length])` is those bytes, raising
+EC-DATA-PTR-NULL for a null pointer and clearing the last exception on
+success. A `Z"..."` literal ends with a NUL, which is what makes them useful
+together.
+
+**Intrinsic functions (103).** ABS, ACOS, ANNUITY, ASIN, ATAN, BYTE-LENGTH,
 CHAR, COMBINED-DATETIME, CONCAT, CONCATENATE, COS, CURRENCY-SYMBOL, CURRENT-
 DATE, DATE-OF-INTEGER, DATE-TO-YYYYMMDD, DAY-OF-INTEGER, DAY-TO-YYYYDDD, E,
 EXCEPTION-FILE, EXCEPTION-LOCATION, EXCEPTION-STATEMENT, EXCEPTION-STATUS, EXP,

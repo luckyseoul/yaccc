@@ -545,6 +545,8 @@ cob_field *cob_fn_exception_file(void);
 cob_field *cob_fn_exception_location(void);
 cob_field *cob_fn_exception_statement(void);
 cob_field *cob_fn_exception_status(void);
+size_t cob_fn_content_length(const unsigned char *p);
+cob_field *cob_fn_content_of(const unsigned char *p, cob_s64 len);
 void cob_clear_exception(void);
 const char *cob_chain_arg(int n);   /* CHAINING argument n, or NULL */
 /* a POINTER item holds the address itself */

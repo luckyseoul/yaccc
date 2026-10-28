@@ -39,6 +39,11 @@ REWRITE SEARCH SET SORT START STOP STRING SUBTRACT UNSTRING WRITE
 INITIATE GENERATE TERMINATE SUPPRESS JSON XML ALLOCATE FREE EXHIBIT
 """.split())
 RESERVED |= {'JSON', 'XML', 'OMITTED', 'ALLOCATE', 'FREE', 'EXHIBIT'}
+
+# Words that are reserved only in context: after PROGRAM-ID they are clauses,
+# but elsewhere - a data name, say - they are ordinary user-defined words.
+CONTEXT_WORDS = {'RECURSIVE', 'INITIAL', 'COMMON', 'GLOBAL', 'EXTERNAL',
+                 'BASED', 'VALIDATE', 'STATUS'}
 RESERVED |= {'INITIATE', 'GENERATE', 'TERMINATE', 'SUPPRESS'}
 
 FIGURATIVES = {
@@ -103,6 +108,7 @@ FUNCTIONS = {
     'WHEN-COMPILED': ('X', 0, 0), 'YEAR-TO-YYYY': ('N', 1, 3),
     'TEST-NUMVAL': ('N', 1, 1), 'SUBSTITUTE': ('X', 3, 999),
     'TRIML': ('X', 1, 1), 'TRIMR': ('X', 1, 1), 'HEX-OF': ('X', 1, 1),
+    'CONTENT-OF': ('X', 1, 2), 'CONTENT-LENGTH': ('N', 1, 1),
     'INTEGER-OF-BOOLEAN': ('N', 1, 1), 'NUMVAL-F': ('N', 1, 1),
     'TEST-DATE-YYYYMMDD': ('N', 1, 1), 'TEST-DAY-YYYYDDD': ('N', 1, 1),
     'STORED-CHAR-LENGTH': ('N', 1, 1), 'MODULE-NAME': ('X', 0, 0),

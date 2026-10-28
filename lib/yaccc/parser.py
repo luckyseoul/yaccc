@@ -6,7 +6,8 @@ from decimal import Decimal
 from .data import DataItem, Occurs, Picture
 from .errors import CompileError, DIAG
 from .nodes import *
-from .words import FIGURATIVES, FIG_BYTES, FUNCTIONS, RESERVED, USAGES, VERBS
+from .words import (FIGURATIVES, FIG_BYTES, FUNCTIONS, RESERVED, USAGES, VERBS,
+                    CONTEXT_WORDS)
 
 SPECIAL_REGISTERS = {'RETURN-CODE', 'TALLY', 'SORT-RETURN', 'WHEN-COMPILED',
                      'NUMBER-OF-CALL-PARAMETERS', 'LINE-COUNTER', 'PAGE-COUNTER'}
@@ -954,7 +955,9 @@ class Parser:
         in_report = getattr(self, 'in_report', False)
         if self.accept('FILLER'):
             name = None
-        elif self.is_user_word() and self.peek().kind == 'WORD' and \
+        elif (self.is_user_word() or (self.peek().kind == 'WORD'
+                                      and self.peek().up in CONTEXT_WORDS)) and \
+                self.peek().kind == 'WORD' and \
                 not (in_report and self.peek().up in RW_CLAUSE_WORDS):
             nt = self.next()
             name = nt.up
@@ -2689,7 +2692,7 @@ class Parser:
                 return True
             if u == 'LENGTH' and self.is_word('OF', k=k + 1):
                 return True
-            if u not in RESERVED or u in SPECIAL_REGISTERS:
+            if u not in RESERVED or u in SPECIAL_REGISTERS or u in CONTEXT_WORDS:
                 return True
             return False
         if t.kind == 'OP' and t.val in ('+', '-') and self.peek(k + 1).kind == 'NUM':
@@ -2752,7 +2755,8 @@ class Parser:
         if t.kind == 'WORD' and t.up == 'ADDRESS' and self.is_word('OF', k=1):
             self.next(); self.next()
             return AddressOf(self.parse_identifier())
-        if not (t.kind == 'WORD' and (t.up not in RESERVED or t.up in SPECIAL_REGISTERS)):
+        if not (t.kind == 'WORD' and (t.up not in RESERVED or t.up in SPECIAL_REGISTERS
+                                      or t.up in CONTEXT_WORDS)):
             raise self.err("identifier expected")
         self.next()
         if t.up in self.prog.constants:

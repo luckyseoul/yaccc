@@ -212,8 +212,8 @@ PASS  run_functions.at:212         FUNCTION CHAR
 PASS  run_functions.at:250         FUNCTION COMBINED-DATETIME
 PASS  run_functions.at:275         FUNCTION CONCAT / CONCATENATE
 PASS  run_functions.at:322         FUNCTION CONCATENATE with reference modding
-CERR  run_functions.at:350         FUNCTION CONTENT-LENGTH
-CERR  run_functions.at:384         FUNCTION CONTENT-OF
+PASS  run_functions.at:350         FUNCTION CONTENT-LENGTH
+PASS  run_functions.at:384         FUNCTION CONTENT-OF
 PASS  run_functions.at:459         FUNCTION as CALL parameter BY CONTENT
 PASS  run_functions.at:495         FUNCTION COS
 PASS  run_functions.at:519         FUNCTION CURRENCY-SYMBOL
@@ -369,7 +369,7 @@ PASS  run_fundamental.at:1990      Context sensitive words (1)
 PASS  run_fundamental.at:2013      Context sensitive words (2)
 PASS  run_fundamental.at:2037      Context sensitive words (3)
 PASS  run_fundamental.at:2061      Context sensitive words (4)
-CERR  run_fundamental.at:2086      Context sensitive words (5)
+PASS  run_fundamental.at:2086      Context sensitive words (5)
 PASS  run_fundamental.at:2109      Context sensitive words (6)
 PASS  run_fundamental.at:2131      Context sensitive words (7)
 SKIP  run_fundamental.at:2158      Context sensitive words (8)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 425  FAIL 28  CERR 41  XERR 0  SKIP 199
+PASS 428  FAIL 28  CERR 38  XERR 0  SKIP 199

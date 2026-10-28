@@ -1802,7 +1802,18 @@ class CodeGen(ReportWriterGen, DebugGen):
         fl = F_DEC_COMMA if self.prog.decimal_comma else 0
         return f"cob_fn_field({self.dec(a)}, {fl}, 0)"
 
+    def pointer_arg(self, e):
+        """A pointer-valued argument as an unsigned char*."""
+        it = self.resolve(e) if isinstance(e, DataRef) else None
+        if it is not None and getattr(it, 'type', None) == T_POINTER:
+            return f"cob_pointer_get({self.field(e)})"
+        if isinstance(e, AddressOf):
+            return self.address_of(e.ref)
+        raise CompileError("a POINTER item is needed here", getattr(e, 'loc', None))
+
     def func_num(self, e):
+        if e.name == 'CONTENT-LENGTH':
+            return f"cob_d_int((cob_s64)cob_fn_content_length({self.pointer_arg(e.args[0])}))"
         if e.name in self.udf_names:
             # a user-defined function: its RETURNING item decides the value
             return f"cob_d_get({self.udf_field(e)})"
@@ -1929,6 +1940,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         name = e.name
         a = e.args
         F = lambda i: self.field(a[i])
+        if name == 'CONTENT-OF':
+            # the bytes at a pointer, up to its NUL or an explicit length
+            n = f"cob_d_to_int({self.dec(a[1])})" if len(a) > 1 else "-1"
+            return f"cob_fn_content_of({self.pointer_arg(a[0])}, {n})"
         if name == 'UPPER-CASE':
             return f"cob_fn_upper({F(0)})"
         if name == 'LOWER-CASE':
@@ -2641,14 +2656,17 @@ class CodeGen(ReportWriterGen, DebugGen):
         sym = it.storage
         em(f"{sym} = cob_alloc_chars({it.size});")
         if s.initialized:
-            em(f"memset({sym}, 0, {it.size});")
-            # VALUE clauses then apply, as INITIALIZE would
             self.init_based(it, sym)
         em.ind -= 1
         em("}")
 
     def init_based(self, item, sym):
+        """ALLOCATE ... INITIALIZED: the INITIALIZE semantics, so an
+        alphanumeric item becomes spaces and a numeric one zeroes, with the
+        VALUE clauses then applied."""
         em = self.em
+        self.init_spec = None
+        self.init_item(item, sym, '0', 'initialize', root=True, root_occurs=bool(item.occurs))
         for it in item.walk():
             if it.children or it.value is None:
                 continue
