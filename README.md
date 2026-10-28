@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 49 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 50 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -93,7 +93,7 @@ COLUMN clause.
   which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 49 pass, built with gcc.
+All 50 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -106,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   381    26             76      210
+  693   384    26             73      210
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -182,21 +182,55 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 | `-O N` | C optimisation level (default 2) |
 | `-g` | C debug information, with `#line` mapping so a debugger shows COBOL source |
 | `--no-check` | drop subscript and reference-modification range checks |
-| `--binary-size 2-4-8 \| 1-2-4-8` | storage sizes for BINARY/COMP items (default 2-4-8, as IBM) |
+| `-std DIALECT` | the choices the standards leave open (see below; default `default`) |
+| `--binary-size 2-4-8 \| 1-2-4-8` | storage sizes for BINARY/COMP items (default: from the dialect) |
+| `-fbinary-truncate` / `-fno-binary-truncate` | whether a BINARY item is limited to its PICTURE's digits |
+| `-fmissing-period` / `-fno-missing-period` | whether a statement may stand where a `.` is required |
 | `--debugging-mode` | compile as if `WITH DEBUGGING MODE` were specified: debugging lines and USE FOR DEBUGGING |
 | `--keep-c` | keep the generated C file next to the executable |
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
 | `--run` | run the program after building; its arguments follow, and ones that begin with `-` go after `--` |
 
-An option this compiler does not implement is an error, never a silent no-op:
-`yaccc prog.cbl -std=ibm` fails rather than building with the default dialect
-and saying nothing. Arguments for the program being run follow `--run`; those
-that begin with `-` follow `--`:
+An option this compiler does not implement is an error, never a silent no-op,
+and neither is an unknown dialect name. A `-f` option overrides the same
+setting from `-std`.
+
+Arguments for the program being run follow `--run`; those that begin with `-`
+follow `--`:
 
 ```
 ./yaccc prog.cbl --run 2026-10-28      # one argument to the program
 ./yaccc prog.cbl --run -- --verbose    # an option-like argument to the program
 ```
+
+### Dialects
+
+`-std` selects the choices a compiler has to make where the standards leave one
+open, or where implementations have long differed. A dialect is not a claim of
+conformance to a vendor's implementation: it sets the four settings below, and
+`-f` overrides any of them individually.
+
+| Dialect | `binary-size` | `binary-truncate` | `missing-period` |
+|---|---|---|---|
+| `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no |
+| `gnu` (GnuCOBOL) | 2-4-8 | on | yes |
+| `ibm` | 2-4-8 | on | yes |
+| `mf` (Micro Focus) | 1-2-4-8 | off | yes |
+
+- **`binary-size`** — the byte widths `PIC 9(n) COMP` uses. Under `2-4-8`
+  (IBM and the default here) a 2-digit COMP item occupies 2 bytes; under
+  `1-2-4-8` (Micro Focus) it occupies 1.
+- **`binary-truncate`** — whether a COMP item holds only the digits of its
+  PICTURE. With truncation on, `PIC 9(2) COMP` given 12345 holds 45. With it
+  off, the item holds what its bytes can represent (12345 in two bytes is
+  0x3039, which reads back as 57) — the Micro Focus behaviour.
+- **`missing-period`** — whether a statement may stand at a point where a `.`
+  is required. The standards require the period; several implementations accept
+  its absence, and so does YACCC under these dialects.
+
+`yaccc -std=ibm prog.cbl` and `yaccc -std=mf prog.cbl` therefore produce
+different binaries for the same source. Anything not listed above is the same
+in every dialect.
 
 Runtime environment:
 
@@ -317,13 +351,15 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   NEAREST-AWAY-FROM-ZERO (the default), NEAREST-EVEN, NEAREST-TOWARD-ZERO,
   TOWARD-GREATER, TOWARD-LESSER, TRUNCATION and PROHIBITED.
 - Control flow: IF, EVALUATE (ALSO, THRU, ANY, TRUE/FALSE), all PERFORM formats
-  (THRU, TIMES, UNTIL, VARYING/AFTER, WITH TEST AFTER, inline), GO TO /
+  (THRU, TIMES, UNTIL, UNTIL EXIT, FOREVER, VARYING/AFTER, WITH TEST AFTER,
+  inline), GO TO /
   DEPENDING ON, ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH / SECTION /
   PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
   NORMAL STATUS], STOP literal, GOBACK [RETURNING].
 - Strings and tables: STRING, UNSTRING (a literal or figurative constant is
   accepted as the sending item, as GnuCOBOL and Micro Focus do), INSPECT
-  (TALLYING / REPLACING / CONVERTING, BEFORE/AFTER), SEARCH, SEARCH ALL.
+  (TALLYING / REPLACING / CONVERTING, ALL / LEADING / FIRST / TRAILING,
+  BEFORE/AFTER), SEARCH, SEARCH ALL.
 - Terminal I/O and program calls: DISPLAY, ACCEPT (incl. FROM DATE/DAY/TIME/
   DAY-OF-WEEK/ENVIRONMENT), CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION,
   `CALL "SYSTEM"`), CANCEL.

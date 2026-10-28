@@ -169,6 +169,8 @@ class Parser:
         if self.peek().kind == '.':
             self.next()
             return
+        if getattr(self, 'missing_period', False) and self.peek().kind != 'EOF':
+            return                          # -fmissing-period / a lenient dialect
         raise self.err("expected '.'")
 
     def skip_periods(self):
@@ -1743,7 +1745,7 @@ class Parser:
     # ---- PERFORM
     def p_PERFORM(self, loc):
         first = last = None
-        if self.is_user_word() and not self.is_word('TIMES', k=1) and not (
+        if self.is_user_word() and not self.is_word('FOREVER') and not self.is_word('TIMES', k=1) and not (
                 self.peek(1).kind == '(' or (self.is_word('OF', 'IN', k=1) and self.is_word('TIMES', k=3))):
             first = self._procref()
             if self.accept('THRU', 'THROUGH'):
@@ -1753,6 +1755,11 @@ class Parser:
             if self.accept('THRU', 'THROUGH'):
                 last = self._procref()
         st = Perform(loc, first, last)
+        if first is None and self.accept('FOREVER'):
+            st.until = ConstCond(False)
+            st.body = self.parse_statements()
+            self.expect('END-PERFORM')
+            return st
         if self.is_word('WITH', 'TEST', 'UNTIL', 'VARYING'):
             if self.accept('WITH'):
                 self.expect('TEST')
@@ -1779,6 +1786,8 @@ class Parser:
                         break
             else:
                 raise self.err("UNTIL or VARYING expected")
+        elif self.accept('FOREVER'):
+            st.until = ConstCond(False)        # as UNTIL EXIT: only EXIT PERFORM
         elif self.peek().kind == 'NUM' or self.is_user_word() or self.is_word('FUNCTION'):
             st.times = self.parse_expr()
             self.expect('TIMES')
@@ -1973,7 +1982,7 @@ class Parser:
                     st.tallying.append(InspectOp('CHARACTERS', None, None, counter, self._inspect_region()))
                     mode = None
                     continue
-                if self.is_word('ALL', 'LEADING'):
+                if self.is_word('ALL', 'LEADING', 'TRAILING'):
                     mode = self.next().up
                     continue
                 if self.is_word('REPLACING') or not (self.is_operand_start()):
@@ -2000,7 +2009,7 @@ class Parser:
                     st.replacing.append(InspectOp('CHARACTERS', None, by, None, self._inspect_region()))
                     mode = None
                     continue
-                if self.is_word('ALL', 'LEADING', 'FIRST'):
+                if self.is_word('ALL', 'LEADING', 'FIRST', 'TRAILING'):
                     mode = self.next().up
                     continue
                 if mode is None or not self.is_operand_start():

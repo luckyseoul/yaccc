@@ -331,6 +331,8 @@ void cob_inspect_replace(int mode, const cob_field *pat, const cob_field *by, co
 	op->lead_next = op->rstart;
 }
 
+static void run_trailing(int replace);
+
 static void run_ops(int replace)
 {
 	unsigned char *d = itarget->data;
@@ -342,6 +344,8 @@ static void run_ops(int replace)
 			insp_op *op = &iops[k];
 			if (op->replace != replace)
 				continue;
+			if (op->mode == COB_INSP_TRAILING)
+				continue;               /* handled by run_trailing, end first */
 			if (pos < op->rstart || pos >= op->rend)
 				continue;
 			if (op->mode == COB_INSP_CHARACTERS) {
@@ -376,6 +380,37 @@ static void run_ops(int replace)
 		}
 		if (!matched)
 			pos++;
+	}
+	run_trailing(replace);
+}
+
+/* TRAILING matches the maximal run at the end of the region, so it is easier
+ * to walk backwards from the end than to look ahead from each position:
+ * "1000" with TRAILING "0" replaces all three zeros, not just the last one. */
+static void run_trailing(int replace)
+{
+	if (!itarget)
+		return;
+	unsigned char *d = itarget->data;
+	for (int k = 0; k < niops; k++) {
+		insp_op *op = &iops[k];
+		if (op->replace != replace || op->mode != COB_INSP_TRAILING)
+			continue;
+		size_t pl = op->plen;
+		if (pl == 0)
+			continue;
+		size_t end = op->rend;
+		while (end >= op->rstart + pl && end <= itarget->size) {
+			size_t at = end - pl;
+			if (memcmp(d + at, op->pat, pl) != 0)
+				break;
+			if (replace) {
+				size_t bl = op->blen < pl ? op->blen : pl;
+				memcpy(d + at, op->by, bl);
+			} else
+				op->count++;
+			end = at;
+		}
 	}
 }
 

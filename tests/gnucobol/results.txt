@@ -523,8 +523,8 @@ PASS  run_misc.at:1707             INSPECT CONVERTING TO NULL
 PASS  run_misc.at:1731             INSPECT REPLACING figurative constant
 PASS  run_misc.at:1755             INSPECT TALLYING BEFORE
 PASS  run_misc.at:1790             INSPECT TALLYING AFTER
-CERR  run_misc.at:1825             INSPECT REPLACING TRAILING ZEROS BY SPACES
-CERR  run_misc.at:1849             INSPECT REPLACING complex
+PASS  run_misc.at:1825             INSPECT REPLACING TRAILING ZEROS BY SPACES
+PASS  run_misc.at:1849             INSPECT REPLACING complex
 FAIL  run_misc.at:1875             SWITCHES (environment COB_SWITCH_n and SET)
 PASS  run_misc.at:1972             Nested PERFORM
 PASS  run_misc.at:1996             PERFORM VARYING BY -0.2
@@ -533,7 +533,7 @@ PASS  run_misc.at:2054             EXIT PERFORM
 PASS  run_misc.at:2079             EXIT PERFORM CYCLE
 PASS  run_misc.at:2104             EXIT PARAGRAPH
 PASS  run_misc.at:2136             EXIT SECTION
-CERR  run_misc.at:2170             PERFORM FOREVER / PERFORM UNTIL EXIT
+PASS  run_misc.at:2170             PERFORM FOREVER / PERFORM UNTIL EXIT
 SKIP  run_misc.at:2211             PERFORM inline (1)
 SKIP  run_misc.at:2238             PERFORM inline (2)
 PASS  run_misc.at:2263             Non-overflow after overflow
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 381  FAIL 26  CERR 76  XERR 0  SKIP 210
+PASS 384  FAIL 26  CERR 73  XERR 0  SKIP 210

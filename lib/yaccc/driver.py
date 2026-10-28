@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 
+from . import dialect
 from .codegen import CodeGen, Options
 from .errors import CompileError, DIAG
 from .lexer import SourceSet
@@ -79,6 +80,7 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
         ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging, defines=defines)
         toks = ss.load(p)
         parser = Parser(toks, ss.directives.vars)
+        parser.missing_period = getattr(opts, 'missing_period', False)
         programs.extend(parser.parse_unit())
     opts.source_name = paths[0]
     opts.debugging = debugging
@@ -112,6 +114,13 @@ def _split_run_args(ap, args, unknown):
     return before + after
 
 
+SOURCE_EXT = ('.cbl', '.cob', '.cpy', '.cbx', '.copy', '.cobol')
+
+
+def _looks_like_source(path):
+    return path.lower().endswith(SOURCE_EXT)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='yaccc', description='COBOL compiler (COBOL -> C -> native executable)')
     ap.add_argument('sources', nargs='*', help='COBOL source files')
@@ -126,8 +135,20 @@ def main(argv=None):
     ap.add_argument('-O', dest='opt', default='2', nargs='?', const='2', help='C optimisation level')
     ap.add_argument('-g', dest='debug', action='store_true', help='include C debug information')
     ap.add_argument('--no-check', dest='check', action='store_false', help='disable subscript/reference checks')
-    ap.add_argument('--binary-size', default='2-4-8', choices=['2-4-8', '1-2-4-8'],
-                    help='storage size scheme for BINARY/COMP items')
+    ap.add_argument('-std', '--std', dest='std', metavar='DIALECT',
+                    help='dialect for the choices the standards leave open: '
+                         + ', '.join(dialect.accepted_names()))
+    ap.add_argument('--binary-size', default=None, choices=['2-4-8', '1-2-4-8'],
+                    help='storage size scheme for BINARY/COMP items '
+                         '(default: from the dialect)')
+    ap.add_argument('-fbinary-truncate', dest='binary_truncate', action='store_true', default=None,
+                    help='a BINARY item is limited to the digits of its PICTURE (default)')
+    ap.add_argument('-fno-binary-truncate', dest='binary_truncate', action='store_false',
+                    help='a BINARY item may use the whole capacity of its USAGE')
+    ap.add_argument('-fmissing-period', dest='missing_period', action='store_true', default=None,
+                    help="accept a statement where a '.' is required")
+    ap.add_argument('-fno-missing-period', dest='missing_period', action='store_false',
+                    help="require '.' (default)")
     ap.add_argument('--debugging-mode', action='store_true', help="compile as if WITH DEBUGGING MODE were specified")
     ap.add_argument('--keep-c', action='store_true', help='keep the generated C file next to the output')
     ap.add_argument('--run', action='store_true', help='run the program after building it')
@@ -146,10 +167,27 @@ def main(argv=None):
         return 0
     if not args.sources:
         ap.error('no source files given')
+    # a positional token that is not a readable file is usually an argument
+    # meant for the program being run, or a misspelt option's value
+    missing = [p for p in args.sources if p != '-' and not os.path.isfile(p)]
+    if missing:
+        names = ' '.join(missing)
+        if any(not _looks_like_source(p) for p in missing):
+            ap.error(f"no such source file: {names}; arguments for the program "
+                     f"being run go after --run")
+        ap.error(f"no such source file: {names}")
 
     opts = Options()
+    try:
+        opts.dialect = dialect.Dialect(args.std or 'default')
+    except KeyError:
+        ap.error(f"unknown dialect '{args.std}'; known: "
+                 + ', '.join(dialect.accepted_names()))
+    d = opts.dialect
+    opts.binary_size = args.binary_size or d.binary_size
+    opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
+    opts.missing_period = d.missing_period if args.missing_period is None else args.missing_period
     opts.check = args.check
-    opts.binary_size = args.binary_size
     opts.line_map = args.debug
     fmt = args.fmt or 'auto'
     try:

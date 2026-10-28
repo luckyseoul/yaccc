@@ -375,6 +375,7 @@ int cob_unstring_finish(void);
 #define COB_INSP_ALL        1
 #define COB_INSP_LEADING    2
 #define COB_INSP_FIRST      3
+#define COB_INSP_TRAILING   4
 void cob_inspect_start(cob_field *target);
 void cob_inspect_tally(cob_field *counter, int mode, const cob_field *pat, const cob_field *before, const cob_field *after);
 void cob_inspect_replace(int mode, const cob_field *pat, const cob_field *by, const cob_field *before, const cob_field *after);

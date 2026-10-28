@@ -6,7 +6,8 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    T_GROUP, T_ALNUM, T_ALPHA, T_ALNUM_EDITED, T_NUM_DISPLAY, T_NUM_PACKED,
                    T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_NUM_EDITED,
                    T_INDEX, T_ALL, T_POINTER, TYPE_NAMES, NUMERIC_TYPES,
-                   F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA)
+                   F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
+                   F_BINARY_TRUNC)
 from .errors import CompileError, DIAG
 from .nodes import *
 from .dbggen import DebugGen
@@ -73,6 +74,9 @@ def c_string(b):
 class Options:
     def __init__(self):
         self.binary_size = '2-4-8'
+        self.binary_truncate = True  # a BINARY item holds its PICTURE's digits
+        self.missing_period = False  # accept a statement where '.' is required
+        self.dialect = 'default'
         self.check = True
         self.source_name = ''
         self.debugging = False
@@ -1427,8 +1431,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         if kind == 'C5':
             parts.append(f"cob_c5_set({p}, {it.size}, (cob_s64)cob_w);")
         else:
-            parts.append(f"cob_w %= {10 ** it.digits}LL;")
+            if kind != 'BIN' or (it.flags & F_BINARY_TRUNC):
+                parts.append(f"cob_w %= {10 ** it.digits}LL;")
             if kind == 'BIN':
+                # without binary-truncate a BINARY item keeps whatever fits in
+                # its USAGE: cob_bin_set writes it.size bytes and drops the rest
                 parts.append(f"cob_bin_set({p}, {it.size}, (cob_s64)cob_w);")
             elif kind == 'DU':
                 parts.append(f"cob_disp_set({p}, {it.size}, (cob_u64)cob_w);")
@@ -2826,7 +2833,7 @@ class CodeGen(ReportWriterGen, DebugGen):
     def g_Inspect(self, s):
         em = self.em
         modes = {'CHARACTERS': 'COB_INSP_CHARACTERS', 'ALL': 'COB_INSP_ALL', 'LEADING': 'COB_INSP_LEADING',
-                 'FIRST': 'COB_INSP_FIRST'}
+                 'FIRST': 'COB_INSP_FIRST', 'TRAILING': 'COB_INSP_TRAILING'}
         em("{")
         em.ind += 1
         t = self.field(s.target)

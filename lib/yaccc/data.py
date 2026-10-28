@@ -456,7 +456,8 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
     elif usage == 'BINARY':
         item.type = T_NUM_BINARY
         item.size = binary_size(pic.digits, opts.binary_size)
-        item.flags |= F_BINARY_TRUNC
+        if getattr(opts, 'binary_truncate', True):
+            item.flags |= F_BINARY_TRUNC
     elif usage == 'COMP-5':
         item.type = T_NUM_COMP5
         item.size = binary_size(pic.digits, opts.binary_size)
