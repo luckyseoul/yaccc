@@ -178,24 +178,26 @@ class ReportWriterGen:
                 cur = (it.rw_line, [])
                 gi.lines.append(cur)
             if not it.children:
-                if it.rw_column is not None:
-                    if cur is None:
-                        # a group without LINE clauses: its items go on the next line
-                        cur = (('REL', 1), [])
-                        gi.lines.append(cur)
-                    col = it.rw_column
-                    if isinstance(col, tuple):
-                        # COLUMN PLUS n: n positions right of the previous item of the line
-                        prev = cur[1][-1] if cur[1] else None
-                        col = (prev.rw_column + prev.size - 1 if prev else 0) + col[1]
-                    if it.rw_just == 'R':           # COLUMN RIGHT n: the item ends in column n
-                        col = col - it.size + 1
-                    elif it.rw_just == 'C':         # COLUMN CENTER n: centered on column n
-                        col = col - (it.size - 1) // 2 if it.size % 2 else col - it.size // 2 + 1
-                    if col < 1:
-                        raise CompileError("report item starts before column 1", it.loc)
-                    it.rw_column = col
-                    cur[1].append(it)
+                if cur is None:
+                    # a group without LINE clauses: its items go on the next line
+                    cur = (('REL', 1), [])
+                    gi.lines.append(cur)
+                prev = cur[1][-1] if cur[1] else None
+                col = it.rw_column
+                if col is None:
+                    # no COLUMN clause: the item follows the previous one
+                    col = prev.rw_column + prev.size if prev else 1
+                elif isinstance(col, tuple):
+                    # COLUMN PLUS n: n positions right of the previous item of the line
+                    col = (prev.rw_column + prev.size - 1 if prev else 0) + col[1]
+                if it.rw_just == 'R':           # COLUMN RIGHT n: the item ends in column n
+                    col = col - it.size + 1
+                elif it.rw_just == 'C':         # COLUMN CENTER n: centered on column n
+                    col = col - (it.size - 1) // 2 if it.size % 2 else col - it.size // 2 + 1
+                if col < 1:
+                    raise CompileError("report item starts before column 1", it.loc)
+                it.rw_column = col
+                cur[1].append(it)
                 if it.rw_group_indicate and gi.type != 'DE':
                     raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
                 if it.rw_sums:

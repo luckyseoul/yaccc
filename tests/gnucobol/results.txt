@@ -656,7 +656,7 @@ PASS  run_reportwriter.at:120      REPORT COL PLUS
 PASS  run_reportwriter.at:189      Report Overlapping Fields
 PASS  run_reportwriter.at:258      EMPTY REPORT
 PASS  run_reportwriter.at:327      PAGE LIMIT REPORT
-FAIL  run_reportwriter.at:389      PAGE LIMIT REPORT 2
+PASS  run_reportwriter.at:389      PAGE LIMIT REPORT 2
 FAIL  run_reportwriter.at:461      Sample Customer Report
 FAIL  run_reportwriter.at:776      Sample Charge Report
 FAIL  run_reportwriter.at:1129     Sample Charge Report 2
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 378  FAIL 27  CERR 78  XERR 0  SKIP 210
+PASS 379  FAIL 26  CERR 78  XERR 0  SKIP 210

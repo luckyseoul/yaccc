@@ -76,6 +76,7 @@ class Options:
         self.check = True
         self.source_name = ''
         self.debugging = False
+        self.line_map = False        # #line directives, so a debugger shows COBOL
 
 
 class FileInfo:
@@ -98,6 +99,10 @@ class Emitter:
 
     def __call__(self, s):
         self.lines.append('\t' * self.ind + s)
+
+    def line_map(self, path, line):
+        # c_string escapes quotes and non-ASCII bytes; it returns a C literal
+        self.lines.append(f'#line {line} {c_string(path or "")}')
 
     def label(self, name):
         self.lines.append(f"{name}:;")
@@ -490,7 +495,7 @@ class CodeGen(ReportWriterGen, DebugGen):
             for r in fd.records:
                 resolve_types(r, self.opts)
                 layout(r, 0)
-                size = max(size, r.size)
+                size = max(size, r.total_size())
                 for it in r.walk():
                     it.record = r
                     it.storage = fi.buf
@@ -524,7 +529,8 @@ class CodeGen(ReportWriterGen, DebugGen):
             for r in roots:
                 if r.redefines is not None:
                     continue
-                size = max([r.size] + [x.size for x in r.redefined_by])
+                # a section root may itself have OCCURS: allocate every occurrence
+                size = max([r.total_size()] + [x.total_size() for x in r.redefined_by])
                 if sec == 'WS':
                     if r.external:
                         key = r.name
@@ -2005,6 +2011,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         if fn is None:
             raise CompileError(f"{type(s).__name__} is not supported", s.loc)
         self.em(f"/* line {s.loc.line}: {type(s).__name__.upper()} */")
+        if self.opts.line_map and s.loc is not None:
+            self.em.line_map(s.loc.file, s.loc.line)
         start = len(self.em.lines)
         ind = self.em.ind
         if self.dbg is not None and self.dbg_watching():

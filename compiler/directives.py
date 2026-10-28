@@ -376,6 +376,8 @@ class _Expr:
                 return self.d.vars[name]
             if name in ('TRUE', 'FALSE'):
                 return name == 'TRUE'
+            # an undefined variable is simply "not set": a conditional such as
+            # >>IF VERSION = 3 must work when VERSION is not defined at all
             return UNSET
         raise self.err()
 

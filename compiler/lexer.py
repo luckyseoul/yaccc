@@ -301,10 +301,70 @@ class SourceSet:
                 new.append(line)
             raw = new
         fmt = self.fmt if self.fmt != 'auto' else source.detect_format(raw)
-        lines = source.process(raw, path, fmt, self.debugging, self.directives)
+        lines, regions = source.process(raw, path, fmt, self.debugging, self.directives,
+                                        self._copy_expander)
         lx = Lexer(self.decimal_comma)
-        toks = lx.lex_lines(lines)
+        all_toks = []
+        bounds = []
+        for ll in lines:
+            bounds.append(len(all_toks))
+            lx.lex_text(ll.text, ll.loc, all_toks)
+        bounds.append(len(all_toks))
+        if lx.pseudo is not None:
+            raise CompileError("unterminated pseudo-text", lx.pseudo[1])
+        # lexing stays one stream (a separator on one line can affect the
+        # next), but COPY REPLACING is applied per expanded copybook region
+        line_toks = [all_toks[bounds[i]:bounds[i + 1]] for i in range(len(lines))]
+        if regions:
+            self._apply_copy_regions(lines, line_toks, regions)
+        toks = [t for tk in line_toks for t in tk]
         return self._expand_copy(toks, path, depth)
+
+    @staticmethod
+    def _apply_copy_regions(lines, line_toks, regions):
+        """Apply COPY ... REPLACING to the tokens of each expanded copybook.
+        A copybook included inside another one is replaced first, so an outer
+        REPLACING sees the text the inner one produced."""
+        idx = {id(ll): i for i, ll in enumerate(lines)}
+        spans = []
+        for sub, repl in regions:
+            inds = [idx[id(ll)] for ll in sub if id(ll) in idx]
+            if inds:
+                spans.append((min(inds), max(inds) + 1, repl))
+        # innermost (shortest) region first: an outer one then sees its output
+        for a, b, repl in sorted(spans, key=lambda s: (s[1] - s[0], -s[0])):
+            flat = [t for k in range(a, b) for t in line_toks[k]]
+            line_toks[a] = _apply_replacing(flat, repl)
+            for k in range(a + 1, b):
+                line_toks[k] = []
+
+    def _copy_expander(self, text, loc, path, depth):
+        """The raw lines of the copybook named by a COPY statement that is a
+        logical line of its own, or None to let the token-level path handle it
+        (a COPY in the middle of a line, or the rare ':' pseudo-text form)."""
+        if depth >= 40:
+            raise CompileError("COPY nesting too deep (recursive COPY?)", loc)
+        toks = []
+        lx = Lexer(self.decimal_comma)
+        try:
+            lx.lex_text(text, loc, toks)
+        except CompileError:
+            return None
+        if lx.pseudo is not None:
+            return None
+        spec = _copy_spec(toks, loc)
+        if spec is None:
+            return None
+        name, lib, repl, text_repl = spec
+        if text_repl:
+            return None
+        try:
+            cpath = self._find(name, lib, path, loc)
+        except CompileError:
+            return None
+        raw = source.read_raw(cpath)
+        fmt = self.fmt if self.fmt != 'auto' else source.detect_format(raw)
+        return raw, cpath, fmt, repl
 
     def _expand_copy(self, toks, path, depth):
         out = []
@@ -353,7 +413,9 @@ class SourceSet:
             if j >= n or toks[j].kind != '.':
                 raise CompileError("COPY statement must end with a period", loc)
             j += 1
-            cpath = self._find(name, lib, path, loc)
+            # resolve relative to the file the COPY appears in: after line-level
+            # expansion that may be a copybook, not the top-level source
+            cpath = self._find(name, lib, t.loc.file or path, loc)
             sub = self._tokenize(cpath, source.read_raw(cpath), depth + 1, text_repl)
             if repl:
                 sub = _apply_replacing(sub, repl)
@@ -416,6 +478,61 @@ def _repl_operand(toks, j, loc):
     if t.kind in ('STR', 'NUM'):
         return [t], j + 1, None
     raise CompileError("COPY REPLACING: invalid operand", loc)
+
+
+def _copy_spec(toks, loc):
+    """Parse a COPY statement that occupies the whole token list. Returns
+    (name, library, repl, text_repl), or None when the statement is not a
+    plain one the line-level expander can handle."""
+    n = len(toks)
+    if n < 2 or toks[0].kind != 'WORD' or toks[0].up != 'COPY':
+        return None
+    j = 1
+    if toks[j].kind not in ('WORD', 'STR'):
+        return None
+    nt = toks[j]
+    name = nt.val.decode('latin-1') if nt.kind == 'STR' else nt.val
+    j += 1
+    lib = None
+    if j + 1 < n and toks[j].kind == 'WORD' and toks[j].up in ('OF', 'IN'):
+        lt = toks[j + 1]
+        if lt.kind not in ('WORD', 'STR'):
+            return None
+        lib = lt.val.decode('latin-1') if lt.kind == 'STR' else lt.val
+        j += 2
+    if j < n and toks[j].kind == 'WORD' and toks[j].up == 'SUPPRESS':
+        j += 1
+        if j < n and toks[j].kind == 'WORD' and toks[j].up == 'PRINTING':
+            j += 1
+    repl = []
+    text_repl = []
+    if j < n and toks[j].kind == 'WORD' and toks[j].up == 'REPLACING':
+        j += 1
+        try:
+            while j < n and toks[j].kind != '.':
+                start = j
+                mode = ''
+                if toks[j].kind == 'WORD' and toks[j].up in ('LEADING', 'TRAILING'):
+                    mode = toks[j].up
+                    j += 1
+                a, j, a_raw = _repl_operand(toks, j, loc)
+                if not (j < n and toks[j].kind == 'WORD' and toks[j].up == 'BY'):
+                    return None
+                j += 1
+                b, j, b_raw = _repl_operand(toks, j, loc)
+                if a_raw is not None and a_raw.strip()[:1] in (':', '(') and not mode:
+                    text_repl.append((a_raw.strip(), (b_raw or '').strip()))
+                else:
+                    repl.append((a, b, mode))
+                if j == start:
+                    return None
+        except (CompileError, IndexError):
+            return None
+    if j >= n or toks[j].kind != '.':
+        return None
+    if j != n - 1:
+        return None                     # something follows the period
+    return name, lib, repl, text_repl
 
 
 def _apply_replacing(toks, repl):

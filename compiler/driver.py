@@ -122,6 +122,7 @@ def main(argv=None):
     opts = Options()
     opts.check = args.check
     opts.binary_size = args.binary_size
+    opts.line_map = args.debug
     fmt = args.fmt or 'auto'
     try:
         defines = {}

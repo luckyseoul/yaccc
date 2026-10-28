@@ -764,6 +764,19 @@ class Parser:
                 self.next(); self.next()
                 self.accept('IS', 'ARE')
                 rd.line_limit = int(self.expect_kind('NUM', 'line limit').val)
+            elif self.accept('HEADING'):
+                # the page clauses may also follow LINE LIMIT, not only PAGE LIMIT
+                self.accept('IS')
+                rd.heading = int(self.expect_kind('NUM', 'integer').val)
+            elif self.is_word('FIRST') and self.is_word('DETAIL', k=1):
+                self.next(); self.next(); self.accept('IS')
+                rd.first_detail = int(self.expect_kind('NUM', 'integer').val)
+            elif self.is_word('LAST') and self.is_word('DETAIL', k=1):
+                self.next(); self.next(); self.accept('IS')
+                rd.last_detail = int(self.expect_kind('NUM', 'integer').val)
+            elif self.accept('FOOTING'):
+                self.accept('IS')
+                rd.footing = int(self.expect_kind('NUM', 'integer').val)
             else:
                 raise self.err("unexpected clause in report description")
         self.expect_period()

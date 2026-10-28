@@ -72,22 +72,28 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 44 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 48 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
 ACCEPT, CALL and CANCEL, library routines and exception functions, ALTER,
 declaratives, sequential, relative and indexed files (including READ PREVIOUS,
-START FIRST/LAST and DELETE FILE), SORT, Report Writer and the Debug module.
+START FIRST/LAST and DELETE FILE), SORT, Report Writer and the Debug module,
+conditional compilation inside a copybook, and report items placed without a
+COLUMN clause.
 
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, the three
   Report Writer tests (`rw1`–`rw3`), `dbg2` and `dbg5`. They cover cases where
   cobolc deliberately differs from GnuCOBOL, so their baselines were verified
   by hand.
+- Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
+  had no live `cobc` to record from, so their baselines were checked by hand
+  against the standard. `rwlimit` is marked `.noref`: it prints a whole page,
+  which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 44 pass in both modes, built with gcc and with clang.
+All 48 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -100,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   378    27             78      210
+  693   379    26             78      210
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -118,10 +124,15 @@ longer passes. `make gctest-update` records a new baseline.
   FUNCTION-ID, CHAINING, ENTRY, TYPEDEF, COMP-6 and Report Writer PRESENT
   WHEN, STEP and OCCURS.
 - **Failures** include the deliberate differences listed below (WRITE
-  ADVANCING, Debug module, LINAGE and Report Writer page geometry, where
-  GnuCOBOL 3.1.2 starts a new page one line early after a page overflow and
-  prints a PAGE FOOTING one line late after TERMINATE), national (UTF-16) data,
-  file sharing between processes and a few library routines.
+  ADVANCING, Debug module, LINAGE, national (UTF-16) data, file sharing between
+  processes and a few library routines) and 7 Report Writer tests whose output
+  differs only in blank lines: GnuCOBOL 3.1.2 starts a new page one line early
+  after a page overflow and prints a PAGE FOOTING one line late after
+  TERMINATE, while cobolc follows the standard's page geometry. None of the 7
+  differs in any non-blank line. One more (`Sample REPORT with RIGHT/CENTER`)
+  is a dialect difference, not an output difference: its first step expects
+  `cobc` to reject the program in its default dialect, and cobolc compiles it,
+  as GnuCOBOL itself does with `-std=mf`.
 
 ### Performance
 
@@ -169,7 +180,7 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 | `-I DIR` | copybook directory (also `$COBCPY`) |
 | `-D NAME[=VALUE]` | define a compilation variable for `>>IF` / `>>DEFINE ... AS PARAMETER` / `CONSTANT FROM` |
 | `-O N` | C optimisation level (default 2) |
-| `-g` | C debug information |
+| `-g` | C debug information, with `#line` mapping so a debugger shows COBOL source |
 | `--no-check` | drop subscript and reference-modification range checks |
 | `--binary-size 2-4-8 \| 1-2-4-8` | storage sizes for BINARY/COMP items (default 2-4-8, as IBM) |
 | `--debugging-mode` | compile as if `WITH DEBUGGING MODE` were specified: debugging lines and USE FOR DEBUGGING |
@@ -186,9 +197,29 @@ Runtime environment:
 | `COB_SET_DEBUG=Y` | object-time debugging switch: USE FOR DEBUGGING procedures run only when it's set (`Y`, `YES`, `ON`, `TRUE` or `1`), as in GnuCOBOL |
 | `COB_CURRENT_DATE` | fixed date and time for ACCEPT FROM DATE/DAY/TIME and the date functions, for reproducible test runs: `YYYY/MM/DD hh:mm:ss`, optionally followed by `+hhmm` (the time part is optional) |
 
+Compile errors name the file and line and print the offending source line:
+
+```
+tests/cases/copy1.cbl:12: error: statement expected, found 'DISPLY'
+  12 |            DISPLY "hi".
+```
+
 Runtime errors, such as a subscript out of range or an I/O error with no FILE
 STATUS or USE procedure, print `cobrt: runtime error: file:line: ...` and exit
 with status 1.
+
+With `-g`, the generated C carries `#line` directives, so a debugger shows and
+steps the COBOL source rather than the generated C:
+
+```
+$ ./cobolc -g examples/payroll.cbl
+$ gdb ./payroll
+(gdb) break payroll.cbl:120
+Breakpoint 1 at 0x2bea: file payroll.cbl, line 120.
+(gdb) run
+Breakpoint 1, prog_1 (...) at payroll.cbl:120
+120            DISPLAY "TOTAL: " WS-TOTAL.
+```
 
 ## Language coverage
 
@@ -196,6 +227,11 @@ with status 1.
 `*>` comments, debugging lines, comment-entries. COPY ... REPLACING (pseudo-text,
 identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF. Boolean
 literals (`B"0101"`, `BX"5A"`) and floating-point literals (`1.5E3`).
+
+COPY is textual inclusion, and a copybook is expanded where it is written. A
+`>>IF` inside a copybook therefore sees the compilation variables as they stand
+at that COPY line, and a `>>DEFINE` in a copybook is visible to the lines that
+follow it, exactly as if the text had been typed at that point.
 Compiler directives: `>>DEFINE`, `>>IF` / `>>ELIF` / `>>ELSE` / `>>END-IF`,
 `>>EVALUATE` / `>>WHEN` / `>>END-EVALUATE`, `>>SET CONSTANT`, `>>SOURCE FORMAT`,
 and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
@@ -238,6 +274,9 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   CONTROL FOOTING, PAGE FOOTING and REPORT FOOTING, with:
   - LINE (absolute, PLUS, ON NEXT PAGE), NEXT GROUP, COLUMN (absolute, PLUS,
     LEFT / RIGHT / CENTER), SOURCE, VALUE;
+  - an item with no COLUMN clause is placed directly after the previous item
+    of its line, and an item with no LINE clause starts the line after the
+    last one;
   - report groups described by entries subordinate to an 01 entry without
     TYPE (a GnuCOBOL extension);
   - SUM ... UPON ... RESET ON, with subtotaling, crossfooting and rolling

@@ -13,6 +13,9 @@ ID_PARAS = ID_COMMENT_PARAS | {'PROGRAM-ID', 'IDENTIFICATION', 'ID', 'ENVIRONMEN
 
 TEXT_WIDTH = 65   # columns 8..72
 
+# a logical line that is nothing but a COPY statement, ending in a period
+_COPY_STMT = re.compile(r'\s*COPY\s', re.I)
+
 
 class LogicalLine:
     __slots__ = ('text', 'loc', 'area_a', 'phys_len')
@@ -133,15 +136,38 @@ class DebugSwitch:
             self.scan = None
 
 
-def process(lines, path, fmt, debugging=False, directives=None):
+def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, depth=0):
     """Turn raw lines into logical lines (continuations joined, comments
-    removed). Returns list of LogicalLine. `debugging` is a bool or a
+    removed). Returns (logical lines, copy regions). `debugging` is a bool or a
     DebugSwitch shared by a source file and its copybooks; `directives` the
-    Directives state (>>IF, >>DEFINE, ...) they share."""
+    Directives state (>>IF, >>DEFINE, ...) they share.
+
+    A COPY statement that is a logical line of its own is handed to `on_copy`,
+    which returns the copybook's raw lines (and its format); they are processed
+    here, at the point of inclusion, so that a >>IF inside a copybook sees the
+    compilation variables as they stand at that line -- a copybook is textual
+    inclusion, not a separate compilation unit. Each expansion is reported in
+    the second return value as (its logical lines, REPLACING clauses) so the
+    caller can apply the token-level replacements to that region."""
     out = []
+    regions = []
     mode = fmt
     dbg = debugging if isinstance(debugging, DebugSwitch) else DebugSwitch(debugging)
     dirs = directives
+
+    def emit(ll):
+        """Append a logical line, expanding a COPY statement in place."""
+        if on_copy is not None and _COPY_STMT.match(ll.text) and ll.text.rstrip().endswith('.'):
+            res = on_copy(ll.text, ll.loc, path, depth)
+            if res is not None:
+                sub_raw, sub_path, sub_fmt, repl = res
+                sub, sub_regions = process(sub_raw, sub_path, sub_fmt, dbg, dirs, on_copy, depth + 1)
+                out.extend(sub)
+                regions.extend(sub_regions)
+                if repl:
+                    regions.append((sub, repl))
+                return
+        out.append(ll)
     for idx, raw in enumerate(lines):
         loc = Loc(path, idx + 1)
         if mode in ('fixed', 'variable'):
@@ -193,7 +219,7 @@ def process(lines, path, fmt, debugging=False, directives=None):
                 prev.phys_len = len(text)
                 continue
             area_a = text[:4].strip() != ''
-            out.append(LogicalLine(text, loc, area_a, len(text)))
+            emit(LogicalLine(text, loc, area_a, len(text)))
         else:
             st = raw.lstrip()
             if st.startswith('>>'):
@@ -222,9 +248,9 @@ def process(lines, path, fmt, debugging=False, directives=None):
                     s = s[1:]
                 prev.text = prev.text.rstrip() + s
                 continue
-            out.append(LogicalLine(text, loc, not raw[:1].isspace() and raw != '', len(text)))
+            emit(LogicalLine(text, loc, not raw[:1].isspace() and raw != '', len(text)))
     _strip_comment_entries(out, fmt)
-    return out
+    return out, regions
 
 
 def _directive(text, mode, loc, dirs=None):
