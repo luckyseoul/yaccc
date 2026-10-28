@@ -193,6 +193,13 @@ class Compute(Stmt):
 
 
 @dataclass(eq=False)
+class Exhibit(Stmt):
+    items: list = field(default_factory=list)
+    named: bool = False
+    changed: bool = False
+
+
+@dataclass(eq=False)
 class Allocate(Stmt):
     target: Any = None
     count: Any = None

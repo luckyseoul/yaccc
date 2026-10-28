@@ -1619,6 +1619,24 @@ class Parser:
         return st
 
     # ---- DISPLAY / ACCEPT
+    def p_EXHIBIT(self, loc):
+        """EXHIBIT [NAMED | CHANGED | CHANGED NAMED] operand..."""
+        # EXHIBIT names its operands unless it is the CHANGED form, which
+        # prints bare values so that only the changed ones stand out
+        named = True
+        changed = False
+        if self.accept('NAMED'):
+            named = True
+        elif self.accept('CHANGED'):
+            changed = True
+            named = self.accept('NAMED')
+        items = []
+        while self.is_operand_start():
+            items.append(self.parse_operand(allow_all=True))
+        if not items:
+            raise self.err("EXHIBIT needs at least one operand")
+        return Exhibit(loc, items, named, changed)
+
     def p_ALLOCATE(self, loc):
         """ALLOCATE item [INITIALIZED] | ALLOCATE n CHARACTERS [INITIALIZED]"""
         st = Allocate(loc)
@@ -1719,6 +1737,9 @@ class Parser:
         return st
 
     def p_ACCEPT(self, loc):
+        if self.accept('OMITTED'):
+            # read and discard one line (ACCEPT OMITTED has no receiving item)
+            return Accept(loc, None, 'OMITTED')
         target = self.parse_identifier()
         st = Accept(loc, target)
         if self.accept('FROM'):
@@ -2188,6 +2209,9 @@ class Parser:
                     self.expect('TO')
                     more.append(SetStmt(loc, 'SWITCH', tg, self.expect('ON', 'OFF').up == 'ON'))
                 return first if len(more) == 1 else StmtBlock(loc, more)
+            if self.is_word('SIZE') and self.is_word('OF', k=1):
+                self.next(); self.next()
+                return SetStmt(loc, 'TO', targets, LengthOf(self.parse_identifier()))
             v = self.parse_expr()
             return SetStmt(loc, 'TO', targets, v)
         if self.is_word('UP', 'DOWN'):

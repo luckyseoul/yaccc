@@ -2728,8 +2728,59 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.dbg_flush()
             self.stmts(s.not_on_exc)
 
+    def g_Exhibit(self, s):
+        """EXHIBIT: display operands, with their names when NAMED, and only
+        those that changed since the last time this statement ran when
+        CHANGED."""
+        em = self.em
+        snap = None
+        if s.changed:
+            snap = self.sym('exh_')
+            sizes = [self.exhibit_size(e) for e in s.items]
+            total = sum(sizes) + len(sizes)
+            em("{")
+            em.ind += 1
+            em(f"static unsigned char {snap}[{total}];")
+            em(f"static int {snap}_init;")
+            em(f"unsigned char {snap}_now[{total}];")
+            em("size_t cob_o = 0;")
+            for e, n in zip(s.items, sizes):
+                f = self.field(e)
+                em(f"memcpy({snap}_now + cob_o, ({f})->data, {n} > ({f})->size ? ({f})->size : {n});")
+                em(f"if (({f})->size < {n}) memset({snap}_now + cob_o + ({f})->size, ' ', {n} - ({f})->size);")
+                em("cob_o += " + str(n) + ";")
+                em(f"{snap}_now[cob_o++] = 0x01;")
+            em(f"int cob_ch = !{snap}_init || memcmp({snap}, {snap}_now, {total}) != 0;")
+            em(f"memcpy({snap}, {snap}_now, {total});")
+            em(f"{snap}_init = 1;")
+            em("if (cob_ch) {")
+            em.ind += 1
+        for k, e in enumerate(s.items):
+            if k:
+                em('cob_display_lit(0, " ", 1);')
+            if s.named:
+                nm = e.name if isinstance(e, DataRef) else None
+                if nm is not None:
+                    em(f'cob_display_lit(0, {c_string(nm + " = ")}, {len(nm) + 3});')
+            em(f"cob_display(0, {self.field(e)});")
+        em("cob_display_end(0, 1);")
+        if s.changed:
+            em.ind -= 1
+            em("}")
+            em.ind -= 1
+            em("}")
+
+    def exhibit_size(self, e):
+        if isinstance(e, DataRef):
+            it = self.resolve(e)
+            return max(1, getattr(it, 'size', 1))
+        return max(1, len(e.value) if isinstance(e, StrLit) else 1)
+
     def g_Accept(self, s):
         em = self.em
+        if s.source == 'OMITTED':
+            em("cob_accept_discard();")
+            return
         self.check_receiving(s.target)
         f = self.field(s.target)
         src = s.source

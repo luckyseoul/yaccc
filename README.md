@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 56 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 57 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -96,7 +96,7 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 56 pass, built with gcc.
+All 57 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   411    25             52      205
+  693   415    25             48      205
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -368,8 +368,8 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   accepted as the sending item, as GnuCOBOL and Micro Focus do), INSPECT
   (TALLYING / REPLACING / CONVERTING, ALL / LEADING / FIRST / TRAILING,
   BEFORE/AFTER), SEARCH, SEARCH ALL.
-- Terminal I/O and program calls: DISPLAY, ACCEPT (incl. FROM DATE/DAY/TIME/
-  DAY-OF-WEEK/ENVIRONMENT), CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION,
+- Terminal I/O and program calls: DISPLAY, EXHIBIT (NAMED / CHANGED),
+  ACCEPT (OMITTED, and incl. FROM DATE/DAY/TIME/DAY-OF-WEEK/ENVIRONMENT), CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION,
   `CALL "SYSTEM"`), CANCEL.
 - File I/O: OPEN, CLOSE (REEL/UNIT, NO REWIND, LOCK), READ (NEXT, PREVIOUS),
   WRITE (ADVANCING, END-OF-PAGE), REWRITE, DELETE, START (KEY, FIRST, LAST),

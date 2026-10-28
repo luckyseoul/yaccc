@@ -108,6 +108,14 @@ class Lexer:
                     raise CompileError(f"invalid boolean literal {'BX' if hexa else 'B'}\"{bits}\"", loc)
                 toks.append(Tok('NUM', str(int(bits, 16 if hexa else 2)), loc))
                 continue
+            if c in 'Hh' and i + 1 < n and text[i + 1] in '"\'':
+                # H"012345": a hexadecimal *numeric* literal
+                val, i = self._literal(text, i + 1, loc)
+                h = val.decode('latin-1').replace(' ', '')
+                if not h or not re.fullmatch(r'[0-9A-Fa-f]+', h):
+                    raise CompileError(f'invalid hexadecimal numeric literal H"{h}"', loc)
+                toks.append(Tok('NUM', str(int(h, 16)), loc))
+                continue
             if c in 'XxZzNn' and i + 1 < n and text[i + 1] in '"\'':
                 val, i = self._literal(text, i + 1, loc)
                 k = c.upper()

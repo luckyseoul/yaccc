@@ -2409,6 +2409,14 @@ const char *cob_chain_arg(int n)
 
 static char env_name[256];
 
+/* ACCEPT OMITTED: read one line and throw it away */
+void cob_accept_discard(void)
+{
+	char fbuf[8192];
+	if (fgets(fbuf, sizeof fbuf, stdin))
+		;
+}
+
 int cob_accept_env(cob_field *f, const cob_field *name)
 {
 	char nm[256];

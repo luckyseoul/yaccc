@@ -393,6 +393,7 @@ void cob_accept_date(cob_field *f, int fmt);
 void cob_accept_time(cob_field *f);
 void cob_accept_cmdline(cob_field *f);
 int cob_accept_env(cob_field *f, const cob_field *name);
+void cob_accept_discard(void);
 void cob_accept_argv(cob_field *f, int what);
 void cob_display_env(int what, const cob_field *f);
 
