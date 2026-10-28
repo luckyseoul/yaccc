@@ -1408,7 +1408,7 @@ class CodeGen(ReportWriterGen, DebugGen):
             return None
         return (r[0], r[2])
 
-    def fast_set(self, fk, val, vscale=0, wide=False, rounded=False):
+    def fast_set(self, fk, val, vscale=0, wide=False, rounded=False, overflow_reports=False):
         """Statement storing scaled integer val (scale vscale) into the item,
         with COBOL truncation (or rounding) semantics."""
         kind, p, it = fk
@@ -1432,6 +1432,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             parts.append(f"cob_c5_set({p}, {it.size}, (cob_s64)cob_w);")
         else:
             if kind != 'BIN' or (it.flags & F_BINARY_TRUNC):
+                if overflow_reports:
+                    # arithmetic without ON SIZE ERROR still raises
+                    # EC-SIZE-OVERFLOW; the value is stored truncated as usual
+                    parts.append(f"if (cob_w >= {10 ** it.digits}LL) "
+                                 f"cob_set_exception(\"EC-SIZE-OVERFLOW\");")
                 parts.append(f"cob_w %= {10 ** it.digits}LL;")
             if kind == 'BIN':
                 # without binary-truncate a BINARY item keeps whatever fits in
@@ -2183,13 +2188,30 @@ class CodeGen(ReportWriterGen, DebugGen):
             return False
         return True if mode == 'NEAREST-AWAY-FROM-ZERO' else None
 
+    def raise_size_exceptions(self, cond_c, on, noton):
+        """Without ON SIZE ERROR the size error condition still exists, and
+        the standard's exception facility reports it: raise EC-SIZE-ZERO-DIVIDE
+        for a division by zero, EC-SIZE-OVERFLOW for a result too big for its
+        receiving item."""
+        if on is not None or noton is not None:
+            return                  # the program handles it itself
+        em = self.em
+        em(f"if ({cond_c}) {{")
+        em.ind += 1
+        em("if (cob_zero_div_seen) cob_set_exception(\"EC-SIZE-ZERO-DIVIDE\");")
+        em("else cob_set_exception(\"EC-SIZE-OVERFLOW\");")
+        em.ind -= 1
+        em("}")
+
     def target_opt(self, t, chk):
         o = []
         mode = self.rounding(t)
         if mode is not None:
             o.append(self.RMODE_C[mode])
-        if chk:
-            o.append('COB_SIZE_CHECK')
+        # with ON SIZE ERROR the target must stay unchanged, so the check has
+        # to stop before the store; without it the store happens and the
+        # overflow is only reported, for EC-SIZE-OVERFLOW
+        o.append('COB_SIZE_CHECK' if chk else 'COB_SIZE_REPORT')
         return '|'.join(o) if o else '0'
 
     def check_numeric_target(self, ref):
@@ -2270,7 +2292,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         em.ind += 1
         em(f"cob_s64 cob_ft = {av[0]};")
         for fk, t, (val, sc, wide) in zip(fks, targets, vals):
-            em(self.fast_set(fk, val, sc, wide, self.fast_rounding(t)))
+            em(self.fast_set(fk, val, sc, wide, self.fast_rounding(t), overflow_reports=True))
         em.ind -= 1
         em("}")
         return True
@@ -2299,6 +2321,7 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def g_Arith(self, s):
         em = self.em
+        em(f"cob_cur_loc = &{self.loc_sym(s)};")
         chk = s.on_error is not None or s.not_on_error is not None
         if self.fast_arith(s):
             return
@@ -2311,6 +2334,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("{")
         em.ind += 1
         em("int cob_err = 0;")
+        if s.verb == 'DIVIDE' or s.verb == 'COMPUTE':
+            em("cob_zero_div_seen = 0;")
         if s.corr:
             if len(s.operands) != 1 or len(s.to) != 1:
                 raise CompileError(f"{s.verb} CORRESPONDING requires one group on each side", s.loc)
@@ -2364,12 +2389,14 @@ class CodeGen(ReportWriterGen, DebugGen):
                     em(f"cob_dec cob_qt = cob_d_trunc(cob_q, {sc});")
                     em(f"cob_err |= cob_d_set({self.field(s.remainder)}, cob_d_sub(cob_dd, cob_d_mul(cob_qt, cob_dv)), {'COB_SIZE_CHECK' if chk else '0'});")
         self.handlers('cob_err', s.on_error, s.not_on_error)
+        self.raise_size_exceptions('cob_err', s.on_error, s.not_on_error)
         em("(void)cob_err;")
         em.ind -= 1
         em("}")
 
     def g_Compute(self, s):
         em = self.em
+        em(f"cob_cur_loc = &{self.loc_sym(s)};")
         chk = s.on_error is not None or s.not_on_error is not None
         for t in s.targets:
             self.check_numeric_target(t.ref)
@@ -2380,13 +2407,13 @@ class CodeGen(ReportWriterGen, DebugGen):
                 fv = self.fast_value(s.expr, ts)
                 if fv is not None:
                     if len(fks) == 1:
-                        em(self.fast_set(fks[0], fv[0], fv[1], fv[2], self.fast_rounding(s.targets[0])))
+                        em(self.fast_set(fks[0], fv[0], fv[1], fv[2], self.fast_rounding(s.targets[0]), overflow_reports=True))
                     else:
                         em("{")
                         em.ind += 1
                         em(f"{'cob_s128' if fv[2] else 'cob_s64'} cob_fc = {fv[0]};")
                         for fk, t in zip(fks, s.targets):
-                            em(self.fast_set(fk, 'cob_fc', fv[1], fv[2], self.fast_rounding(t)))
+                            em(self.fast_set(fk, 'cob_fc', fv[1], fv[2], self.fast_rounding(t), overflow_reports=True))
                         em.ind -= 1
                         em("}")
                     return
@@ -2397,6 +2424,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         for t in s.targets:
             em(f"cob_err |= cob_d_set({self.field(t.ref)}, cob_t, {self.target_opt(t, chk)});")
         self.handlers('cob_err', s.on_error, s.not_on_error)
+        self.raise_size_exceptions('cob_err', s.on_error, s.not_on_error)
         em("(void)cob_err;")
         em.ind -= 1
         em("}")
@@ -2976,6 +3004,9 @@ class CodeGen(ReportWriterGen, DebugGen):
     # ---------------------------------------------------------------- SET
     def g_SetStmt(self, s):
         em = self.em
+        if s.kind == 'EXCEPTION':
+            em("cob_clear_exception();")
+            return
         if s.kind == 'SWITCH':
             for t in s.targets:
                 n = self.prog.switches.get(t.name)

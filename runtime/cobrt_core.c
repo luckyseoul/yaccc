@@ -282,9 +282,13 @@ cob_dec cob_d_mul(cob_dec a, cob_dec b)
 	return r;
 }
 
+int cob_zero_div_seen;        /* set by cob_d_div, cleared per statement */
+
 cob_dec cob_d_div(cob_dec a, cob_dec b)
 {
 	cob_dec r;
+	if (a.scale != COB_DEC_ERR && b.scale != COB_DEC_ERR && b.v == 0)
+		cob_zero_div_seen = 1;
 	if (a.scale == COB_DEC_ERR || b.scale == COB_DEC_ERR || b.v == 0)
 		return cob_d_err();
 	if (a.v == 0)
@@ -811,7 +815,10 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 	case COB_NUM_BINARY:
 	case COB_NUM_COMP5:
 	case COB_INDEX: {
-		if (d.scale < a->scale && !(opt & COB_SIZE_CHECK)) {
+		/* COB_SIZE_REPORT: the value is stored truncated, as without a size
+		 * check, but the overflow is reported so the exception can be raised */
+		int report = 0;
+		if (d.scale < a->scale && !(opt & (COB_SIZE_CHECK | COB_SIZE_REPORT))) {
 			/* drop the high-order digits no item can hold before scaling up */
 			int k = a->scale - d.scale;
 			if (k < 38 && ndigits(d.v) + k > 38)
@@ -821,6 +828,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		if (ovf) {
 			if (opt & COB_SIZE_CHECK)
 				return 1;
+			report = 1;
 			if (ovf & 1)
 				v = 0;
 		}
@@ -838,6 +846,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 			if (lim && ((sgn && (v >= lim || v < -lim)) || (!sgn && v >= lim))) {
 				if (opt & COB_SIZE_CHECK)
 					return 1;
+				report = 1;
 			}
 			if (a->type == COB_INDEX) {
 				int32_t x = (int32_t)v;
@@ -850,6 +859,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		if (digits < 38 && (v >= P10[digits] || v <= -P10[digits])) {
 			if (opt & COB_SIZE_CHECK)
 				return 1;
+			report = 1;
 			if (a->type != COB_NUM_BINARY || (a->flags & COB_F_BINARY_TRUNC))
 				v = v % P10[digits];
 		}
@@ -859,7 +869,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 			put_packed(f, v);
 		else
 			put_binary_raw(f, v, 1);
-		return 0;
+		return report;
 	}
 	case COB_NUM_FLOAT: {
 		float x = (float)d_to_ld(d);
@@ -2037,6 +2047,15 @@ cob_field *cob_fn_exception_statement(void)
 cob_field *cob_fn_exception_status(void)
 {
 	return padded(exc_name, 31);
+}
+
+/* SET LAST EXCEPTION TO OFF */
+void cob_clear_exception(void)
+{
+	exc_name = NULL;
+	exc_loc = NULL;
+	exc_is_io = 0;
+	exc_file = NULL;
 }
 
 /* ================================================================ calling chain */

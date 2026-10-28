@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 50 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 51 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -93,7 +93,7 @@ COLUMN clause.
   which is the documented page-geometry difference.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 50 pass, built with gcc.
+All 51 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -106,7 +106,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   384    26             73      210
+  693   387    25             71      210
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -417,7 +417,13 @@ the same characters (`FUNCTION ORD("A")` displays `000000066`).
 EXCEPTION-FILE report the last exception condition: EC-I-O-* for unsuccessful
 I/O statements, EC-ARGUMENT-FUNCTION for invalid function arguments,
 EC-PROGRAM-NOT-FOUND and EC-PROGRAM-RECURSIVE-CALL for CALL (which takes ON
-EXCEPTION for both).
+EXCEPTION for both), and EC-SIZE-OVERFLOW / EC-SIZE-ZERO-DIVIDE for arithmetic.
+
+The size error condition exists whether or not the statement has ON SIZE
+ERROR. With it, the receiving item is left unchanged; without it the value is
+stored truncated and the exception is still raised, so `COMPUTE X = 10` on
+`PIC 9` sets X to 0 and EXCEPTION-STATUS to EC-SIZE-OVERFLOW. `SET LAST
+EXCEPTION TO OFF` clears the last condition.
 
 **Library routines.** CALL by name reaches these routines directly:
 - bytes and text: CBL_AND, CBL_OR, CBL_NOR, CBL_XOR, CBL_IMP, CBL_NIMP, CBL_EQ,

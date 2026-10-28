@@ -2064,6 +2064,10 @@ class Parser:
         return st
 
     def p_SET(self, loc):
+        if self.is_word('LAST') and self.is_word('EXCEPTION', k=1):
+            self.next(); self.next()
+            self.expect('TO')
+            return SetStmt(loc, 'EXCEPTION', [], self.expect('OFF').up)
         targets = []
         while self.is_user_word() or self.is_word('ADDRESS'):
             if self.is_word('ADDRESS'):

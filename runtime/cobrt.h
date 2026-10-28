@@ -313,6 +313,7 @@ static inline int cob_d_cmp(cob_dec a, cob_dec b)
 int cob_d_sign(cob_dec a);
 #define COB_ROUNDED    1
 #define COB_SIZE_CHECK 2
+#define COB_SIZE_REPORT 0x100   /* store the truncated value but report the overflow */
 /* ROUNDED MODE (with COB_ROUNDED; NEAREST-AWAY-FROM-ZERO is the default) */
 #define COB_RM_AWAY       (1 << 4)
 #define COB_RM_EVEN       (2 << 4)
@@ -509,6 +510,8 @@ cob_field *cob_fn_exception_file(void);
 cob_field *cob_fn_exception_location(void);
 cob_field *cob_fn_exception_statement(void);
 cob_field *cob_fn_exception_status(void);
+void cob_clear_exception(void);
+extern int cob_zero_div_seen;          /* a DIVIDE by zero ran in this statement */
 
 /* calling chain for MODULE-ID / MODULE-CALLER-ID */
 void cob_module_push(const char *name, int argc);
