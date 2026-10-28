@@ -1,0 +1,36 @@
+PROC START-UP     [START PROGRAM       ]
+start
+debugging line
+PROC LOOP-PARA    [PERFORM LOOP        ]
+PROC LOOP-PARA    [PERFORM LOOP        ]
+PROC SWITCHABLE   [AFTER-SWITCH        ]
+PROC SWITCHABLE   [                    ]
+DATA TOTAL        [0005  ]
+DATA TOTAL        [0005  ]
+DATA CNT          [05    ]
+DATA TOTAL        [0010  ]
+total 0010
+DATA TOTAL        [0010  ]
+DATA TOTAL        [0010  ]
+DATA TOTAL        [0005  ]
+DATA CNT          [01    ]
+DATA CNT          [01    ]
+ELEM ELEM         [XY ] [+0001      ]
+DATA CNT          [02    ]
+DATA CNT          [02    ]
+ELEM ELEM         [XY ] [+0002      ]
+DATA CNT          [03    ]
+DATA CNT          [03    ]
+ELEM CELL         [7  ] [+0002 +0003]
+DATA G-A OF GRP   [1234  ]
+DATA G-A          [XY    ]
+FILE DFILE        [                    ]
+FILE DFILE        [                    ]
+FILE DFILE        [                    ]
+FILE DFILE        [first record        ]
+read first record        
+FILE DFILE        [second record       ]
+read second record       
+FILE DFILE        [                    ]
+PROC FINISH       [FALL THROUGH        ]
+end

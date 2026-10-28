@@ -34,6 +34,13 @@
 ===== RW
   RW301M     skipped
   RW302M     skipped
+===== DB
+  DB205A     skipped
+  DB301M     skipped
+  DB302M     skipped
+  DB303M     skipped
+  DB304M     skipped
+  DB305M     skipped
 Module Programs Executed Error Crash   Pass Fail Deleted Inspect Total
 ------ -------- -------- ----- -----  ----- ---- ------- ------- -----
 NC           92       92     0     0   4363    0       6      11  4380
@@ -47,4 +54,5 @@ SG           10       10     0     0    310    0       0       0   310
 OB            7        7     0     0     38    1       0       0    39
 IF           42       42     0     0    732    0       0       0   732
 RW            4        4     0     0     40    0       0       0    40
-Total       386      386     0     0   9143    1      25     101  9270
+DB            9        9     0     0    386    0       4      27   417
+Total       395      395     0     0   9529    1      29     128  9687

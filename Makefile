@@ -26,7 +26,7 @@ $(SUITE):
 	    https://github.com/opensourcecobol/opensourcecobol4j.git third_party/opensourcecobol4j
 	git -C third_party/opensourcecobol4j sparse-checkout set tests/cobol85
 
-# NIST CCVS85: same program set as the suite's reference summary.txt
+# NIST CCVS85: the reference summary.txt program set, plus Report Writer and Debug
 nist: runtime $(SUITE)
 	$(PYTHON) tests/nist/run_nist.py $(SUITE)
 

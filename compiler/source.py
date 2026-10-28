@@ -100,13 +100,45 @@ def strip_floating_comment(text):
 
 
 _SOURCE_RE = re.compile(r'>>\s*SOURCE\s+(?:FORMAT\s+)?(?:IS\s+)?(FREE|FIXED|VARIABLE)', re.I)
+_SRC_COMPUTER = re.compile(r'^\s*SOURCE-COMPUTER\b', re.I)
+_SRC_COMPUTER_END = re.compile(r'\b(OBJECT-COMPUTER|SPECIAL-NAMES|REPOSITORY|INPUT-OUTPUT|FILE-CONTROL|'
+                               r'DATA\s+DIVISION|PROCEDURE\s+DIVISION)\b', re.I)
+_DEBUGGING_MODE = re.compile(r'\bDEBUGGING\s+MODE\b', re.I)
+
+
+class DebugSwitch:
+    """Compile-time debugging switch: debugging lines are compiled once the
+    SOURCE-COMPUTER paragraph says WITH DEBUGGING MODE (or --debugging-mode)."""
+
+    def __init__(self, on):
+        self.on = on
+        self.scan = None        # text of the SOURCE-COMPUTER paragraph seen so far
+
+    def see(self, text):
+        if self.on:
+            return
+        if self.scan is None:
+            m = _SRC_COMPUTER.match(text)
+            if not m:
+                return
+            self.scan = text[m.end():]
+        else:
+            self.scan += ' ' + text
+        end = _SRC_COMPUTER_END.search(self.scan)
+        if _DEBUGGING_MODE.search(self.scan[:end.start()] if end else self.scan):
+            self.on = True
+            self.scan = None
+        elif end or len(self.scan) > 2000:
+            self.scan = None
 
 
 def process(lines, path, fmt, debugging=False):
     """Turn raw lines into logical lines (continuations joined, comments
-    removed). Returns list of LogicalLine."""
+    removed). Returns list of LogicalLine. `debugging` is a bool or a
+    DebugSwitch shared by a source file and its copybooks."""
     out = []
     mode = fmt
+    dbg = debugging if isinstance(debugging, DebugSwitch) else DebugSwitch(debugging)
     for idx, raw in enumerate(lines):
         loc = Loc(path, idx + 1)
         if mode in ('fixed', 'variable'):
@@ -124,12 +156,13 @@ def process(lines, path, fmt, debugging=False):
                 mode = _directive(raw[6:], mode, loc)
                 continue
             if ind in 'dD':
-                if not debugging:
+                if not dbg.on:
                     continue
                 ind = ' '
             if ind not in ' -':
                 DIAG.warn(f"invalid indicator '{ind}' in column 7", loc)
             text = strip_floating_comment(text)
+            dbg.see(text)
             if ind == '-':
                 if not out:
                     raise CompileError("continuation line without a preceding line", loc)
@@ -160,7 +193,7 @@ def process(lines, path, fmt, debugging=False):
             st = raw.lstrip()
             if st.startswith('>>'):
                 if st[2:3].upper() == 'D' and (len(st) == 3 or st[3] == ' '):
-                    if not debugging:
+                    if not dbg.on:
                         continue
                     raw = st[3:]
                     st = raw.lstrip()
@@ -173,6 +206,7 @@ def process(lines, path, fmt, debugging=False):
             if st.startswith('*>'):
                 continue
             text = strip_floating_comment(raw)
+            dbg.see(text)
             # free-format literal continuation with '-' as first char
             if out and st.startswith('-') and open_quote(out[-1].text):
                 prev = out[-1]

@@ -79,6 +79,7 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False):
         parser = Parser(toks)
         programs.extend(parser.parse_unit())
     opts.source_name = paths[0]
+    opts.debugging = debugging
     gen = CodeGen(programs, opts)
     return gen.generate(), programs
 
@@ -97,7 +98,7 @@ def main(argv=None):
     ap.add_argument('--no-check', dest='check', action='store_false', help='disable subscript/reference checks')
     ap.add_argument('--binary-size', default='2-4-8', choices=['2-4-8', '1-2-4-8'],
                     help='storage size scheme for BINARY/COMP items')
-    ap.add_argument('--debugging-mode', action='store_true', help="compile 'D' debugging lines")
+    ap.add_argument('--debugging-mode', action='store_true', help="compile as if WITH DEBUGGING MODE were specified")
     ap.add_argument('--keep-c', action='store_true', help='keep the generated C file next to the output')
     ap.add_argument('--run', action='store_true', help='run the program after building it')
     ap.add_argument('--cc', default=os.environ.get('CC') or (shutil.which('gcc') and 'gcc') or 'cc',

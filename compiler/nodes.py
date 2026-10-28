@@ -514,8 +514,18 @@ class Section:
     use_mode: Optional[str] = None
     use_global: bool = False
     use_reporting: Optional[str] = None    # USE BEFORE REPORTING group-name
+    use_debug: Optional[list] = None       # USE FOR DEBUGGING: [DebugTarget]
     segment: int = 0
     id: int = 0
+
+
+@dataclass(eq=False)
+class DebugTarget:
+    """Subject of USE FOR DEBUGGING: ALL PROCEDURES (ref is None) or a name
+    that turns out to be a procedure, a file or a data item."""
+    ref: Optional[DataRef]
+    all_refs: bool                  # ALL REFERENCES OF identifier
+    loc: Loc
 
 
 @dataclass(eq=False)

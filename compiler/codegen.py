@@ -8,6 +8,7 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA)
 from .errors import CompileError, DIAG
 from .nodes import *
+from .dbggen import DebugGen
 from .rwgen import ReportWriterGen
 from .words import FIG_BYTES, FUNCTIONS
 
@@ -73,6 +74,7 @@ class Options:
         self.binary_size = '2-4-8'
         self.check = True
         self.source_name = ''
+        self.debugging = False
 
 
 class FileInfo:
@@ -124,7 +126,7 @@ class ProgCtx:
         self.class_tables = {}
 
 
-class CodeGen(ReportWriterGen):
+class CodeGen(ReportWriterGen, DebugGen):
     def __init__(self, programs, opts):
         self.programs = programs
         self.opts = opts
@@ -544,6 +546,8 @@ class CodeGen(ReportWriterGen):
             for k, _ in fi.keys:
                 if getattr(k, 'file', None) is not fi:
                     raise CompileError(f"key '{k.name}' is not part of the record of file '{fc.name}'", fc.loc)
+        # Debug module (DEBUG-ITEM, USE FOR DEBUGGING subjects)
+        self.dbg_analyze(prog)
         # REPORT SECTION
         self.rw_analyze(prog)
 
@@ -677,6 +681,7 @@ class CodeGen(ReportWriterGen):
                     prog._decl_file[fname] = (sec, fi)
             elif sec.use_mode:
                 prog._decl_mode[sec.use_mode] = sec
+        self.dbg_collect(prog)
 
     def next_id(self):
         self.n += 1
@@ -802,6 +807,8 @@ class CodeGen(ReportWriterGen):
         self.inline_stack = []
         for var in self.alter_vars:
             em(f"{var} = NULL;")
+        if self.dbg is not None:
+            em(f"memset({self.dbg.sym}, ' ', {self.dbg.size});")
         for it in ctx.rw_init:
             em(f"cob_move(&cob_fig_zero, {self.rw_item_field(it)});")
         for fi in ctx.files.values():
@@ -880,11 +887,13 @@ class CodeGen(ReportWriterGen):
         else:
             em("return (int)cob_get_int(&cob_return_code);")
         if gdecls:
+            self.cur_section = None
             em.label("L_decl_entry")
             em("switch (cob_decl_which) {")
             for sec in gdecls:
                 em(f"case {sec.id}:")
                 em.ind += 1
+                self.dbg_emit_cause('USE', 0)
                 self.perform_section(sec)
                 em("break;")
                 em.ind -= 1
@@ -903,6 +912,8 @@ class CodeGen(ReportWriterGen):
             else:
                 self.protos.append(f'static unsigned char *{sym};')
         for d in sorted(set(self.fn_locals)):
+            out.append('\t' + d)
+        for d in self.dbg_locals():
             out.append('\t' + d)
         if self.seg_tracking:
             out.append('\tint cob_seg = -1;')
@@ -1725,12 +1736,14 @@ class CodeGen(ReportWriterGen):
         em(f"/* SECTION {sec.name or '(unnamed)'} */")
         em.label(sec.label)
         self.seg_enter(sec)
+        self.dbg_label(sec)
         for para in sec.paragraphs:
             self.cur_para = para
             para.end_label = f"{para.label}_end"
             em(f"/* PARAGRAPH {para.name or '(unnamed)'} */")
             em.label(para.label)
             self.seg_enter(sec)
+            self.dbg_label(para)
             for sent in para.sentences:
                 end = self.new_label('E')
                 self.cur_sentence_end = end
@@ -1753,7 +1766,14 @@ class CodeGen(ReportWriterGen):
         if fn is None:
             raise CompileError(f"{type(s).__name__} is not supported", s.loc)
         self.em(f"/* line {s.loc.line}: {type(s).__name__.upper()} */")
-        fn(s)
+        if self.dbg is not None and self.dbg_watching():
+            saved = self.dbg_pending
+            self.dbg_pending = self.dbg_plan(s)
+            fn(s)
+            self.dbg_flush()
+            self.dbg_pending = saved
+        else:
+            fn(s)
 
     def block(self, stmts):
         self.em.ind += 1
@@ -1762,6 +1782,7 @@ class CodeGen(ReportWriterGen):
 
     def handlers(self, cond_c, on, noton):
         em = self.em
+        self.dbg_flush()
         if on is None and noton is None:
             return
         if on is not None:
@@ -2125,6 +2146,7 @@ class CodeGen(ReportWriterGen):
                 em(f"cob_display({dev}, {self.field(it)});")
         em(f"cob_display_end({dev}, {0 if s.no_advancing else 1});")
         if s.not_on_exc:
+            self.dbg_flush()
             self.stmts(s.not_on_exc)
 
     def g_Accept(self, s):
@@ -2257,7 +2279,7 @@ class CodeGen(ReportWriterGen):
         return f"!{c}" if ob.neg else c
 
     # ---------------------------------------------------------------- PERFORM
-    def perform_call(self, first, last):
+    def perform_call(self, first, last, cause='PERFORM'):
         em = self.em
         t1 = self.resolve_proc(first)
         t2 = self.resolve_proc(last) if last else t1
@@ -2265,6 +2287,7 @@ class CodeGen(ReportWriterGen):
         em(f"if (++frame_ptr == cob_frames + COB_STACK_SIZE) cob_perform_overflow({self.locstr()});")
         em(f"frame_ptr->perform_through = {t2.id};")
         em(f"frame_ptr->return_address = &&{ret};")
+        self.dbg_emit_cause(cause)
         em(f"goto {t1.label};")
         em.label(ret)
         em("frame_ptr--;")
@@ -2291,11 +2314,11 @@ class CodeGen(ReportWriterGen):
             em("for (;;) {")
             em.ind += 1
             if not s.test_after:
-                em(f"if ({self.cond(s.until)}) break;")
+                em("break; " + '}' * self.cond_open(s, s.until))
             body()
             em.label(cont)
             if s.test_after:
-                em(f"if ({self.cond(s.until)}) break;")
+                em("break; " + '}' * self.cond_open(s, s.until))
             em.ind -= 1
             em("}")
         elif s.times is not None:
@@ -2343,21 +2366,25 @@ class CodeGen(ReportWriterGen):
         labels = [self.new_label('V') for _ in vs]
         for v in vs:
             em(self.set_var(v.var, v.frm))
+            self.dbg_perf(s, v.var, v.frm)
         if not s.test_after:
             em.label(labels[0])
-            em(f"if ({self.cond(vs[0].until)}) goto {brk};")
+            em(f"goto {brk}; " + '}' * self.cond_open(s, vs[0].until))
             for k in range(1, n):
                 em.label(labels[k])
-                em(f"if ({self.cond(vs[k].until)}) {{")
+                nb = self.cond_open(s, vs[k].until)
                 em.ind += 1
                 em(self.aug_var(vs[k - 1].var, vs[k - 1].by))
+                self.dbg_perf(s, vs[k - 1].var, vs[k - 1].by)
                 em(self.set_var(vs[k].var, vs[k].frm))
+                self.dbg_perf(s, vs[k].var, vs[k].frm)
                 em(f"goto {labels[k - 1]};")
                 em.ind -= 1
-                em("}")
+                em('}' * nb)
             body()
             em.label(cont)
             em(self.aug_var(vs[n - 1].var, vs[n - 1].by))
+            self.dbg_perf(s, vs[n - 1].var, vs[n - 1].by)
             em(f"goto {labels[n - 1]};")
         else:
             top = labels[0]
@@ -2365,14 +2392,16 @@ class CodeGen(ReportWriterGen):
             body()
             em.label(cont)
             for k in range(n - 1, -1, -1):
-                em(f"if (!{self.cond(vs[k].until)}) {{")
+                nb = self.cond_open(s, vs[k].until, neg=True)
                 em.ind += 1
                 em(self.aug_var(vs[k].var, vs[k].by))
+                self.dbg_perf(s, vs[k].var, vs[k].by)
                 for j in range(k + 1, n):
                     em(self.set_var(vs[j].var, vs[j].frm))
+                    self.dbg_perf(s, vs[j].var, vs[j].frm)
                 em(f"goto {top};")
                 em.ind -= 1
-                em("}")
+                em('}' * nb)
 
     # ---------------------------------------------------------------- control flow
     def proc_label(self, pr):
@@ -2382,6 +2411,7 @@ class CodeGen(ReportWriterGen):
         em = self.em
         if s.depending is None:
             var = self.alter_paras.get(id(self.cur_para))
+            self.dbg_emit_cause('GOTO')
             if var is not None:
                 if s.targets:
                     em(f"goto *({var} ? {var} : &&{self.proc_label(s.targets[0])});")
@@ -2395,16 +2425,20 @@ class CodeGen(ReportWriterGen):
                 raise CompileError("GO TO with several targets requires DEPENDING ON", s.loc)
             em(f"goto {self.proc_label(s.targets[0])};")
             return
+        self.dbg_flush('goto')
         em(f"switch ({self.int_expr(s.depending)}) {{")
+        cause = self.dbg_cause('GOTO')
         for i, t in enumerate(s.targets):
-            em(f"case {i + 1}: goto {self.proc_label(t)};")
+            em(f"case {i + 1}: {cause + ' ' if cause else ''}goto {self.proc_label(t)};")
         em("default: break;")
         em("}")
 
     def g_Alter(self, s):
         for p1, p2 in s.pairs:
-            var = self.alter_paras[id(self.resolve_proc(p1))]
+            t1 = self.resolve_proc(p1)
+            var = self.alter_paras[id(t1)]
             self.em(f"{var} = &&{self.proc_label(p2)};")
+            self.dbg_alter(t1, self.resolve_proc(p2))
 
     def g_StopRun(self, s):
         if s.returning is not None:
@@ -2821,6 +2855,7 @@ class CodeGen(ReportWriterGen):
                 if not s.args:
                     raise CompileError("CALL 'SYSTEM' requires an argument", s.loc)
                 em(f"cob_call_system({self.field(s.args[0].value)});")
+                self.dbg_flush()
                 if s.not_on_exc:
                     self.block(s.not_on_exc)
                 em.ind -= 1
@@ -2849,6 +2884,7 @@ class CodeGen(ReportWriterGen):
             em("cob_set_int(&cob_return_code, cob_rc);")
         for fr in frees:
             em(fr)
+        self.dbg_flush()
         if s.not_on_exc is not None:
             self.stmts(s.not_on_exc)
         em.ind -= 1
@@ -2867,7 +2903,7 @@ class CodeGen(ReportWriterGen):
 
     # ---------------------------------------------------------------- file I/O
     def io_result(self, fi, call, at_end=None, not_at_end=None, invalid=None, not_invalid=None,
-                  on_ok=None, eop=None, not_eop=None):
+                  on_ok=None, eop=None, not_eop=None, flush=True):
         em = self.em
         em("{")
         em.ind += 1
@@ -2875,13 +2911,16 @@ class CodeGen(ReportWriterGen):
             for line in self.file_bindings(fi):
                 em(line)
         em(f"int cob_io = {call};")
-        if on_ok:
+        if on_ok or (self.dbg_pending and self.dbg_pending['read']):
             em("if (cob_io == COB_IO_OK) {")
             em.ind += 1
-            for line in on_ok:
+            for line in on_ok or []:
                 em(line)
+            self.dbg_flush('read')
             em.ind -= 1
             em("}")
+        if flush:
+            self.dbg_flush()
         branches = []
         if at_end is not None:
             branches.append(('COB_IO_ATEND', at_end))
@@ -2926,6 +2965,7 @@ class CodeGen(ReportWriterGen):
         name = fi.fd.name
         ent = P._decl_file.get(name)
         if ent is not None and ent[1] is fi:
+            self.dbg_emit_cause('USE')
             self.perform_section(ent[0])
             return
         conds = []
@@ -2945,6 +2985,7 @@ class CodeGen(ReportWriterGen):
 
         def act(owner, sec):
             if owner is None:
+                self.dbg_emit_cause('USE')
                 self.perform_section(sec)
             else:
                 em(f"cob_decl_which = {sec.id};")
@@ -2994,13 +3035,13 @@ class CodeGen(ReportWriterGen):
                 fi = self.file_info(fn, s.loc)
                 if fi.is_sort:
                     raise CompileError(f"cannot OPEN sort file '{fn}'", s.loc)
-                self.io_result(fi, f"cob_open(&{fi.sym}, {OPEN_MODE[mode]})")
+                self.io_result(fi, f"cob_open(&{fi.sym}, {OPEN_MODE[mode]})", flush=False)
 
     def g_Close(self, s):
         for i, fn in enumerate(s.files):
             fi = self.file_info(fn, s.loc)
             opt = s.opts[i] if i < len(s.opts) else 0
-            self.io_result(fi, f"cob_close_opt(&{fi.sym}, {opt})")
+            self.io_result(fi, f"cob_close_opt(&{fi.sym}, {opt})", flush=False)
 
     def record_of(self, ref):
         it = self.resolve(ref)
@@ -3043,6 +3084,7 @@ class CodeGen(ReportWriterGen):
             raise CompileError("use RELEASE for sort files", s.loc)
         if s.frm is not None:
             em(f"cob_move({self.field(s.frm)}, {self.field(s.record)});")
+        self.dbg_flush('before')
         when = {'': 'COB_ADV_NONE', 'BEFORE': 'COB_ADV_BEFORE', 'AFTER': 'COB_ADV_AFTER'}[s.adv_when]
         if s.adv_lines == 'PAGE':
             lines = 'COB_ADV_PAGE'
@@ -3060,6 +3102,7 @@ class CodeGen(ReportWriterGen):
         rec, fi = self.record_of(s.record)
         if s.frm is not None:
             em(f"cob_move({self.field(s.frm)}, {self.field(s.record)});")
+        self.dbg_flush('before')
         self.io_result(fi, f"cob_rewrite(&{fi.sym}, {self.size_expr(rec)})", None, None, s.invalid, s.not_invalid)
 
     def g_Delete(self, s):
@@ -3126,7 +3169,7 @@ class CodeGen(ReportWriterGen):
                 fi = self.file_info(fn, s.loc)
                 em(f"cob_sort_using(&{sd.sym}, &{fi.sym});")
         elif s.input_proc:
-            self.perform_call(*s.input_proc)
+            self.perform_call(*s.input_proc, cause='SORT_IN')
         coll = self.ctx.coll
         if getattr(s, 'collating', None):
             res = self.collating_table(self.prog, s.collating, s.loc)
@@ -3140,7 +3183,7 @@ class CodeGen(ReportWriterGen):
                 if len(s.giving) > 1:
                     em(f"{sd.sym}.sret = 0;")
         elif s.output_proc:
-            self.perform_call(*s.output_proc)
+            self.perform_call(*s.output_proc, cause='MERGE_OUT' if s.merge else 'SORT_OUT')
         em(f"cob_sort_end(&{sd.sym});")
 
     def g_Release(self, s):
@@ -3159,7 +3202,11 @@ class CodeGen(ReportWriterGen):
         em.ind += 1
         em(f"int cob_io = cob_sort_return(&{fi.sym});")
         if s.into is not None:
-            em(f"if (cob_io == COB_IO_OK) cob_move(CF({fi.buf}, {fi.size}, &cob_attr_group), {self.into_field(s.into)});")
+            em("if (cob_io == COB_IO_OK) {")
+            em(f"\tcob_move(CF({fi.buf}, {fi.size}, &cob_attr_group), {self.into_field(s.into)});")
+            self.dbg_flush('read')
+            em("}")
+        self.dbg_flush()
         em("if (cob_io != COB_IO_OK) {")
         self.block(s.at_end or [])
         if s.not_at_end is not None:

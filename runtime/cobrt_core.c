@@ -1731,6 +1731,8 @@ void cob_display(int dev, const cob_field *f)
 		if (scale < 0) {
 			digits -= scale;
 			scale = 0;
+		} else if (scale > digits) {
+			digits = scale;   /* PICTURE VP9: the P positions print as zeros after the point */
 		}
 		int trailing = a->type == COB_NUM_DISPLAY && (a->flags & COB_F_SIGN_SEP) && !(a->flags & COB_F_SIGN_LEAD);
 		if (sgn && !trailing)
@@ -1974,6 +1976,72 @@ void cob_switch_set(int n, int v)
 {
 	if (n >= 0 && n < 100)
 		switches[n] = v ? 1 : -1;
+}
+
+/* ================================================================ Debug module */
+
+int cob_debug_on;
+
+__attribute__((constructor)) static void init_debug_switch(void)
+{
+	const char *v = getenv("COB_SET_DEBUG");
+	cob_debug_on = v && (strcasecmp(v, "Y") == 0 || strcasecmp(v, "YES") == 0 || strcasecmp(v, "ON") == 0 ||
+	                     strcasecmp(v, "TRUE") == 0 || strcmp(v, "1") == 0);
+}
+
+#define DBG_NAME 7
+#define DBG_SUB 38
+#define DBG_CONTENTS 56
+
+/* DEBUG-ITEM is space-filled, then DEBUG-LINE and DEBUG-NAME are set. */
+static void dbg_head(unsigned char *di, int dilen, int line, const char *name)
+{
+	memset(di, ' ', (size_t)dilen);
+	if (line > 0) {
+		char b[24];
+		int n = snprintf(b, sizeof b, "%6d", line);
+		memcpy(di, b + n - 6, 6);
+	}
+	size_t n = strlen(name);
+	memcpy(di + DBG_NAME, name, n > 30 ? 30 : n);
+}
+
+static void dbg_contents(unsigned char *di, int dilen, const void *p, size_t n)
+{
+	size_t cap = (size_t)(dilen - DBG_CONTENTS);
+	memcpy(di + DBG_CONTENTS, p, n > cap ? cap : n);
+}
+
+void cob_dbg_proc(unsigned char *di, int dilen, int line, const char *name, int cause)
+{
+	static const char *const text[] = {
+		"FALL THROUGH", "START PROGRAM", "PERFORM LOOP", "", "SORT INPUT",
+		"SORT OUTPUT", "MERGE OUTPUT", "USE PROCEDURE"
+	};
+	dbg_head(di, dilen, line, name);
+	if (cause >= 0 && cause < (int)(sizeof text / sizeof text[0]))
+		dbg_contents(di, dilen, text[cause], strlen(text[cause]));
+}
+
+void cob_dbg_alter(unsigned char *di, int dilen, int line, const char *name, const char *target)
+{
+	dbg_head(di, dilen, line, name);
+	dbg_contents(di, dilen, target, strlen(target));
+}
+
+void cob_dbg_data(unsigned char *di, int dilen, int line, const char *name,
+                  const unsigned char *data, size_t size, int nsubs, cob_s64 s1, cob_s64 s2, cob_s64 s3)
+{
+	const cob_s64 subs[3] = { s1, s2, s3 };
+	dbg_head(di, dilen, line, name);
+	for (int i = 0; i < nsubs && i < 3; i++) {
+		char b[24];
+		cob_s64 v = subs[i] < 0 ? -subs[i] : subs[i];
+		snprintf(b, sizeof b, "%c%04lld", subs[i] < 0 ? '-' : '+', (long long)(v % 10000));
+		memcpy(di + DBG_SUB + 6 * i, b, 5);
+	}
+	if (data)
+		dbg_contents(di, dilen, data, size);
 }
 
 /* ================================================================ CALL registry */

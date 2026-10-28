@@ -1,0 +1,4 @@
+Debug module: compared with a hand-verified baseline. GnuCOBOL 3.1.2 leaves
+stale DEBUG-ITEM fields between debugging procedures, leaves DEBUG-LINE blank
+for START PROGRAM and does not monitor READ INTO (see README, Differences from
+GnuCOBOL).

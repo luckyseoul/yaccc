@@ -264,7 +264,7 @@ class SourceSet:
         if env:
             self.include_dirs.extend(p for p in env.split(os.pathsep) if p)
         self.fmt = fmt
-        self.debugging = debugging
+        self.debugging = source.DebugSwitch(debugging)
         self.decimal_comma = False
 
     def load(self, path):

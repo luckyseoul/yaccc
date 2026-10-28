@@ -1,0 +1,20 @@
+P     56 FIRST-SECTION  [START PROGRAM]
+P     56 BEGIN-PARA     [START PROGRAM]
+  begin
+D     57 ELEM           [1         ] [+0002]
+P     58 SECOND-SECTION [PERFORM LOOP ]
+P     58 SECOND-PARA    [PERFORM LOOP ]
+  second
+P     59 SHORT-PARA     [PERFORM LOOP ]
+P     59 SHORT-PARA     [PERFORM LOOP ]
+D     60 KEY-VAL        [2         ] [     ]
+P     60 TARGET-2       [             ]
+D     64 WATCHED        [ABC       ] [     ]
+P     65 NOFILE-ERROR   [USE PROCEDURE]
+P     65 NOFILE-ERROR-1 [USE PROCEDURE]
+  error status 35
+D     71 INTO-AREA      [rec       ] [     ]
+P     74 SORT-IN        [SORT INPUT   ]
+P     74 SORT-IN-1      [SORT INPUT   ]
+P     74 SORT-OUT       [SORT OUTPUT  ]
+P     74 SORT-OUT-1     [SORT OUTPUT  ]

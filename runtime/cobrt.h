@@ -384,6 +384,19 @@ void cob_call_system(const cob_field *cmd);
 int cob_switch_get(int n);
 void cob_switch_set(int n, int v);
 
+/* ------------------------------------------------------------ Debug module */
+/* Object-time debugging switch: USE FOR DEBUGGING procedures of programs
+ * compiled WITH DEBUGGING MODE run only when COB_SET_DEBUG is set (Y, YES,
+ * ON, TRUE or 1). DEBUG-ITEM layout: DEBUG-LINE 0, DEBUG-NAME 7,
+ * DEBUG-SUB-1/2/3 38/44/50, DEBUG-CONTENTS 56. */
+extern int cob_debug_on;
+enum { COB_DBG_FALL, COB_DBG_START, COB_DBG_PERFORM, COB_DBG_GOTO, COB_DBG_SORT_IN,
+       COB_DBG_SORT_OUT, COB_DBG_MERGE_OUT, COB_DBG_USE };
+void cob_dbg_proc(unsigned char *di, int dilen, int line, const char *name, int cause);
+void cob_dbg_alter(unsigned char *di, int dilen, int line, const char *name, const char *target);
+void cob_dbg_data(unsigned char *di, int dilen, int line, const char *name,
+                  const unsigned char *data, size_t size, int nsubs, cob_s64 s1, cob_s64 s2, cob_s64 s3);
+
 /* ------------------------------------------------------------ intrinsic functions */
 typedef struct { int n; cob_dec *v; cob_field **f; } cob_args;
 cob_dec cob_fn_abs(cob_dec a);

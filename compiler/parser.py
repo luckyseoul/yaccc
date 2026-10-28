@@ -1047,7 +1047,10 @@ class Parser:
                 if self.accept('USE'):
                     sec.use_global = bool(self.accept('GLOBAL'))
                     if self.accept('FOR'):
-                        self.skip_to_period()
+                        self.expect('DEBUGGING')
+                        self.accept('ON')
+                        sec.use_debug = self._debug_targets()
+                        self.expect_period()
                     elif self.accept('BEFORE'):
                         self.expect('REPORTING')
                         sec.use_reporting = self.user_word('report group name')
@@ -1091,6 +1094,35 @@ class Parser:
                 cur_sec = Section(None, [], t.loc)
                 prog.sections.append(cur_sec)
             self._parse_section_body(cur_sec)
+
+    def _debug_targets(self):
+        """USE FOR DEBUGGING ON {ALL PROCEDURES | [ALL [REFERENCES] [OF]] name [OF|IN qual]...}..."""
+        targets = []
+        while self.peek().kind not in ('.', 'EOF'):
+            loc = self.peek().loc
+            all_refs = False
+            if self.accept('ALL'):
+                if self.accept('PROCEDURES'):
+                    targets.append(DebugTarget(None, False, loc))
+                    continue
+                self.accept('REFERENCES')
+                self.accept('OF')
+                all_refs = True
+            name = self._debug_name()
+            quals = []
+            while self.accept('OF', 'IN'):
+                quals.append(self._debug_name())
+            targets.append(DebugTarget(DataRef(name, quals, [], None, loc), all_refs, loc))
+        if not targets:
+            raise self.err("USE FOR DEBUGGING requires a procedure, file or data name")
+        return targets
+
+    def _debug_name(self):
+        t = self.peek()
+        if t.kind == 'WORD' or (t.kind == 'NUM' and t.val.isdigit()):
+            self.next()
+            return t.up if t.kind == 'WORD' else t.val
+        raise self.err("name expected in USE FOR DEBUGGING")
 
     def _section_start(self):
         t = self.peek()

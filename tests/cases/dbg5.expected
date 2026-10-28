@@ -1,0 +1,4 @@
+outer debug N          [3    ]
+inner debug IP1        [START PROGRAM]
+inner debugging line
+inner debug IP2        [FALL THROUGH ]

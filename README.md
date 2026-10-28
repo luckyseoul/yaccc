@@ -7,9 +7,9 @@ runtime library.
 
 It passes the NIST CCVS85 conformance suite as packaged by opensource COBOL.
 Every module matches the suite's reference summary exactly, with zero
-failures, and it also passes the suite's Report Writer module. On its own
-differential test programs, its output matches GnuCOBOL 3.1.2 apart from the
-deliberate differences listed below.
+failures, and it also passes the suite's Report Writer and Debug modules. On
+its own differential test programs, its output matches GnuCOBOL 3.1.2 apart
+from the deliberate differences listed below.
 
 ```
 $ ./cobolc examples/mandelbrot.cbl --run
@@ -36,13 +36,19 @@ SG            5        5     0     0    193    0       0       0   193
 OB            5        5     0     0     16    0       0       0    16
 IF           42       42     0     0    732    0       0       0   732
 RW            4        4     0     0     40    0       0       0    40
-Total       378      378     0     0   9004    0      25      93  9122
+DB            9        9     0     0    386    0       4      27   417
+Total       387      387     0     0   9390    0      29     120  9539
 ```
 
-NC through IF match the reference summary line for line. RW (Report Writer)
-isn't part of the reference summary; GnuCOBOL 3.1.2 passes the same 40 tests. "Deleted" tests are
+NC through IF match the reference summary line for line. "Deleted" tests are
 removed by the suite itself. "Inspect" tests have no automatic pass/fail check:
 their printed output has to be reviewed by eye, as for any compiler.
+
+RW (Report Writer) and DB (Debug module) aren't part of the reference summary.
+GnuCOBOL 3.1.2 gets the same counts on both. The DB programs run with the
+object-time debugging switch on (`COB_SET_DEBUG=Y`), except DB102A, which
+checks that debugging procedures stay inactive when it's off. DB205A needs the
+Communication module and isn't run.
 
 The reference run skips eight programs: SQ207M, SG102A, SG103A, SG201A–SG203A,
 OBNC1M and OBNC2M. `make nist-all` includes them, and cobolc compiles and runs all
@@ -57,7 +63,7 @@ eight:
 
 | | Programs | Pass | Fail | Deleted | Inspect | Total |
 |---|---|---|---|---|---|---|
-| `make nist-all` | 386 | 9143 | 1 | 25 | 101 | 9270 |
+| `make nist-all` | 395 | 9529 | 1 | 29 | 128 | 9687 |
 
 The NIST programs are module-split by opensource COBOL's `expand.pl`. They're
 tracked in the opensourcecobol4j repository under `tests/cobol85`. `make nist`
@@ -65,18 +71,20 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 30 programs covering moves, editing, arithmetic, PERFORM,
+`tests/cases/` holds 36 programs covering moves, editing, arithmetic, PERFORM,
 EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH, intrinsic functions, COPY
 and REPLACING, free format, ACCEPT, CALL and CANCEL, ALTER, declaratives,
-sequential, relative and indexed files, SORT, and Report Writer.
+sequential, relative and indexed files, SORT, Report Writer and the Debug
+module.
 
 - `make test` compares each program's output and every file it writes against
-  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix` and the three
-  Report Writer tests (`rw1`–`rw3`). They cover cases where cobolc deliberately
-  differs from GnuCOBOL, so their baselines were verified by hand.
+  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, the three
+  Report Writer tests (`rw1`–`rw3`), `dbg2` and `dbg5`. They cover cases where
+  cobolc deliberately differs from GnuCOBOL, so their baselines were verified
+  by hand.
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
 
-All 30 pass in both modes, built with gcc and with clang.
+All 36 pass in both modes, built with gcc and with clang.
 
 ### Performance
 
@@ -122,7 +130,7 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 | `-g` | C debug information |
 | `--no-check` | drop subscript and reference-modification range checks |
 | `--binary-size 2-4-8 \| 1-2-4-8` | storage sizes for BINARY/COMP items (default 2-4-8, as IBM) |
-| `--debugging-mode` | compile `D` debugging lines |
+| `--debugging-mode` | compile as if `WITH DEBUGGING MODE` were specified: debugging lines and USE FOR DEBUGGING |
 | `--keep-c` | keep the generated C file next to the executable |
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
 | `--run` | run the program after building; remaining arguments are passed to it |
@@ -133,6 +141,7 @@ Runtime environment:
 |---|---|
 | `DD_name`, `dd_name`, `name` | file name for `ASSIGN TO name` when *name* is not a literal |
 | `COB_SWITCH_n=ON\|OFF` | external switches (SPECIAL-NAMES `SWITCH-n`/`UPSI-n`) |
+| `COB_SET_DEBUG=Y` | object-time debugging switch: USE FOR DEBUGGING procedures run only when it's set (`Y`, `YES`, `ON`, `TRUE` or `1`), as in GnuCOBOL |
 
 Runtime errors, such as a subscript out of range or an I/O error with no FILE
 STATUS or USE procedure, print `cobrt: runtime error: file:line: ...` and exit
@@ -183,6 +192,18 @@ identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF.
 - LINE-COUNTER and PAGE-COUNTER, qualified by report name when several
   reports are active.
 
+**Debug module.**
+- WITH DEBUGGING MODE compiles debugging lines and debugging sections; without
+  it, both are treated as comments. Contained programs inherit it from the
+  program that contains them.
+- USE FOR DEBUGGING ON procedure-names, ALL PROCEDURES, file-names and
+  identifiers, with or without ALL REFERENCES OF.
+- DEBUG-ITEM: DEBUG-LINE, DEBUG-NAME (qualifiers joined by OF), DEBUG-SUB-1 to
+  DEBUG-SUB-3 and DEBUG-CONTENTS (as long as the largest monitored item or
+  record).
+- Every cause of execution is reported: START PROGRAM, FALL THROUGH, PERFORM
+  LOOP, GO TO, ALTER, SORT INPUT, SORT OUTPUT, MERGE OUTPUT and USE PROCEDURE.
+
 **Procedure division.**
 - Arithmetic and data movement: MOVE (incl. CORRESPONDING), ADD, SUBTRACT,
   MULTIPLY, DIVIDE (REMAINDER), COMPUTE (ROUNDED, ON SIZE ERROR), INITIALIZE
@@ -200,7 +221,8 @@ identifiers, literals, LEADING/TRAILING) and REPLACE / REPLACE OFF.
   END-OF-PAGE), REWRITE, DELETE, START.
 - SORT / MERGE: USING, GIVING, INPUT/OUTPUT PROCEDURE, RELEASE, RETURN,
   COLLATING SEQUENCE; table SORT.
-- Declaratives: USE [GLOBAL] AFTER ERROR on files and open modes.
+- Declaratives: USE [GLOBAL] AFTER ERROR on files and open modes, USE BEFORE
+  REPORTING, USE FOR DEBUGGING.
 
 **Files.**
 - Organizations: sequential (fixed and variable length), line sequential,
@@ -227,8 +249,7 @@ UPPER-CASE, VARIANCE, WHEN-COMPILED, YEAR-TO-YYYY.
 
 ### Not implemented
 
-- SCREEN SECTION and COMMUNICATION SECTION, and the Debug module (USE FOR
-  DEBUGGING).
+- SCREEN SECTION and COMMUNICATION SECTION.
 - Report Writer features added by the 2002 standard, such as PRESENT WHEN,
   COLUMN RIGHT/CENTER and LINE LIMIT.
 - Pointers: ADDRESS OF, BASED, SET ADDRESS OF.
@@ -268,6 +289,18 @@ All of these were checked against GnuCOBOL 3.1.2:
    of the last GENERATE, as the standard requires. GnuCOBOL uses whatever the
    program has moved into those fields since, which defeats the usual
    end-of-file HIGH-VALUES idiom.
+6. **Debug module.** Before each debugging procedure cobolc space-fills
+   DEBUG-ITEM, as the standard requires, and DEBUG-LINE always names the
+   statement that caused it (`tests/cases/dbg2.cbl`). GnuCOBOL 3.1.2 differs in
+   these ways:
+   - it keeps DEBUG-SUB-n and DEBUG-CONTENTS from the previous debugging
+     procedure, so a later PERFORM can report the contents of a data item
+     instead of PERFORM LOOP;
+   - it leaves DEBUG-LINE blank for START PROGRAM, and for a repeated PERFORM
+     or a SORT OUTPUT PROCEDURE it reports the last statement executed instead
+     of the PERFORM or SORT statement;
+   - it doesn't run the debugging procedure of a READ ... INTO identifier;
+   - it rejects USE FOR DEBUGGING in contained programs (`tests/cases/dbg5.cbl`).
 
 ## How it works
 
@@ -280,18 +313,19 @@ source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─�
 
 | File | Lines | Role |
 |---|---|---|
-| `compiler/source.py` | 238 | reference formats, continuations, directives, comment-entries |
+| `compiler/source.py` | 272 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `compiler/lexer.py` | 507 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `compiler/parser.py` | 2,500 | recursive-descent parser to the AST (`nodes.py`, 621) |
+| `compiler/parser.py` | 2,532 | recursive-descent parser to the AST (`nodes.py`, 631) |
 | `compiler/data.py` | 495 | PICTURE analysis, USAGE resolution, storage layout |
-| `compiler/codegen.py` | 3,170 | name resolution, C generation, typed fast paths |
+| `compiler/codegen.py` | 3,217 | name resolution, C generation, typed fast paths |
 | `compiler/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
-| `runtime/cobrt_core.c` | 2,065 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL |
+| `compiler/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
+| `runtime/cobrt_core.c` | 2,133 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, DEBUG-ITEM |
 | `runtime/cobrt_io.c` | 1,457 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_rw.c` | 417 | Report Writer control system: paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 424 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 734 | intrinsic functions |
-| `runtime/cobrt.h` | 593 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 606 | runtime interface and inline fast paths |
 
 Design choices:
 

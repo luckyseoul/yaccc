@@ -15,7 +15,7 @@ ROOT = os.path.dirname(HERE)
 COBOLC = os.path.join(ROOT, 'cobolc')
 
 
-def run(cmd, stdin=None, cwd=None, timeout=60):
+def run(cmd, stdin=None, cwd=None, timeout=60, env=None):
     """Run with a timeout and a cap on captured output (runaway programs)."""
     import resource
 
@@ -25,7 +25,7 @@ def run(cmd, stdin=None, cwd=None, timeout=60):
     with tempfile.TemporaryFile() as fo, tempfile.TemporaryFile() as fe:
         try:
             r = subprocess.run(cmd, input=stdin, stdout=fo, stderr=fe, cwd=cwd, timeout=timeout,
-                               preexec_fn=limits)
+                               preexec_fn=limits, env=env)
             rc = r.returncode
         except subprocess.TimeoutExpired:
             rc = -999
@@ -87,6 +87,13 @@ def main():
         stdin = open(base + '.in', 'rb').read() if os.path.exists(base + '.in') else b''
         extra = open(base + '.flags').read().split() if os.path.exists(base + '.flags') else []
         nocmp = set(open(base + '.nocmp').read().split()) if os.path.exists(base + '.nocmp') else set()
+        env = dict(os.environ)
+        env.pop('COB_SET_DEBUG', None)
+        if os.path.exists(base + '.env'):       # NAME=value lines for both runs
+            for line in open(base + '.env').read().splitlines():
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    env[k.strip()] = v.strip()
         tdir = os.path.join(work, name)
         mine_dir = os.path.join(tdir, 'mine')
         ref_dir = os.path.join(tdir, 'ref')
@@ -103,7 +110,7 @@ def main():
             print(f"FAIL {name}: cobolc compile error\n{err.decode(errors='replace')}")
             failed += 1
             continue
-        mrc, mout, merr = run([exe], stdin, cwd=mine_dir)
+        mrc, mout, merr = run([exe], stdin, cwd=mine_dir, env=env)
         exp_path = base + '.expected'
         out_dir = base + '.outfiles'
         expected = open(exp_path, 'rb').read() if os.path.exists(exp_path) else None
@@ -115,7 +122,7 @@ def main():
             if rc != 0:
                 print(f"SKIP {name}: reference compile error\n{err.decode(errors='replace')}")
                 continue
-            rrc, rout, rerr = run([rexe], stdin, cwd=ref_dir)
+            rrc, rout, rerr = run([rexe], stdin, cwd=ref_dir, env=env)
             written = [f for f in os.listdir(ref_dir) if f != name and os.path.isfile(os.path.join(ref_dir, f))]
             if args.update and expected is None:
                 open(exp_path, 'wb').write(rout)

@@ -1,0 +1,2 @@
+Debug module in a contained program: compared with a hand-verified baseline.
+GnuCOBOL 3.1.2 rejects USE FOR DEBUGGING in contained programs.

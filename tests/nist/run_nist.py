@@ -19,6 +19,11 @@ COBOLC = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cobolc')
 # All of them compile and run with cobolc; use --all to include them.
 REF_SKIP = {'SQ207M', 'SG102A', 'SG103A', 'SG201A', 'SG202A', 'SG203A', 'OBNC1M', 'OBNC2M'}
 SKIP = set(os.environ.get('NIST_SKIP', ' '.join(sorted(REF_SKIP))).split())
+# Programs that need modules cobolc does not implement (Communication).
+UNSUPPORTED = {'DB205A'}
+# Debug module programs run with the object-time debugging switch on, except
+# DB102A, which checks that debugging procedures stay inactive when it is off.
+DEBUG_SWITCH_OFF = {'DB102A'}
 
 PROGID = re.compile(r'^.{6}\s+PROGRAM-ID\.\s*\n?.{0,6}\s*([A-Z0-9-]+)', re.M)
 CALLRE = re.compile(r'"([A-Z0-9-]+)"')
@@ -54,7 +59,7 @@ def run_module(suite, module, verbose=False):
     for src in sorted(glob.glob(os.path.join(mdir, '*.CBL')) + glob.glob(os.path.join(mdir, '*.SUB'))):
         name = os.path.splitext(os.path.basename(src))[0]
         second_phase = src.endswith('.SUB')
-        if name in SKIP or re.match(r'^..[34]0', name):
+        if name in SKIP or name in UNSUPPORTED or re.match(r'^..[34]0', name):
             rows.append((name, 'skipped'))
             continue
         totals['progs'] += 1
@@ -88,6 +93,9 @@ def run_module(suite, module, verbose=False):
         dat = os.path.join(mdir, name + '.DAT')
         stdin = open(dat, 'rb') if os.path.exists(dat) else subprocess.DEVNULL
         env = dict(os.environ, COB_SWITCH_1='ON', COB_SWITCH_2='OFF')
+        env.pop('COB_SET_DEBUG', None)
+        if module == 'DB' and name not in DEBUG_SWITCH_OFF:
+            env['COB_SET_DEBUG'] = 'Y'
         try:
             x = subprocess.run([exe], stdin=stdin, capture_output=True, cwd=mdir, timeout=60, env=env)
             xrc = x.returncode
@@ -134,7 +142,7 @@ def main():
         args.remove('--all')
         SKIP = set()
     suite = os.path.abspath(args[0])   # programs are compiled from inside each module directory
-    mods = args[1:] or ['NC', 'SM', 'IC', 'SQ', 'RL', 'IX', 'ST', 'SG', 'OB', 'IF', 'RW']
+    mods = args[1:] or ['NC', 'SM', 'IC', 'SQ', 'RL', 'IX', 'ST', 'SG', 'OB', 'IF', 'RW', 'DB']
     grand = dict(progs=0, ok=0, cerr=0, xerr=0, total=0, passed=0, failed=0, deleted=0, inspect=0)
     summary = []
     for m in mods:
