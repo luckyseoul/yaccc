@@ -525,11 +525,23 @@ cob_field *cob_fn_module_name(const char *name);
 #define COB_IO_EOP     4
 #define COB_MAX_KEYS   64
 
+#define COB_KEY_MAX_SEGS 8
+
+/* A key is one or more segments of a record, taken in order. An ordinary key
+ * has one; a split key (RECORD KEY ... SOURCE IS a, b, c) has several, and its
+ * value is their concatenation. `offset`/`size` describe the first segment so
+ * the single-segment case stays a plain memcmp. */
 typedef struct {
 	size_t offset;
 	size_t size;
 	const cob_attr *attr;
 	int dups;
+	int nseg;
+	struct { size_t offset; size_t size; } seg[COB_KEY_MAX_SEGS];
+	size_t total;              /* length of the concatenation */
+	const unsigned char *supp; /* SUPPRESS WHEN: keys not indexed */
+	size_t supplen;
+	int supp_all;              /* SUPPRESS WHEN ALL c: every byte equals c */
 } cob_file_key;
 
 typedef struct cob_irec cob_irec;

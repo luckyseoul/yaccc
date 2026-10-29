@@ -650,13 +650,35 @@ class CodeGen(ReportWriterGen, DebugGen):
         for fi in ctx.files.values():
             fc = fi.fc
             if fc.record_key is not None:
-                k = self.resolve(fc.record_key)
-                fi.keys.append((k, False))
-            for kref, dups in fc.alt_keys:
-                fi.keys.append((self.resolve(kref), dups))
-            for k, _ in fi.keys:
+                fi.key_names = getattr(fi, 'key_names', {})
+                if fc.key_sources:
+                    # RECORD KEY IS <name> SOURCE IS a, b: the name is the
+                    # key's name, and the SOURCE items are what it is made of.
+                    # The items must be resolved before they are looked up as
+                    # data names, since the key name often is not one.
+                    srcs = [self.resolve(sr) for sr in fc.key_sources]
+                    base = srcs[0]
+                    fi.keys.append((base, False, fc.key_sources, None))
+                else:
+                    k = self.resolve(fc.record_key)
+                    fi.keys.append((k, False, None, None))
+                fi.key_names[fc.record_key.name] = (0, fi.keys[0][0].size)
+            fi.key_names = getattr(fi, 'key_names', {})
+            for kref, dups, sources, supp in fc.alt_keys:
+                if sources:
+                    # the alternate key's name may not be a data item either
+                    fi.keys.append((self.resolve(sources[0]), dups, sources, supp))
+                else:
+                    fi.keys.append((self.resolve(kref), dups, None, supp))
+                fi.key_names[kref.name] = (len(fi.keys) - 1, fi.keys[-1][0].size)
+            for k, _dups, _srcs, _sup in fi.keys:
                 if getattr(k, 'file', None) is not fi:
                     raise CompileError(f"key '{k.name}' is not part of the record of file '{fc.name}'", fc.loc)
+                for sr in (_srcs or []):
+                    si = self.resolve(sr)
+                    if getattr(si, 'file', None) is not fi:
+                        raise CompileError(f"key source '{sr.name}' is not part of the "
+                                           f"record of file '{fc.name}'", sr.loc)
         # Debug module (DEBUG-ITEM, USE FOR DEBUGGING subjects)
         self.dbg_analyze(prog)
         # REPORT SECTION
@@ -1165,12 +1187,23 @@ class CodeGen(ReportWriterGen, DebugGen):
             raise CompileError(f"INDEXED file '{fc.name}' requires RECORD KEY", fc.loc)
         if len(fi.keys) > 64:
             raise CompileError(f"file '{fc.name}' has more than 64 keys", fc.loc)
-        for k, _ in fi.keys:
+        for k, _dups, _srcs, _sup in fi.keys:
             if k.size > 4096:
                 raise CompileError(f"key '{k.name}' is longer than 4096 bytes", fc.loc)
         em(f"{f}.nkeys = {len(fi.keys)};")
-        for i, (k, dups) in enumerate(fi.keys):
-            em(f"{f}.keys[{i}] = (cob_file_key){{{k.offset}, {k.size}, &{self.item_attr(k)}, {1 if dups else 0}}};")
+        for i, (k, dups, srcs, supp) in enumerate(fi.keys):
+            parts = [k] if not srcs else [self.resolve(sr) for sr in srcs]
+            if len(parts) > 8:
+                raise CompileError(f"key '{k.name}' has more than 8 parts", fc.loc)
+            total = sum(p.size for p in parts)
+            segs = ', '.join(f"{{{p.offset}, {p.size}}}" for p in parts)
+            # designated initialisers: the struct has gained fields before
+            em(f"{f}.keys[{i}] = (cob_file_key){{.offset = {k.offset}, .size = {k.size}, "
+               f".attr = &{self.item_attr(k)}, .dups = {1 if dups else 0}, "
+               f".nseg = {len(parts)}, .seg = {{{segs}}}, .total = {total}, "
+               f".supp = {c_string(supp[0]) if supp else 'NULL'}, "
+               f".supplen = {len(supp[0]) if supp else 0}, "
+               f".supp_all = {1 if supp and supp[1] else 0}}};")
         em(f"{f}.is_sort = {1 if fi.is_sort else 0};")
         if fi.fd.linage is not None:
             em(f"{f}.linage_ctr = {fi.linage_ctr};")
@@ -4175,11 +4208,20 @@ class CodeGen(ReportWriterGen, DebugGen):
         return it, fi
 
     def key_index(self, fi, ref):
+        # a key-name need not be a data item: "START ... KEY IS PRIME-KEY"
+        # names the key declared in SELECT
+        # only for a key whose name is NOT a data item (a split key's name)
+        named = getattr(fi, 'key_names', {})
+        if ref.name in named and getattr(ref, 'item', None) is None:
+            try:
+                self.resolve(ref)
+            except Exception:
+                return named[ref.name]
         it = self.resolve(ref)
-        for i, (k, _) in enumerate(fi.keys):
+        for i, (k, _d, _s2, _sp) in enumerate(fi.keys):
             if k is it:
                 return i, k.size
-        for i, (k, _) in enumerate(fi.keys):
+        for i, (k, _d, _s2, _sp) in enumerate(fi.keys):
             if getattr(it, 'file', None) is fi and it.offset == k.offset and it.size <= k.size:
                 return i, it.size
         raise CompileError(f"'{ref.name}' is not a key of file '{fi.fc.name}'", ref.loc)

@@ -151,9 +151,9 @@ FAIL  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
 PASS  run_file.at:2168             ASSIGN DYNAMIC with empty data item
 PASS  run_file.at:2208             ASSIGN DYNAMIC with unset implicit data item
 PASS  run_file.at:2240             INDEXED file key-name
-CERR  run_file.at:2282             INDEXED file sparse/split keys
-CERR  run_file.at:2802             INDEXED file split keys WITH DUPLICATES
-CERR  run_file.at:2960             INDEXED file variable length record
+FAIL  run_file.at:2282             INDEXED file sparse/split keys
+FAIL  run_file.at:2802             INDEXED file split keys WITH DUPLICATES
+FAIL  run_file.at:2960             INDEXED file variable length record
 SKIP  run_file.at:3236             INDEXED sample
 PASS  run_file.at:3639             WRITE + REWRITE FILE name
 PASS  run_file.at:3792             START RELATIVE (1)
@@ -200,7 +200,7 @@ SKIP  run_file.at:6897             READ INPUT pipe & WRITE OUTPUT pipe
 SKIP  run_file.at:6995             EXTFH: using ISAM callback
 SKIP  run_file.at:7695             EXTFH: SEQUENTIAL files
 SKIP  run_file.at:8105             EXTFH: LINE SEQUENTIAL files, direct EXTFH
-CERR  run_file.at:8287             INDEXED File READ/DELETE/READ
+PASS  run_file.at:8287             INDEXED File READ/DELETE/READ
 SKIP  run_file.at:9084             TURN EC-I-O
 PASS  run_functions.at:24          FUNCTION ABS
 PASS  run_functions.at:46          FUNCTION ACOS
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 450  FAIL 23  CERR 23  XERR 0  SKIP 197
+PASS 451  FAIL 26  CERR 19  XERR 0  SKIP 197

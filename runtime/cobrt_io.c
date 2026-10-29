@@ -157,10 +157,38 @@ static void unlink_open(cob_file *f)
 
 /* ================================================================ key helpers */
 
+/* copy a key's segments out of a record, in order; returns the byte count */
+static size_t gather_key(const cob_file *f, int k, const unsigned char *rec, unsigned char *out)
+{
+	const cob_file_key *key = &f->keys[k];
+	if (key->nseg <= 1) {
+		memcpy(out, rec + key->offset, key->size);
+		return key->size;
+	}
+	size_t o = 0;
+	for (int i = 0; i < key->nseg && i < COB_KEY_MAX_SEGS; i++) {
+		memcpy(out + o, rec + key->seg[i].offset, key->seg[i].size);
+		o += key->seg[i].size;
+	}
+	return o;
+}
+
+/* compare two already-gathered key values */
+static int key_cmp_buf(const cob_file *f, int k, const unsigned char *ka, const unsigned char *kb)
+{
+	const cob_file_key *key = &f->keys[k];
+	return memcmp(ka, kb, key->total ? key->total : key->size);
+}
+
 static int key_cmp_rec(const cob_file *f, int k, const unsigned char *a, const unsigned char *b)
 {
 	const cob_file_key *key = &f->keys[k];
-	return memcmp(a + key->offset, b + key->offset, key->size);
+	if (key->nseg <= 1)
+		return memcmp(a + key->offset, b + key->offset, key->size);
+	unsigned char ka[COB_KEY_MAX_SEGS * 512], kb[COB_KEY_MAX_SEGS * 512];
+	size_t n = gather_key(f, k, a, ka);
+	gather_key(f, k, b, kb);
+	return memcmp(ka, kb, n);
 }
 
 static ixstate *ixs(cob_file *f)
@@ -260,7 +288,15 @@ static size_t lower_bound(cob_file *f, int k, const unsigned char *key, size_t k
 	const cob_file_key *fk = &f->keys[k];
 	while (lo < hi) {
 		size_t mid = (lo + hi) / 2;
-		int c = memcmp(ord[mid]->data + fk->offset, key, klen);
+		int c;
+		if (fk->nseg <= 1) {
+			c = memcmp(ord[mid]->data + fk->offset, key, klen);
+		} else {
+			/* a split key is not contiguous in the record: gather it */
+			unsigned char mid_key[COB_KEY_MAX_SEGS * 512];
+			gather_key(f, k, ord[mid]->data, mid_key);
+			c = memcmp(mid_key, key, klen);
+		}
 		if (c == 0 && use_seq)
 			c = ord[mid]->kseq[k] < seq ? -1 : (ord[mid]->kseq[k] > seq ? 1 : 0);
 		if (c < 0 || (strict && c == 0))
@@ -1092,16 +1128,19 @@ static long find_exact(cob_file *f, int k, const unsigned char *key)
 	size_t klen = f->keys[k].size;
 	size_t i = lower_bound(f, k, key, klen, 0, 0, 0);
 	cob_irec **ord = get_order(f, k);
-	if (i < s->n && memcmp(ord[i]->data + f->keys[k].offset, key, klen) == 0)
-		return (long)i;
+	if (i < s->n) {
+		unsigned char got[COB_KEY_MAX_SEGS * 512];
+		gather_key(f, k, ord[i]->data, got);
+		if (memcmp(got, key, f->keys[k].total ? f->keys[k].total : klen) == 0)
+			return (long)i;
+	}
 	return -1;
 }
 
 static void set_pos(ixstate *s, cob_file *f, cob_irec *r, int k, int mode)
 {
 	s->key_ref = k;
-	s->pos_keylen = f->keys[k].size;
-	memcpy(s->pos_key, r->data + f->keys[k].offset, s->pos_keylen);
+	s->pos_keylen = gather_key(f, k, r->data, s->pos_key);
 	s->pos_seq = r->kseq[k];
 	s->pos_mode = mode;
 }
@@ -1155,7 +1194,9 @@ static int read_idx(cob_file *f, int next, int key_index)
 		set_pos(s, f, r, k, 1);
 	} else {
 		int k = key_index < 0 ? 0 : key_index;
-		long i = find_exact(f, k, f->record + f->keys[k].offset);
+		unsigned char kbuf[COB_KEY_MAX_SEGS * 512];
+		gather_key(f, k, f->record, kbuf);
+		long i = find_exact(f, k, kbuf);
 		if (i < 0)
 			return set_st(f, "23");
 		r = get_order(f, k)[i];
@@ -1177,12 +1218,18 @@ static int alt_conflict(cob_file *f, const unsigned char *rec, cob_irec *self)
 	for (int k = 1; k < f->nkeys; k++) {
 		if (f->keys[k].dups)
 			continue;
-		long i = find_exact(f, k, rec + f->keys[k].offset);
+		unsigned char kbuf[COB_KEY_MAX_SEGS * 512];
+		gather_key(f, k, rec, kbuf);
+		long i = find_exact(f, k, kbuf);
 		if (i >= 0) {
 			cob_irec **ord = get_order(f, k);
 			/* any match other than self? */
 			size_t j = (size_t)i;
-			while (j < s->n && memcmp(ord[j]->data + f->keys[k].offset, rec + f->keys[k].offset, f->keys[k].size) == 0) {
+			unsigned char krec[COB_KEY_MAX_SEGS * 512], kbuf2[COB_KEY_MAX_SEGS * 512];
+			gather_key(f, k, rec, krec);
+			size_t klen_k = f->keys[k].total ? f->keys[k].total : f->keys[k].size;
+			while (j < s->n && (gather_key(f, k, ord[j]->data, kbuf2),
+			                    memcmp(kbuf2, krec, klen_k) == 0)) {
 				if (ord[j] != self)
 					return 1;
 				j++;
@@ -1197,15 +1244,20 @@ static int write_idx(cob_file *f, size_t recsize)
 	ixstate *s = ixs(f);
 	if (f->open_mode == COB_OPEN_INPUT)
 		return set_st(f, "48");
-	const unsigned char *key = f->record + f->keys[0].offset;
-	size_t klen = f->keys[0].size;
+	unsigned char keybuf[COB_KEY_MAX_SEGS * 512];
+	size_t klen = gather_key(f, 0, f->record, keybuf);
+	const unsigned char *key = keybuf;
 	if (f->access == COB_ACC_SEQUENTIAL && (f->open_mode == COB_OPEN_OUTPUT || f->open_mode == COB_OPEN_EXTEND)) {
 		if (s->have_last_written && memcmp(key, s->last_written, klen) <= 0)
 			return set_st(f, "21");
 	}
 	size_t i = lower_bound(f, 0, key, klen, 0, 0, 0);
-	if (i < s->n && memcmp(s->recs[i]->data + f->keys[0].offset, key, klen) == 0)
-		return set_st(f, "22");
+	if (i < s->n) {
+		unsigned char seen[COB_KEY_MAX_SEGS * 512];
+		gather_key(f, 0, s->recs[i]->data, seen);
+		if (memcmp(seen, key, klen) == 0)
+			return set_st(f, "22");
+	}
 	if (alt_conflict(f, f->record, NULL))
 		return set_st(f, "22");
 	size_t size;
@@ -1252,9 +1304,13 @@ static int rewrite_idx(cob_file *f, size_t recsize, int del)
 			return set_st(f, "44");
 		if (alt_conflict(f, f->record, r))
 			return set_st(f, "22");
-		for (int k = 1; k < f->nkeys; k++)
-			if (memcmp(r->data + f->keys[k].offset, f->record + f->keys[k].offset, f->keys[k].size) != 0)
+		for (int k = 1; k < f->nkeys; k++) {
+			unsigned char ka[COB_KEY_MAX_SEGS * 512], kb[COB_KEY_MAX_SEGS * 512];
+			size_t klen2 = gather_key(f, k, r->data, ka);
+			gather_key(f, k, f->record, kb);
+			if (memcmp(ka, kb, klen2) != 0)
 				r->kseq[k] = s->next_seq++;
+		}
 		memcpy(r->data, f->record, f->record_max);
 		r->size = size;
 	}
@@ -1268,9 +1324,12 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 	ixstate *s = ixs(f);
 	if (k < 0)
 		k = 0;
-	if (keylen == 0 || keylen > f->keys[k].size)
-		keylen = f->keys[k].size;
-	const unsigned char *key = f->record + f->keys[k].offset;
+	size_t kfull = f->keys[k].total ? f->keys[k].total : f->keys[k].size;
+	if (keylen == 0 || keylen > kfull)
+		keylen = kfull;
+	unsigned char keybuf[COB_KEY_MAX_SEGS * 512];
+	gather_key(f, k, f->record, keybuf);
+	const unsigned char *key = keybuf;
 	cob_irec **ord = get_order(f, k);
 	size_t i;
 	switch (op) {
@@ -1282,7 +1341,9 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 		break;
 	case 0: /* EQ */
 		i = lower_bound(f, k, key, keylen, 0, 0, 0);
-		if (i >= s->n || memcmp(ord[i]->data + f->keys[k].offset, key, keylen) != 0)
+		unsigned char got[COB_KEY_MAX_SEGS * 512];
+		gather_key(f, k, i < s->n ? ord[i]->data : key, got);
+		if (i >= s->n || memcmp(got, key, keylen) != 0)
 			return set_st(f, "23");
 		break;
 	case 1: /* GT */
@@ -1311,8 +1372,7 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 	/* the position indicator points at record i: READ NEXT and READ
 	   PREVIOUS both return it */
 	s->key_ref = k;
-	s->pos_keylen = f->keys[k].size;
-	memcpy(s->pos_key, ord[i]->data + f->keys[k].offset, s->pos_keylen);
+	s->pos_keylen = gather_key(f, k, ord[i]->data, s->pos_key);
 	s->pos_seq = ord[i]->kseq[k];
 	s->pos_mode = 3;
 	f->at_end = 0;

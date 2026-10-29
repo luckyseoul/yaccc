@@ -574,27 +574,46 @@ class Parser:
             elif self.accept('RECORD'):
                 self.accept('KEY')
                 self.accept('IS')
-                fc.record_key = self.parse_identifier()
+                kref = self.parse_identifier()
                 # RECORD KEY IS key-name = data-name: the key's own name, then
                 # the item that holds it
                 if self.peek().kind == 'OP' and self.peek().val == '=':
                     self.next()
-                    fc.key_name = fc.record_key
-                    fc.record_key = self.parse_identifier()
+                    fc.key_name = kref
+                    kref = self.parse_identifier()
+                fc.record_key = kref
                 if self.is_word('SOURCE'):
-                    raise self.err("split keys are not supported")
+                    # a split key: its value is the items' concatenation
+                    self.next()
+                    self.accept('IS', 'ARE')
+                    fc.key_sources = self._key_sources()
             elif self.accept('ALTERNATE'):
                 self.accept('RECORD')
                 self.accept('KEY')
                 self.accept('IS')
                 k = self.parse_identifier()
+                sources = None
+                if self.is_word('SOURCE'):
+                    self.next()
+                    self.accept('IS', 'ARE')
+                    sources = self._key_sources()
                 dups = False
                 if self.accept('WITH'):
                     self.expect('DUPLICATES')
                     dups = True
                 elif self.accept('DUPLICATES'):
                     dups = True
-                fc.alt_keys.append((k, dups))
+                supp = None
+                if self.accept('SUPPRESS'):
+                    # SUPPRESS WHEN ALL "*": records whose key is all that
+                    # character are not indexed (a sparse key)
+                    self.accept('WHEN')
+                    allc = bool(self.accept('ALL'))
+                    lit = self.parse_operand()
+                    val = lit.value if hasattr(lit, 'value') else b' '
+                    if isinstance(val, bytes):
+                        supp = (val, allc)
+                fc.alt_keys.append((k, dups, sources, supp))
             elif self.accept('RELATIVE'):
                 self.accept('KEY')
                 self.accept('IS')
@@ -633,6 +652,16 @@ class Parser:
                 raise self.err("unexpected clause in SELECT")
         self.expect_period()
         return fc
+
+    def _key_sources(self):
+        """The items of a split key. Commas are separators in COBOL, not
+        tokens, so the list ends at the next SELECT clause word."""
+        out = []
+        while self.is_user_word() and self.peek().up not in SELECT_CLAUSE_WORDS:
+            out.append(self.parse_identifier())
+        if not out:
+            raise self.err("SOURCE needs at least one item")
+        return out
 
     def _parse_org(self, fc):
         if self.accept('LINE'):

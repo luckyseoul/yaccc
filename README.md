@@ -109,7 +109,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   450    23             23      197
+  693   451    26             19      197
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness

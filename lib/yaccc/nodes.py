@@ -604,7 +604,8 @@ class FileControl:
     organization: str = 'SEQUENTIAL'
     access: str = 'SEQUENTIAL'
     record_key: Any = None
-    alt_keys: List[tuple] = field(default_factory=list)   # (DataRef, dups)
+    alt_keys: List[tuple] = field(default_factory=list)   # (DataRef, dups, sources)
+    key_sources: Any = None        # split RECORD KEY: items whose values concatenate
     relative_key: Any = None
     status: Any = None
     optional: bool = False
