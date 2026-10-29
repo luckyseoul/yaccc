@@ -427,8 +427,10 @@ class ReportWriterGen:
         self.protos.append(f"static int {n}_ctl(int op);")
         self.protos.append(f"static void {n}_decl(int g);")
         pl, h, fd, ld, ft = ri.page
+        rd_footing = ri.rd.footing or self.page_footing_line(ri.rd)
         self.glob.append(
-            f"static cob_report {n} = {{\"{ri.name}\", &{ri.file.sym}, {pl}, {h}, {fd}, {ld}, {ft}, {ri.width}, "
+            f"static cob_report {n} = {{\"{ri.name}\", &{ri.file.sym}, {pl}, {h}, {fd}, {ld}, {ft}, "
+            f"{1 if ri.rd.last_detail else 0}, {1 if rd_footing else 0}, {ri.width}, "
             f"{code}, {len(ri.code)}, {len(ri.groups)}, {n}_g, {len(ri.controls)}, {ri.lc.special}, "
             f"{ri.pc.special}, {n}_fmt, {n}_sum, {n}_ctl, {n}_decl}};")
 

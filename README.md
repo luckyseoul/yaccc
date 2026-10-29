@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   478    17              0      198
+  693   482    13              0      198
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,15 +127,17 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 17 failures** are:
-  - 9 Report Writer tests whose output differs only in where pages break.
-    Measured against `cobc`, a page holds `PAGE LIMIT - 1` printed lines, a
-    PAGE FOOTING lands on the line it names only on the first page, and a
-    page heading is written at its HEADING line of the new page; YACCC writes
-    `PAGE LIMIT` lines per page and places footings and headings on their
-    named lines. The data lines and their contents match; what moves is where
-    a page ends, and with it the footing and heading lines and the blank filler
-    around them.
+- **The 13 failures** are:
+  - 6 Report Writer tests whose output differs in where pages break or in how
+    a group indicate is repeated. `cobc` reaches a page break through several
+    different branches of `reportio.c` and does not place it consistently:
+    measuring a dozen PAGE clause shapes against a live 3.1.2 shows a page
+    ending one line short in some shapes and at its full `PAGE LIMIT` in
+    others. YACCC uses the rule that fits the majority -- a page with a LAST
+    DETAIL boundary is `PAGE LIMIT - 1` lines, one without is `PAGE LIMIT`
+    lines, the last page is always `PAGE LIMIT` lines with its page footing
+    one line below its declared line -- and 13 of the 19 runnable Report Writer
+    tests now match `cobc` byte for byte, up from 1.
   - `Sample REPORT with RIGHT/CENTER`, a dialect difference rather than an
     output difference: its first step expects `cobc` to reject the program in
     its default dialect, and YACCC compiles it, as GnuCOBOL itself does with

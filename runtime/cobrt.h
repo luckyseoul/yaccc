@@ -887,6 +887,7 @@ typedef struct cob_report {
 	const char *name;
 	cob_file *file;
 	int pl, h, fd, ld, ft;     /* PAGE LIMIT (0: no PAGE clause), HEADING ... FOOTING */
+	int ld_decl, ft_decl;      /* LAST DETAIL / FOOTING actually declared? */
 	int width;                 /* print line width including CODE */
 	const unsigned char *code;
 	int code_len;
@@ -907,6 +908,8 @@ typedef struct cob_report {
 	unsigned char *gi;
 	int *ch, *cf;
 	int rh, ph, pf, rf;
+	int final_page;            /* TERMINATE is writing the last page */
+	int pf_pos;                /* page line the page footing went on */
 } cob_report;
 
 extern int cob_rw_suppress;

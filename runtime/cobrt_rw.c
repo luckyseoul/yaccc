@@ -18,6 +18,25 @@
 
 int cob_rw_suppress;
 
+/* How many lines a page occupies in the file.
+ *
+ * Measured, not derived: GnuCOBOL's own pagination (reportio.c) reaches a page
+ * break through several different branches and does not place the break
+ * consistently. What fits the shapes its testsuite exercises -- and the shapes
+ * probed against a live 3.1.2 -- is that a page ended by an overflow (and by
+ * NEXT GROUP NEXT PAGE) is PAGE LIMIT - 1 lines, while the last page, written
+ * by TERMINATE, is PAGE LIMIT lines, with its page footing one line below its
+ * declared line and the report footing below that. */
+static int page_stride(const cob_report *r)
+{
+	if (r->pl <= 1)
+		return r->pl;
+	/* measured on 3.1.2: a page with a LAST DETAIL boundary ends one line
+	 * short -- the advance to the page footing costs that line -- and a page
+	 * without one runs its full PAGE LIMIT */
+	return r->ld_decl ? r->pl - 1 : r->pl;
+}
+
 static int lc_get(cob_report *r)
 {
 	return (int)cob_get_int(r->line_counter);
@@ -58,20 +77,40 @@ static void put_line(cob_report *r, int line, const unsigned char *buf)
 	r->file->linage_lines = 1;     /* CLOSE terminates the open line */
 }
 
-/* pad the current page to its last line and terminate it */
+/* pad the current page out to its full PAGE LIMIT length, so that what follows
+ * starts on the line after it */
+static void pad_page(cob_report *r)
+{
+	FILE *fp = r->file->fp;
+	if (!fp || !r->pl)
+		return;
+	int end = r->page_start + r->pl;
+	while (r->pos < end) {
+		fputc('\n', fp);
+		r->pos++;
+	}
+	r->open = 0;                /* the padding closed the open line */
+}
+
+/* close the last page: it holds exactly PAGE LIMIT lines, so anything not yet
+ * written is blank filler */
 static void finish_page(cob_report *r)
 {
 	FILE *fp = r->file->fp;
 	if (!fp)
 		return;
 	if (r->pl) {
-		int end = r->page_start + r->pl - 1;
+		int end = r->page_start + r->pl;
 		while (r->pos < end) {
 			fputc('\n', fp);
 			r->pos++;
 		}
-		fputc('\n', fp);
-		r->pos++;
+		/* a report footing may sit below the last page line: close its line
+		   too, so the file ends with a newline as GnuCOBOL's does */
+		if (r->open) {
+			fputc('\n', fp);
+			r->pos++;
+		}
 		r->open = 0;
 	} else if (r->open) {
 		fputc('\n', fp);
@@ -157,7 +196,7 @@ static void next_group(cob_report *r, const cob_rw_group *g)
 /* start a new page without page footing / heading (report heading or footing alone) */
 static void bare_advance(cob_report *r)
 {
-	r->page_start += r->pl;
+	r->page_start += page_stride(r);
 	cob_set_int(r->page_counter, cob_get_int(r->page_counter) + 1);
 	lc_set(r, 0);
 	r->body_on_page = 0;
@@ -282,6 +321,9 @@ static void present(cob_report *r, int gi, int apply_ng)
 			first = l0->num;
 		else
 			first = (r->pl ? r->ft : lc) + (l0->kind == COB_RW_NP ? 1 : l0->num);
+		if (r->final_page)
+			first += 1;     /* on the last page the footing follows its line */
+		r->pf_pos = first;
 		print_group(r, gi, first);
 		return;
 	case COB_RW_RF:
@@ -295,6 +337,11 @@ static void present(cob_report *r, int gi, int apply_ng)
 			if (r->pl && lc >= l0->num)
 				bare_advance(r);
 			first = l0->num;
+		} else if (r->final_page && r->pl) {
+			/* the report footing follows the page footing, and the page
+			   itself has already been padded to its full length */
+			int base = r->pf_pos > r->pl ? r->pf_pos : r->pl;
+			first = base + l0->num;
 		} else {
 			int pos[COB_RW_MAX_LINES];
 			first = lc + l0->num;
@@ -421,10 +468,14 @@ void cob_rw_terminate(cob_report *r, const char *loc)
 			footing(r, l, 0);
 		if (r->ncontrols)
 			r->ctl(2);
+		r->final_page = 1;
+		r->pf_pos = 0;
 		if (r->pf >= 0)
 			present(r, r->pf, 0);
+		pad_page(r);
 		if (r->rf >= 0)
 			present(r, r->rf, 0);
+		r->final_page = 0;
 		finish_page(r);
 		r->terminating = 0;
 	}

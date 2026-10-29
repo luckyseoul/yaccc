@@ -18,7 +18,6 @@
 
 
 
-
 INVENTORY                    PAGE  2
 ------------------------------------
 
@@ -37,7 +36,6 @@ WAREHOUSE A
 
 
 END OF PAGE  2
-
 
 INVENTORY                    PAGE  3
 ------------------------------------
@@ -58,7 +56,6 @@ INVENTORY                    PAGE  3
 
 END OF PAGE  3
 
-
 INVENTORY                    PAGE  4
 ------------------------------------
 
@@ -67,6 +64,7 @@ WAREHOUSE B
        PART-02    20  07
        PART-03    30  08
   SUBTOTAL        60
+
 
 
 
@@ -85,9 +83,8 @@ END OF PAGE  4
 
 
 
-
-
 TOTAL PARTS:  138
+
 
 
 
