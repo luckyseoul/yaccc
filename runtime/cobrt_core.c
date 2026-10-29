@@ -134,11 +134,24 @@ cob_field *cob_refmod(cob_field *out, const cob_field *f, cob_s64 start, cob_s64
 	cob_s64 size = (cob_s64)f->size;
 	if (len < 0)
 		len = size - start + 1;
-	if (check && (start < 1 || start > size || len < 1 || start + len - 1 > size))
+	/* a zero-length reference is legal: it names no bytes, as in GnuCOBOL,
+	   unless the program asked for the zero-length check (check == 2) */
+	if (check && (start < 1 || start > size || len < 0 || (len == 0 && check > 1)
+	              || start + len - 1 > size))
 		cob_fatal("%s: reference modification out of bounds: (%lld:%lld) for length %lld",
 			  loc, start, len, size);
 	if (start < 1)
 		start = 1;
+	if (!check) {
+		/* bounds checks off: the reference reaches past the end of the field,
+		   as GnuCOBOL's does (the bytes that follow are read) */
+		if (len < 0)
+			len = 0;
+		out->data = f->data + (start - 1);
+		out->size = (size_t)len;
+		out->attr = &cob_attr_alnum;
+		return out;
+	}
 	if (start > size) {
 		start = size;
 		len = 0;
@@ -183,14 +196,14 @@ cob_field *cob_tmp_field(size_t size, const cob_attr *attr)
 
 /* ================================================================ decimal helpers */
 
-static inline cob_u128 uabs(cob_s128 v)
+static inline cob_u128 cob_uabs(cob_s128 v)
 {
 	return v < 0 ? -(cob_u128)v : (cob_u128)v;
 }
 
 static int ndigits(cob_s128 v)
 {
-	cob_u128 u = uabs(v);
+	cob_u128 u = cob_uabs(v);
 	int n = 1;
 	while (n <= 38 && u >= (cob_u128)P10[n])
 		n++;
@@ -787,7 +800,7 @@ static void put_display(cob_field *f, cob_s128 v)
 	unsigned char *p = f->data;
 	size_t n = f->size;
 	int neg = v < 0;
-	cob_u128 u = uabs(v);
+	cob_u128 u = cob_uabs(v);
 	int sep = (a->flags & COB_F_SIGNED) && (a->flags & COB_F_SIGN_SEP);
 	int lead = a->flags & COB_F_SIGN_LEAD;
 	unsigned char *dp = p;
@@ -819,7 +832,7 @@ static void put_packed(cob_field *f, cob_s128 v)
 	unsigned char *p = f->data;
 	size_t n = f->size;
 	int neg = v < 0;
-	cob_u128 u = uabs(v);
+	cob_u128 u = cob_uabs(v);
 	if (f->attr->flags & COB_F_UNSIGNED_PACKED) {
 		/* COMP-6: two digits per byte, no sign nibble */
 		for (size_t i = n; i > 0; i--) {
@@ -1007,7 +1020,7 @@ static cob_field *fn_field(cob_dec d, int flags, int digits, int force_sign)
 	dnorm(&d);
 	int neg = d.v < 0;
 	int sgn = neg || force_sign;
-	cob_u128 u = uabs(d.v);
+	cob_u128 u = cob_uabs(d.v);
 	int bits = 0;
 	for (cob_u128 t = u; t; t >>= 1)
 		bits++;
@@ -1117,7 +1130,7 @@ int cob_d_to_str(cob_dec d, char *buf, size_t bufsz)
 	}
 	dnorm(&d);
 	int neg = d.v < 0;
-	cob_u128 u = uabs(d.v);
+	cob_u128 u = cob_uabs(d.v);
 	int k = 0;
 	do {
 		tmp[len++] = (char)('0' + (int)(u % 10));
@@ -1250,7 +1263,7 @@ static void edit_numeric(cob_field *f, cob_dec d)
 	if (ovf)
 		v = 0;
 	int neg = v < 0;
-	cob_u128 u = uabs(v);
+	cob_u128 u = cob_uabs(v);
 	int is_zero = 1;
 	for (i = ndig - 1; i >= 0; i--) {
 		dig[i] = (unsigned char)(u % 10);
@@ -1484,7 +1497,7 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz)
 		int sc = a->scale;
 		int ovf = 0;
 		cob_s128 v = rescale(d.v, d.scale, sc, 0, &ovf);
-		cob_u128 u = uabs(v);
+		cob_u128 u = cob_uabs(v);
 		size_t n = (size_t)digits;
 		if (n > bufsz)
 			n = bufsz;
@@ -1805,9 +1818,11 @@ int cob_is_numeric(const cob_field *f)
 			if (i < n - 1 && lo > 9)
 				return 0;
 		}
+		/* a signed packed field carries C or D (measured on the oracle:
+		   A, B, E and F are all rejected, F only valid for unsigned) */
 		unsigned char s = p[n - 1] & 0x0F;
 		if (a->flags & COB_F_SIGNED)
-			return s == 0x0C || s == 0x0D || s == 0x0F;
+			return s == 0x0C || s == 0x0D;
 		return s == 0x0F;
 	}
 	case COB_NUM_DISPLAY: {
@@ -1933,7 +1948,7 @@ void cob_display(int dev, const cob_field *f)
 		int trailing = a->type == COB_NUM_DISPLAY && (a->flags & COB_F_SIGN_SEP) && !(a->flags & COB_F_SIGN_LEAD);
 		if (sgn && !trailing)
 			buf[o++] = v < 0 ? '-' : '+';
-		cob_u128 u = uabs(v);
+		cob_u128 u = cob_uabs(v);
 		char tmp[64];
 		for (int i = 0; i < digits; i++) {
 			tmp[i] = (char)('0' + (int)(u % 10));

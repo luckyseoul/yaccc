@@ -497,6 +497,11 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.size = binary_size(pic.digits, opts.binary_size)
         if getattr(opts, 'binary_truncate', True):
             item.flags |= F_BINARY_TRUNC
+        elif pic.scale == 0:
+            # -fnotrunc: the value is not cut back to the PICTURE's digits, so
+            # the item can hold everything its storage holds, and that capacity
+            # is what DISPLAY prints (GnuCOBOL: u16 5, u32 10, u64 20 digits)
+            item.digits = min(len(str(2 ** (8 * item.size) - 1)), 20)
     elif usage == 'COMP-5':
         item.type = T_NUM_COMP5
         item.size = binary_size(pic.digits, opts.binary_size)

@@ -139,6 +139,8 @@ def main(argv=None):
     ap.add_argument('-O', dest='opt', default='2', nargs='?', const='2', help='C optimisation level')
     ap.add_argument('-g', dest='debug', action='store_true', help='include C debug information')
     ap.add_argument('--no-check', dest='check', action='store_false', help='disable subscript/reference checks')
+    ap.add_argument('--refmod-zero-length', dest='refmod_zero', action='store_true',
+                    help='a zero-length reference modification is an error (cobc -fno-ref-mod-zero-length)')
     ap.add_argument('-std', '--std', dest='std', metavar='DIALECT',
                     help='dialect for the choices the standards leave open: '
                          + ', '.join(dialect.accepted_names()))
@@ -198,6 +200,7 @@ def main(argv=None):
     if args.dpc_in_data is not None:
         opts.dpc_in_data = args.dpc_in_data
     opts.check = args.check
+    opts.refmod_zero = args.refmod_zero
     opts.line_map = args.debug
     fmt = args.fmt or 'auto'
     try:

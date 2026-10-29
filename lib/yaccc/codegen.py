@@ -1389,7 +1389,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         start, length = refmod
         s = self.int_expr(start)
         l = self.int_expr(length) if length is not None else '-1'
-        return f"cob_refmod(&(cob_field){{0}}, {f}, {s}, {l}, {1 if self.checks_on(loc) else 0}, {c_string(str(loc))})"
+        # 0 = no checks, 1 = bounds, 2 = bounds and no zero-length reference
+        chk = 0
+        if self.checks_on(loc):
+            chk = 2 if getattr(self.opts, 'refmod_zero', False) else 1
+        return f"cob_refmod(&(cob_field){{0}}, {f}, {s}, {l}, {chk}, {c_string(str(loc))})"
 
     def item_base(self, it):
         return it.storage

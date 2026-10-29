@@ -43,6 +43,7 @@ FLAG_MAP = {'-free': ['-free'], '-fixed': ['-fixed'], '-fdebugging-line': ['--de
             # yaccc has these as its own options
             '-fnotrunc': ['-fno-binary-truncate'],
             '-fbinary-truncate': [],        # yaccc's default
+            '-fno-ref-mod-zero-length': ['--refmod-zero-length'],
             '-fno-ec=BOUND': ['--no-check'],
             '-fno-ec=BOUND-REF-MOD': ['--no-check'],
             '-fno-ec=BOUND-REF-MOD-ALL': ['--no-check'],
@@ -221,13 +222,16 @@ class Runner:
         out = []
         it = iter(words)
         for w in it:
-            if w in IGNORED_FLAGS or w.startswith('-W') or w.startswith('-fno-ec') or w == '-fec=all':
-                continue
             if w in FLAG_MAP:
+                # a flag the compiler understands changes the program's
+                # behaviour and has to be passed on; the mapped ones are the
+                # runtime-check switches, which must not be dropped
                 if not self.use_cobc:
                     out.extend(FLAG_MAP[w])
                 else:
                     out.append(w)
+                continue
+            if w in IGNORED_FLAGS or w.startswith('-W') or w.startswith('-fno-ec') or w == '-fec=all':
                 continue
             if w == '-I':
                 d = next(it, None)
