@@ -210,6 +210,7 @@ class Exhibit(Stmt):
 class EntryStmt(Stmt):
     name: Any = None
     name_ref: Any = None
+    using: list = field(default_factory=list)   # ENTRY ... USING items
 
 
 @dataclass(eq=False)

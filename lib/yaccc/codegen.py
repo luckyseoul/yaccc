@@ -2879,6 +2879,14 @@ class CodeGen(ReportWriterGen, DebugGen):
         k = getattr(s, '_entry_no', None)
         if k:
             self.em.label(f"L_entry_{k}")
+        # ENTRY ... USING: this entry point's own parameters, bound from the
+        # caller's argument list
+        for i, ref in enumerate(getattr(s, 'using', []) or []):
+            it = self.resolve(ref)
+            if it.section != 'LK' or it.level not in (1, 77):
+                raise CompileError(f"ENTRY USING item '{ref.name}' must be a level "
+                                   f"01/77 LINKAGE item", ref.loc)
+            self.em(f"if (cob_argc > {i} && cob_argv[{i}]) {it.storage} = cob_argv[{i}];")
         return
 
     def g_XmlGenerate(self, s):

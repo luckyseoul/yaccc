@@ -109,7 +109,7 @@ All 62 pass, built with gcc.
 `tests/gnucobol/run_gc.py` reads the autotest files directly and runs every
 test that is built from COBOL sources with plain compile steps, comparing exit
 status, standard output and the files the test checks.
-
+  693   456    33              7      197
 ```
 Tests  Pass  Fail  Compile error  Skipped
   693   456    32              8      197

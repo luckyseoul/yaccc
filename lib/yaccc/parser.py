@@ -1895,15 +1895,20 @@ class Parser:
         return Exhibit(loc, items, named, changed)
 
     def p_ENTRY(self, loc):
-        """ENTRY "name": another entry point into this program."""
+        """ENTRY "name" [USING item...]: another entry point into this
+        program, optionally with its own parameters."""
         t = self.peek()
+        st = EntryStmt(loc, None)
         if t.kind == 'STR':
             self.next()
-            return EntryStmt(loc, t.val.decode('latin-1'))
-        if t.kind == 'WORD':
+            st.name = t.val.decode('latin-1')
+        elif t.kind == 'WORD' and not self.is_word('USING'):
             # ENTRY <identifier>: the name is that item's content
-            return EntryStmt(loc, None, self.parse_identifier())
-        return EntryStmt(loc, None)
+            st.name_ref = self.parse_identifier()
+        if self.accept('USING'):
+            while self.is_user_word():
+                st.using.append(self.parse_identifier())
+        return st
 
     def p_ALLOCATE(self, loc):
         """ALLOCATE item [INITIALIZED] | ALLOCATE n CHARACTERS [INITIALIZED]"""
