@@ -287,6 +287,8 @@ void cob_stop_run(int rc) __attribute__((noreturn));
 void cob_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 void cob_perform_overflow(const char *loc) __attribute__((noreturn));
 cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *name, const char *loc);
+cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64 dmax,
+                        const char *name, const char *loc);
 cob_field *cob_refmod(cob_field *out, const cob_field *f, cob_s64 start, cob_s64 len, int check, const char *loc);
 void *cob_malloc(size_t n);
 

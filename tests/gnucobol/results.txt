@@ -680,10 +680,10 @@ PASS  run_returncode.at:23         RETURN-CODE moving
 PASS  run_returncode.at:49         RETURN-CODE passing
 PASS  run_returncode.at:101        RETURN-CODE nested
 PASS  run_subscripts.at:26         Subscript out of bounds
-FAIL  run_subscripts.at:71         Value of DEPENDING ON N out of bounds
-FAIL  run_subscripts.at:122        Subscript bounds with OCCURS DEPENDING ON (1)
-FAIL  run_subscripts.at:148        Subscript bounds with OCCURS DEPENDING ON (2)
-FAIL  run_subscripts.at:176        Subscript bounds with OCCURS DEPENDING ON (3)
+PASS  run_subscripts.at:71         Value of DEPENDING ON N out of bounds
+PASS  run_subscripts.at:122        Subscript bounds with OCCURS DEPENDING ON (1)
+PASS  run_subscripts.at:148        Subscript bounds with OCCURS DEPENDING ON (2)
+PASS  run_subscripts.at:176        Subscript bounds with OCCURS DEPENDING ON (3)
 PASS  run_subscripts.at:211        Subscript by arithmetic expression
 PASS  run_subscripts.at:242        length of ODO w/- reference modification
 PASS  run_subscripts.at:298        SEARCH ALL with OCCURS DEPENDING ON
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 443  FAIL 29  CERR 24  XERR 0  SKIP 197
+PASS 447  FAIL 25  CERR 24  XERR 0  SKIP 197

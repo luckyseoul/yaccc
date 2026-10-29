@@ -99,6 +99,29 @@ void cob_sub_error(cob_s64 v, cob_s64 max, const char *name, const char *loc)
 	cob_fatal("%s: subscript of '%s' out of bounds: %lld (maximum %lld)", loc, name, v, max);
 }
 
+/* a subscript of a table whose upper bound is OCCURS DEPENDING ON: the count
+ * is the current value of the DEPENDING item, and the subscript must be within
+ * 1..count, where count itself must be within the declared minimum..maximum */
+cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64 dmax,
+                        const char *name, const char *loc)
+{
+	cob_s64 n = cob_get_int(dep);
+	if (n < dmin || n > dmax)
+		cob_fatal("%s: OCCURS DEPENDING ON value of '%s' out of bounds: %lld "
+		          "(minimum %lld, maximum %lld)", loc, name, (long long)n,
+		          (long long)dmin, (long long)dmax);
+	if (sub < 1 || sub > n) {
+		/* GnuCOBOL's wording for the current (not declared) maximum */
+		fflush(stdout);
+		fprintf(stderr, "libcob: %s: error: subscript of '%s' out of bounds: %lld\n"
+		        "note: current maximum subscript for '%s': %lld\n",
+		        loc, name, (long long)sub, name, (long long)n);
+		cob_close_all_files();
+		exit(1);
+	}
+	return sub;
+}
+
 cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *name, const char *loc)
 {
 	if (v < min || v > max)

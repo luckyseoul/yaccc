@@ -1274,7 +1274,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         for occ, sub in zip(chain, subs):
             if sub == 'ALL':
                 raise CompileError("ALL subscript is only allowed in function arguments", ref.loc)
-            if isinstance(sub, NumLit) and sub.scale == 0 and not sub.neg:
+            if isinstance(sub, NumLit) and sub.scale == 0 and not sub.neg \
+                    and occ.occurs.depending is None:
+                # A literal subscript is folded when the upper bound is fixed.
+                # With OCCURS DEPENDING ON the bound is a run-time value, so
+                # even a literal has to be checked there.
                 v = int(sub.digits)
                 if v < 1 or v > occ.occurs.max:
                     raise CompileError(f"subscript {v} of '{ref.name}' out of range 1..{occ.occurs.max}", ref.loc)
@@ -1282,7 +1286,13 @@ class CodeGen(ReportWriterGen, DebugGen):
                 continue
             s = self.int_expr(sub)
             if self.opts.check:
-                s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
+                dep = occ.occurs.depending
+                if dep is not None:
+                    # the upper bound is the current DEPENDING ON value
+                    s = (f"cob_chk_odo_sub({s}, {self.field(dep)}, {occ.occurs.min}, "
+                         f"{occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})")
+                else:
+                    s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
             terms.append(f"({s} - 1) * {occ.size}")
         return ' + '.join([str(const)] + terms)
 
