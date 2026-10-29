@@ -2655,6 +2655,15 @@ int cob_decl_which;
 
 void cob_register_program(const char *name, cob_prog_fn fn, cob_cancel_fn cancel)
 {
+	for (int i = 0; i < nprogs; i++) {
+		/* a repeat registration replaces the earlier one: a module loaded
+		 * later owns its entry points, which is what COB_PRE_LOAD expects */
+		if (strcasecmp(progs[i].name, name) == 0) {
+			progs[i].fn = fn;
+			progs[i].cancel = cancel;
+			return;
+		}
+	}
 	if (nprogs < MAX_PROGS) {
 		progs[nprogs].name = name;
 		progs[nprogs].fn = fn;

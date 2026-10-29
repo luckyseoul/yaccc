@@ -1009,15 +1009,6 @@ class CodeGen(ReportWriterGen, DebugGen):
             st._entry_no = k
         if entries:
             prog._entries = entries
-            # a CALL to an ENTRY point asked to start there
-            em("if (cob_entry_pending) {")
-            em.ind += 1
-            em("int cob_ep = cob_entry_pending;")
-            em("cob_entry_pending = 0;")
-            for k in range(1, len(entries) + 1):
-                em(f"if (cob_ep == {k}) goto L_entry_{k};")
-            em.ind -= 1
-            em("}")
             prog._entry_count = len(entries)
         active = self.sym('cob_active_')
         self.protos.append(f"static int {active};")
@@ -1055,6 +1046,18 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.glob.append(f"static unsigned char {sym}_dummy[{size}];")
             if sym not in using_items:
                 em(f"{sym} = {sym}_dummy;")
+        if entries:
+            # A CALL to an ENTRY point asked to start there. This has to come
+            # after the program's own initialisation: jumping to the label
+            # before INIT has run left the program's WORKING-STORAGE blank.
+            em("if (cob_entry_pending) {")
+            em.ind += 1
+            em("int cob_ep = cob_entry_pending;")
+            em("cob_entry_pending = 0;")
+            for k in range(1, len(entries) + 1):
+                em(f"if (cob_ep == {k}) goto L_entry_{k};")
+            em.ind -= 1
+            em("}")
         if ret_item is not None:
             # the caller passes the result storage as the last argument
             nuse = len(prog.using)
@@ -1368,6 +1371,12 @@ class CodeGen(ReportWriterGen, DebugGen):
                     s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
             terms.append(f"({s} - 1) * {occ.size}")
         return ' + '.join([str(const)] + terms)
+
+    @staticmethod
+    def pointer_call(it):
+        """A CALL target that is a POINTER: the call invokes the address, not
+        the bytes as a program name."""
+        return it is not None and getattr(it, 'type', None) == T_POINTER
 
     def checks_on(self, loc):
         """Bounds checks at this source position: a >>TURN or $SET SSRANGE in
@@ -4002,7 +4011,16 @@ class CodeGen(ReportWriterGen, DebugGen):
             if sym == 'NULL':
                 fn = "(cob_prog_fn)NULL"
         else:
-            fn = f"cob_resolve({self.field(s.prog)})"
+            it = None
+            try:
+                it = self.resolve(s.prog)
+            except Exception:
+                it = None
+            if self.pointer_call(it):
+                # CALL of a PROGRAM-POINTER item invokes the address it holds
+                fn = f"((cob_prog_fn)cob_pointer_get({self.field(s.prog)}))"
+            else:
+                fn = f"cob_resolve({self.field(s.prog)})"
         em(f"cob_prog_fn cob_fn = {fn};")
         em("if (!cob_fn) {")
         em(f"\tcob_exc_where(&{self.loc_sym(s)});")
