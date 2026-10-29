@@ -2422,6 +2422,14 @@ unsigned char *cob_alloc_chars(cob_s64 n)
 	return cob_malloc((size_t)n);
 }
 
+/* ALLOCATE ... INITIALIZED TO value: the value repeated over the block */
+void cob_fill_block(unsigned char *p, size_t n, const cob_field *v)
+{
+	size_t vl = v->size ? v->size : 1;
+	for (size_t i = 0; i < n; i++)
+		p[i] = v->data[i % vl];
+}
+
 void cob_free_chars(unsigned char *p)
 {
 	free(p);

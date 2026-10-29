@@ -210,6 +210,8 @@ class Allocate(Stmt):
     target: Any = None
     count: Any = None
     initialized: bool = False
+    init_value: Any = None          # ALLOCATE ... INITIALIZED TO value
+    returning: Any = None           # ALLOCATE ... RETURNING pointer
 
 
 @dataclass(eq=False)
@@ -439,6 +441,7 @@ class Call(Stmt):
     returning: Optional[DataRef]
     on_exc: Optional[list]
     not_on_exc: Optional[list]
+    returning_omitted: bool = False
 
 
 @dataclass(eq=False)
@@ -635,6 +638,7 @@ class Program:
     is_recursive: bool = False
     is_common: bool = False
     is_function: bool = False
+    returning_omitted: bool = False   # PROCEDURE DIVISION ... RETURNING OMITTED
     decimal_comma: bool = False
     currency: str = '$'
     mnemonics: dict = field(default_factory=dict)

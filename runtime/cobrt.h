@@ -573,6 +573,7 @@ static inline unsigned char *cob_based_ptr(unsigned char *p, const char *name)
 }
 unsigned char *cob_alloc_chars(cob_s64 n);
 void cob_free_chars(unsigned char *p);
+void cob_fill_block(unsigned char *p, size_t n, const cob_field *v);
 extern int cob_zero_div_seen;          /* a DIVIDE by zero ran in this statement */
 
 /* JSON GENERATE */

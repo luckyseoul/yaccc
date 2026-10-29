@@ -1021,6 +1021,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         if prog.returning is not None:
             f = self.field(prog.returning)
             em(f"return (int)cob_get_int({f});")
+        elif getattr(prog, 'returning_omitted', False):
+            # a void PROCEDURE DIVISION returns nothing, whatever RETURN-CODE
+            # was set to inside it
+            em("return 0;")
         else:
             em("return (int)cob_get_int(&cob_return_code);")
         if gdecls:
@@ -2662,9 +2666,15 @@ class CodeGen(ReportWriterGen, DebugGen):
         em.ind += 1
         if s.target is None:
             n = self.dec(s.count) if s.count is not None else 'cob_d_int(0)'
-            em(f"unsigned char *cob_a = cob_alloc_chars((cob_s64)cob_d_int64({n}));")
-            if s.initialized:
-                em("memset(cob_a, 0, (size_t)cob_d_int64(" + n + "));")
+            em("cob_s64 cob_n = (cob_s64)cob_d_to_int(" + n + ");")
+            em("unsigned char *cob_a = cob_alloc_chars(cob_n);")
+            if s.init_value is not None:
+                # fill the whole block with the value, repeating it
+                em(f"cob_fill_block(cob_a, (size_t)cob_n, {self.field(s.init_value)});")
+            elif s.initialized:
+                em("memset(cob_a, 0, (size_t)cob_n);")
+            if s.returning is not None:
+                em(f"cob_pointer_set({self.field(s.returning)}, cob_a);")
             em("(void)cob_a;")
             em.ind -= 1
             em("}")
@@ -2696,6 +2706,11 @@ class CodeGen(ReportWriterGen, DebugGen):
     def g_FreeStmt(self, s):
         em = self.em
         it = self.resolve(s.target)
+        if not getattr(it, 'based', False) and getattr(it, 'type', None) == T_POINTER:
+            # FREE pointer: release what ALLOCATE ... RETURNING handed back
+            em(f"cob_free_chars(cob_pointer_get({self.field(s.target)}));")
+            em(f"cob_pointer_set({self.field(s.target)}, NULL);")
+            return
         if not getattr(it, 'based', False):
             raise CompileError(f"FREE needs a BASED item; '{s.target.name}' is not one",
                                s.target.loc)

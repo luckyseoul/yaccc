@@ -64,7 +64,53 @@ def fold_constant(e):
     def trunc(v):
         return v.quantize(Decimal(1), rounding=ROUND_DOWN)
 
+    def flatten(x):
+        """The operands and operators of an expression in source order.
+
+        COBOL evaluates a constant expression strictly left to right, so a
+        tree built with operator precedence has to be read back in source
+        order before folding: "1 + 2 * 3" is 9, not 7, which is what GnuCOBOL
+        does for a level-78 VALUE and what its testsuite checks."""
+        if isinstance(x, BinOp):
+            out = flatten(x.left)
+            out.append((x.op, None))
+            out.extend(flatten(x.right))
+            return out
+        return [(None, x)]
+
+    def fold_left(items):
+        acc = None
+        op = None
+        for o, v in items:
+            if o is not None:
+                op = o
+                continue
+            n = val(v)
+            if n is None:
+                return None
+            if acc is None:
+                acc = n
+            elif op == '+':
+                acc = acc + n
+            elif op == '-':
+                acc = acc - n
+            elif op == '*':
+                acc = acc * n
+            elif op == '/':
+                if n == 0:
+                    return None
+                acc = trunc(acc / n)
+            elif op == '**':
+                acc = acc ** n if n == n.to_integral_value() else None
+                if acc is None:
+                    return None
+            else:
+                return None
+        return acc
+
     def val(x):
+        if isinstance(x, BinOp):
+            return fold_left(flatten(x))
         if isinstance(x, NumLit):
             return Decimal(x.text)
         if isinstance(x, LengthOf) and isinstance(x.ref, StrLit):
@@ -396,8 +442,22 @@ class Parser:
                             'FILE-CONTROL', 'I-O-CONTROL', 'DATA', 'PROCEDURE', 'CONFIGURATION',
                             'INPUT-OUTPUT', 'ENVIRONMENT', 'END') or self.peek().kind == 'EOF'
 
+    # entries of SPECIAL-NAMES that may each end with a period
+    SN_ENTRIES = {'ALPHABET', 'CLASS', 'CURRENCY', 'DECIMAL-POINT', 'SYMBOLIC',
+                  'SWITCH', 'ALPHABETIC', 'MNEMONIC'}
+
     def parse_special_names(self, prog):
-        while self.peek().kind not in ('.', 'EOF') and not self._para_start():
+        while True:
+            while self.peek().kind == '.':
+                # a period ends an entry, not necessarily the paragraph: another
+                # entry may follow (ALPHABET A IS ASCII. ALPHABET B IS EBCDIC.)
+                nxt = self.peek(1)
+                if nxt.kind == 'WORD' and (nxt.up in self.SN_ENTRIES or nxt.up.startswith('SWITCH')):
+                    self.next()
+                    continue
+                break
+            if self.peek().kind in ('.', 'EOF') or self._para_start():
+                break
             if self.accept('DECIMAL-POINT'):
                 self.accept('IS')
                 self.expect('COMMA')
@@ -1316,7 +1376,11 @@ class Parser:
                 else:
                     break
         if self.accept('RETURNING', 'GIVING'):
-            prog.returning = self.parse_identifier()
+            if self.accept('OMITTED'):
+                prog.returning = None       # PROCEDURE DIVISION ... RETURNING OMITTED
+                prog.returning_omitted = True
+            else:
+                prog.returning = self.parse_identifier()
         self.expect_period()
         if self.is_word('DECLARATIVES'):
             self.next()
@@ -1717,6 +1781,10 @@ class Parser:
             st.target = self.parse_identifier()
         if self.accept('INITIALIZED'):
             st.initialized = True
+            if self.accept('TO'):
+                st.init_value = self.parse_operand(allow_all=True)
+        if self.accept('RETURNING'):
+            st.returning = self.parse_identifier()
         return st
 
     def p_FREE(self, loc):
@@ -2110,14 +2178,17 @@ class Parser:
             ret = None
             if self.accept('RETURNING', 'GIVING'):
                 ret = self.parse_operand()
-            elif self.is_operand_start():
-                ret = self.parse_operand()      # STOP RUN 4 (extension)
-            elif self.accept('WITH') or self.is_word('ERROR', 'NORMAL'):
+            elif self.is_word('ERROR', 'NORMAL') or self.is_word('WITH'):
+                # STOP RUN NORMAL / STOP RUN ERROR / STOP RUN WITH ERROR STATUS
+                if not self.accept('WITH'):
+                    pass
                 w = self.expect('ERROR', 'NORMAL').up
                 self.accept('STATUS')
                 ret = make_numlit('1' if w == 'ERROR' else '0')
                 if self.is_operand_start():
                     ret = self.parse_operand()
+            elif self.is_operand_start():
+                ret = self.parse_operand()      # STOP RUN 4 (extension)
             return StopRun(loc, ret)
         if self.peek().kind in ('STR', 'NUM') or self.is_word(*FIGURATIVES.keys()):
             lit = self.parse_operand()
@@ -2313,7 +2384,11 @@ class Parser:
     # ---- INITIALIZE / SET
     def p_INITIALIZE(self, loc):
         targets = []
-        while self.is_user_word():
+        # the clause words end the target list; they are user words otherwise
+        CLAUSE = {'WITH', 'FILLER', 'ALL', 'ALPHANUMERIC', 'NUMERIC', 'ALPHABETIC',
+                  'ALPHANUMERIC-EDITED', 'NUMERIC-EDITED', 'NATIONAL', 'REPLACING',
+                  'DEFAULT', 'VALUE'}
+        while self.is_user_word() and self.peek().up not in CLAUSE:
             targets.append(self.parse_identifier())
         st = Initialize(loc, targets, [])
         while True:
@@ -2326,6 +2401,12 @@ class Parser:
             elif self.is_word('ALL') and self.is_word('TO', k=1):
                 self.next(); self.next(); self.expect('VALUE')
                 st.to_value = True
+            elif self.is_word('ALL') and self.is_word('VALUE', k=1):
+                # INITIALIZE x ALL VALUE (GnuCOBOL: the same as ALL TO VALUE)
+                self.next(); self.next()
+                st.to_value = True
+            elif self.accept('DEFAULT'):
+                pass        # INITIALIZE x DEFAULT is the plain default behaviour
             elif self.is_word('ALPHANUMERIC', 'NUMERIC', 'ALPHABETIC', 'ALPHANUMERIC-EDITED',
                               'NUMERIC-EDITED', 'NATIONAL') and self.is_word('TO', k=1):
                 self.next(); self.next(); self.expect('VALUE')
@@ -2437,11 +2518,17 @@ class Parser:
                 else:
                     break
         ret = None
+        omitted_ret = False
         if self.accept('RETURNING', 'GIVING'):
-            ret = self.parse_identifier()
+            if self.accept('OMITTED'):          # CALL ... RETURNING OMITTED
+                omitted_ret = True
+            else:
+                ret = self.parse_identifier()
         on, noton = self._exception()
         self._end('END-CALL')
-        return Call(loc, prog, args, ret, on, noton)
+        call = Call(loc, prog, args, ret, on, noton)
+        call.returning_omitted = omitted_ret
+        return call
 
     def p_CANCEL(self, loc):
         progs = []
@@ -3122,6 +3209,29 @@ class Parser:
             op = self.parse_relop()
             if neg:
                 op = NEGATE[op]
+            # "IF 1 = (1 OR 2)": a parenthesised condition to the right of a
+            # relation is the abbreviated form, where each operand inside is
+            # compared with the subject - GnuCOBOL's semi-parenthesised
+            # condition. Fall back to an arithmetic parenthesis otherwise.
+            if self.peek().kind == '(':
+                save2 = self.pos
+                ctx2 = (self.subj, self.relop)
+                try:
+                    self.next()
+                    self.subj, self.relop = left, op
+                    inner = self._or()
+                    if self.peek().kind != ')':
+                        raise Backtrack()
+                    self.next()
+                    nt = self.peek()
+                    if (nt.kind == 'OP' and nt.val in ('+', '-', '*', '/', '**')) \
+                            or self._relop_start():
+                        raise Backtrack()
+                    self.subj, self.relop = left, op
+                    return inner
+                except (Backtrack, ParseError):
+                    self.pos = save2
+                    self.subj, self.relop = ctx2
             right = self.parse_expr()
             self.subj = left
             self.relop = op

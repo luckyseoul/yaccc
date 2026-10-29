@@ -37,7 +37,7 @@ PASS  run_extensions.at:72         Numeric Boolean literals
 SKIP  run_extensions.at:101        ACUCOBOL literals
 SKIP  run_extensions.at:127        HP COBOL octal literals
 PASS  run_extensions.at:188        Hexadecimal numeric literals
-CERR  run_extensions.at:217        Semi-parenthesized condition
+PASS  run_extensions.at:217        Semi-parenthesized condition
 PASS  run_extensions.at:237        ADDRESS OF
 PASS  run_extensions.at:287        LENGTH OF
 PASS  run_extensions.at:451        SET TO SIZE OF
@@ -54,7 +54,7 @@ CERR  run_extensions.at:1060       INITIALIZE OCCURS UNBOUNDED
 SKIP  run_extensions.at:1134       INITIALIZE OCCURS ODOSLIDE
 SKIP  run_extensions.at:1231       DEPENDING ON with ODOSLIDE
 SKIP  run_extensions.at:1446       DEPENDING ON with ODOSLIDE for IBM
-CERR  run_extensions.at:1551       INITIALIZE level 01
+PASS  run_extensions.at:1551       INITIALIZE level 01
 SKIP  run_extensions.at:1603       MOVE of non-integer to alphanumeric
 SKIP  run_extensions.at:1693       CALL USING file-name
 PASS  run_extensions.at:1738       CALL unusual PROGRAM-ID.
@@ -165,7 +165,7 @@ PASS  run_file.at:4165             EXTERNAL RELATIVE file
 PASS  run_file.at:4201             DECLARATIVES procedure referencing
 PASS  run_file.at:4241             DECLARATIVES procedure referencing (multiple)
 SKIP  run_file.at:4285             System routines for directories (1)
-CERR  run_file.at:4327             System routines for directories (2)
+PASS  run_file.at:4327             System routines for directories (2)
 SKIP  run_file.at:4424             System routines for files
 PASS  run_file.at:4698             System routine CBL_COPY_FILE
 SKIP  run_file.at:4733             Default file external name
@@ -558,7 +558,7 @@ CERR  run_misc.at:3281             Lookup ENTRY from main executable
 PASS  run_misc.at:3322             COB_LOAD_CASE=UPPER test
 PASS  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
 PASS  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
-CERR  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
+PASS  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
 SKIP  run_misc.at:3463             Initialized value with defaultbyte
 PASS  run_misc.at:3488             CALL with OMITTED parameter
 SKIP  run_misc.at:3527             CALL in from C, cob_call_params explicitly set
@@ -585,7 +585,7 @@ SKIP  run_misc.at:6106             ON EXCEPTION clause of DISPLAY
 SKIP  run_misc.at:6131             EC-SCREEN-LINE-NUMBER and -STARTING-COLUMN
 SKIP  run_misc.at:6172             LINE/COLUMN 0 exceptions
 PASS  run_misc.at:6210             SET LAST EXCEPTION TO OFF
-CERR  run_misc.at:6246             void PROCEDURE
+PASS  run_misc.at:6246             void PROCEDURE
 SKIP  run_misc.at:6275             Figurative constants to numeric field
 SKIP  run_misc.at:6337             MF FIGURATIVE to NUMERIC
 SKIP  run_misc.at:6472             CALL RETURNING
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 431  FAIL 28  CERR 35  XERR 0  SKIP 199
+PASS 436  FAIL 28  CERR 30  XERR 0  SKIP 199
