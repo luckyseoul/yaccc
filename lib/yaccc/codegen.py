@@ -279,6 +279,10 @@ class CodeGen(ReportWriterGen, DebugGen):
                 self.protos.append(f"static int {alias}(int, unsigned char **);")
                 self.funcs.append(f"static int {alias}(int cob_argc, unsigned char **cob_argv)")
                 self.funcs.append('{')
+                # an ENTRY point may be called while its program is active
+                # (that is how a program calls its own entry points), which the
+                # not-RECURSIVE guard would otherwise reject
+                self.funcs.append("\tcob_entry_reentry = 1;")
                 self.funcs.append(f"\tcob_enter_at({k});")
                 self.funcs.append(f"\treturn {self.prog_syms[id(p)]}(cob_argc, cob_argv);")
                 self.funcs.append('}')
@@ -1045,7 +1049,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         prog._active_sym = active
         if not prog.is_recursive:
             # a program that isn't RECURSIVE can't be called while it is active
-            em(f"if ({active}) {{ cob_call_rejected = 1; return 0; }}")
+            em(f"if ({active} && !cob_entry_reentry) {{ cob_call_rejected = 1; return 0; }}")
+            em("cob_entry_reentry = 0;")
         em(f"{active}++;")
         em(f"cob_module_push({c_string(prog.ext_name)}, cob_argc);")
         em(f"cob_set_collating({ctx.coll or 'NULL'});")
@@ -2987,6 +2992,9 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("xmlw cob_xw;")
         em("cob_xml_code_reset();")
         em(f"cob_xml_init(&cob_xw, {self.field(s.out)});")
+        if prefix is not None:
+            # NAMESPACE-PREFIX must be an XML name: XML-CODE 419 otherwise
+            em(f"if (cob_xml_bad_prefix({prefix})) cob_xml_abort(&cob_xw, 419);")
         if s.declaration:
             em("cob_xml_declaration(&cob_xw);")
         self.xml_member(src, names, types, s, prefix, top=True)

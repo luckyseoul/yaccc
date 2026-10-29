@@ -2165,7 +2165,8 @@ static cob_frame_info frames[256];
 static int frame_depth;
 const int *cob_call_sizes;                  /* set by a CALL for the program it enters */
 const unsigned char *cob_call_arg_omitted;
-int cob_entry_pending;      /* ENTRY index a caller asked to start at */  /* per argument: 1 when OMITTED */
+int cob_entry_pending;      /* ENTRY index a caller asked to start at */
+int cob_entry_reentry;      /* this call enters an ENTRY point of an active program */  /* per argument: 1 when OMITTED */
 static unsigned char ncp_data[4];
 static const cob_attr attr_ncp = { COB_NUM_BINARY, 9, 0, COB_F_SIGNED, NULL, 0 };
 cob_field cob_ncp_reg = { 4, ncp_data, &attr_ncp };
@@ -2703,13 +2704,11 @@ int cob_decl_which;
 void cob_register_program(const char *name, cob_prog_fn fn, cob_cancel_fn cancel)
 {
 	for (int i = 0; i < nprogs; i++) {
-		/* a repeat registration replaces the earlier one: a module loaded
-		 * later owns its entry points, which is what COB_PRE_LOAD expects */
-		if (strcasecmp(progs[i].name, name) == 0) {
-			progs[i].fn = fn;
-			progs[i].cancel = cancel;
+		/* the first program or entry point with a name owns it: GnuCOBOL's
+		 * loader keeps the earlier definition when two loaded modules define
+		 * the same ENTRY name (COB_PRE_LOAD with entry points) */
+		if (strcasecmp(progs[i].name, name) == 0)
 			return;
-		}
 	}
 	if (nprogs < MAX_PROGS) {
 		progs[nprogs].name = name;

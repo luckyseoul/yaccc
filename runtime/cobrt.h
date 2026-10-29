@@ -672,6 +672,8 @@ typedef struct {
 	int depth;
 	size_t empty_start;
 	int last_was_empty;
+	int abort;                  /* a name or namespace was rejected: stop */
+	int hex[258];               /* per depth: content written as hex (417) */
 } xmlw;
 void cob_xml_code_reset(void);
 int cob_xml_code_value(void);
@@ -685,6 +687,9 @@ void cob_xml_text_just(xmlw *w, cob_field *f);
 void cob_xml_num(xmlw *w, cob_field *f, int dpc);
 void cob_xml_attr(xmlw *w, const char *prefix, const char *name, cob_field *f);
 void cob_xml_finish(xmlw *w, cob_field *count_in);
+int cob_xml_bad_uri(const cob_field *f);
+void cob_xml_abort(xmlw *w, int code);
+int cob_xml_bad_prefix(const char *p);
 int cob_xml_all(const cob_field *f, int c);
 int cob_xml_nonnumeric(const cob_field *f);
 size_t cob_xml_mark(xmlw *w);
@@ -697,6 +702,7 @@ void cob_module_pop(void);
 extern const int *cob_call_sizes;
 extern const unsigned char *cob_call_arg_omitted;
 extern int cob_entry_pending;
+extern int cob_entry_reentry;
 extern cob_field cob_ncp_reg;            /* NUMBER-OF-CALL-PARAMETERS */
 int cob_frame_nargs(void);
 int cob_frame_param_size(int i);

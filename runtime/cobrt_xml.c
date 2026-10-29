@@ -30,14 +30,100 @@ void cob_xml_init(xmlw *w, cob_field *out)
 	w->cap = out->size;
 	w->len = 0;
 	w->overflow = 0;
-	for (int i = 0; i < 258; i++)
+	for (int i = 0; i < 258; i++) {
 		w->pending[i] = 0;
+		w->hex[i] = 0;
+	}
 	w->depth = 0;
 	w->last_was_empty = 0;
+	w->abort = 0;
+}
+
+/* one character of a UTF-8 stream: length of the sequence at p, 0 if invalid */
+static int utf8_len(const unsigned char *p, size_t n)
+{
+	unsigned char c = p[0];
+	if (c < 0x80)
+		return 1;
+	int extra;
+	unsigned cp;
+	if ((c & 0xE0) == 0xC0) { extra = 1; cp = c & 0x1F; }
+	else if ((c & 0xF0) == 0xE0) { extra = 2; cp = c & 0x0F; }
+	else if ((c & 0xF8) == 0xF0) { extra = 3; cp = c & 0x07; }
+	else return 0;
+	if ((size_t)extra >= n)
+		return 0;
+	for (int i = 1; i <= extra; i++) {
+		if ((p[i] & 0xC0) != 0x80)
+			return 0;
+		cp = (cp << 6) | (p[i] & 0x3F);
+	}
+	if (cp < 0x80 || (cp >= 0xD800 && cp <= 0xDFFF) || cp > 0x10FFFF)
+		return 0;
+	return extra + 1;
+}
+
+/* is the field a character string XML can hold? (checked as UTF-8) */
+static int valid_xml_text(const unsigned char *p, size_t n)
+{
+	for (size_t i = 0; i < n; ) {
+		unsigned char c = p[i];
+		if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+			return 0;
+		if (c < 0x80) {
+			i++;
+			continue;
+		}
+		int l = utf8_len(p + i, n - i);
+		if (!l)
+			return 0;
+		i += (size_t)l;
+	}
+	return 1;
+}
+
+/* a namespace name (a URI) must be a character string; an element prefix must
+ * be an XML name */
+int cob_xml_bad_uri(const cob_field *f)
+{
+	return !valid_xml_text(f->data, f->size);
+}
+
+int cob_xml_bad_prefix(const char *p)
+{
+	if (!p || !*p)
+		return 0;
+	for (const char *q = p; *q; q++) {
+		unsigned char c = (unsigned char)*q;
+		if (c == ' ' || c == '\t')
+			break;                      /* trailing padding */
+		if (c >= 0x80)
+			continue;
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+		      (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.'))
+			return 1;
+		if (q == p && c >= '0' && c <= '9')
+			return 1;
+	}
+	return 0;
+}
+
+/* XML-CODE values GnuCOBOL reports for the failures this statement can have */
+#define XML_ERR_BUFFER   400
+#define XML_ERR_NAMESPACE 416
+#define XML_ERR_CONTENT  417
+#define XML_ERR_PREFIX   419
+
+void cob_xml_abort(xmlw *w, int code)
+{
+	w->abort = 1;
+	cob_set_int(&cob_xml_code_reg, code);
 }
 
 static void xput(xmlw *w, int c)
 {
+	if (w->abort)
+		return;
 	if (w->len < w->cap)
 		w->dst[w->len] = (unsigned char)c;
 	else
@@ -75,7 +161,17 @@ void cob_xml_declaration(xmlw *w)
 void cob_xml_root_namespace(xmlw *w, const char *prefix, cob_field *uri)
 {
 	/* xmlns:pre="uri" on the root element, when both are given */
-	if (!prefix || !*prefix || !uri || uri->size == 0)
+	if (w->abort || !uri || uri->size == 0)
+		return;
+	if (cob_xml_bad_uri(uri)) {
+		cob_xml_abort(w, XML_ERR_NAMESPACE);
+		return;
+	}
+	if (cob_xml_bad_prefix(prefix)) {
+		cob_xml_abort(w, XML_ERR_PREFIX);
+		return;
+	}
+	if (!prefix || !*prefix)
 		return;
 	int all_space = 1;
 	for (size_t i = 0; i < uri->size; i++)
@@ -131,6 +227,8 @@ void cob_xml_elem_close(xmlw *w, const char *prefix, const char *name)
 	}
 	w->last_was_empty = 0;
 	xputs(w, "</");
+	if (w->depth < 258 && w->hex[w->depth])
+		xputs(w, "hex.");
 	if (prefix && *prefix) {
 		xputs(w, prefix);
 		xput(w, ':');
@@ -141,6 +239,42 @@ void cob_xml_elem_close(xmlw *w, const char *prefix, const char *name)
 
 /* text content, escaped; leading and trailing spaces of an alphanumeric item
  * are kept as they are (X"20" is meaningful in XML) */
+/* write the content as hex, naming the element hex.<name>: GnuCOBOL's way of
+ * showing a value that is not a legal character string (XML-CODE 417) */
+static void emit_hex(xmlw *w, const unsigned char *p, size_t n)
+{
+	static const char hx[] = "0123456789abcdef";
+	for (size_t i = 0; i < n; i++) {
+		xput(w, hx[p[i] >> 4]);
+		xput(w, hx[p[i] & 0x0F]);
+	}
+}
+
+static int hex_mode(xmlw *w, const unsigned char *p, size_t n)
+{
+	if (valid_xml_text(p, n))
+		return 0;
+	int d = w->depth - 1;
+	if (d >= 0 && d < 258 && w->pending[d]) {
+		/* the start tag is still open: insert "hex." after its '<' so the
+		 * element is named hex.<name> */
+		size_t at = w->open_at[d];
+		const char ins[] = "hex.";
+		size_t nins = 4;
+		if (w->len + nins <= w->cap) {
+			memmove(w->dst + at + 1 + nins, w->dst + at + 1, w->len - at - 1);
+			memcpy(w->dst + at + 1, ins, nins);
+			w->len += nins;
+		} else
+			w->overflow = 1;
+		memmove(w->dst + at + 1 + nins, w->dst + at + 1, 0);
+		if (w->depth - 1 < 258)
+			w->hex[w->depth - 1] = 1;
+	}
+	cob_set_int(&cob_xml_code_reg, XML_ERR_CONTENT);
+	return 1;
+}
+
 static void emit_text(xmlw *w, const unsigned char *p, size_t n)
 {
 	for (size_t i = 0; i < n; i++) {
@@ -162,12 +296,19 @@ static void emit_text(xmlw *w, const unsigned char *p, size_t n)
 
 void cob_xml_text(xmlw *w, cob_field *f)
 {
-	flush_open(w);
+	if (w->abort)
+		return;
 	/* trailing spaces are not significant in element content, but one is kept
 	 * so that a value of all spaces still has content */
 	size_t n = f->size;
 	while (n > 1 && f->data[n - 1] == ' ')
 		n--;
+	int hex = hex_mode(w, f->data, n);      /* while the start tag is still open */
+	flush_open(w);
+	if (hex) {
+		emit_hex(w, f->data, n);
+		return;
+	}
 	emit_text(w, f->data, n);
 }
 
@@ -312,13 +453,21 @@ static void collapse_empty(xmlw *w)
 
 void cob_xml_finish(xmlw *w, cob_field *count_in)
 {
+	if (w->abort) {
+		/* the statement was rejected before anything was written */
+		for (size_t i = 0; i < w->cap; i++)
+			w->dst[i] = ' ';
+		return;
+	}
 	collapse_empty(w);
 	for (size_t i = w->len < w->cap ? w->len : w->cap; i < w->cap; i++)
 		w->dst[i] = ' ';
 	if (w->overflow)
-		cob_set_int(&cob_xml_code_reg, 1);
+		cob_set_int(&cob_xml_code_reg, XML_ERR_BUFFER);
 	if (count_in)
-		cob_set_int(count_in, (cob_s64)w->len);
+		/* the length the document needs; a short buffer is reported as one
+		 * short of what the caller must provide, the terminator included */
+		cob_set_int(count_in, (cob_s64)(w->len + (w->overflow ? 1 : 0)));
 }
 
 /* SUPPRESS WHEN <figurative>: is every byte of the item that byte? */

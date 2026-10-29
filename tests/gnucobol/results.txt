@@ -553,8 +553,8 @@ PASS  run_misc.at:3047             PIC ZZZ-, ZZZ+
 SKIP  run_misc.at:3100             PERFORM type OSVS
 SKIP  run_misc.at:3137             Sticky LINKAGE
 PASS  run_misc.at:3184             COB_PRE_LOAD
-FAIL  run_misc.at:3210             COB_PRE_LOAD with entry points
-FAIL  run_misc.at:3281             Lookup ENTRY from main executable
+PASS  run_misc.at:3210             COB_PRE_LOAD with entry points
+PASS  run_misc.at:3281             Lookup ENTRY from main executable
 PASS  run_misc.at:3322             COB_LOAD_CASE=UPPER test
 PASS  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
 PASS  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
@@ -628,7 +628,7 @@ SKIP  run_misc.at:12498            runtime checks within conditions
 SKIP  run_misc.at:12612            libcob version check
 SKIP  run_ml.at:19                 XML GENERATE general
 PASS  run_ml.at:127                XML GENERATE SUPPRESS
-FAIL  run_ml.at:204                XML GENERATE exceptions
+PASS  run_ml.at:204                XML GENERATE exceptions
 PASS  run_ml.at:300                XML GENERATE record selection
 PASS  run_ml.at:344                XML GENERATE trimming
 PASS  run_ml.at:441                XML DPC-IN-DATA directive
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 472  FAIL 23  CERR 0  XERR 0  SKIP 198
+PASS 475  FAIL 20  CERR 0  XERR 0  SKIP 198
