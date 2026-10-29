@@ -462,6 +462,7 @@ void cob_switch_set(int n, int v);
  * ON, TRUE or 1). DEBUG-ITEM layout: DEBUG-LINE 0, DEBUG-NAME 7,
  * DEBUG-SUB-1/2/3 38/44/50, DEBUG-CONTENTS 56. */
 extern int cob_debug_on;
+int cob_debug_enabled(void);
 enum { COB_DBG_FALL, COB_DBG_START, COB_DBG_PERFORM, COB_DBG_GOTO, COB_DBG_SORT_IN,
        COB_DBG_SORT_OUT, COB_DBG_MERGE_OUT, COB_DBG_USE };
 void cob_dbg_proc(unsigned char *di, int dilen, int line, const char *name, int cause);
@@ -583,6 +584,7 @@ cob_field *cob_fn_exception_status(void);
 size_t cob_fn_content_length(const unsigned char *p);
 cob_field *cob_fn_content_of(const unsigned char *p, cob_s64 len);
 void cob_clear_exception(void);
+void cob_set_env(const cob_field *name, const cob_field *value);
 const char *cob_chain_arg(int n);   /* CHAINING argument n, or NULL */
 int cob_param_omitted(int n);       /* was CALL argument n left out? */
 void cob_enter_at(int n);           /* CALL to an ENTRY point: start there */

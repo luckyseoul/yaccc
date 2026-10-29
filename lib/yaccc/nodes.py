@@ -666,6 +666,7 @@ class Program:
     constants: dict = field(default_factory=dict)
     global_constants: dict = field(default_factory=dict)
     typedefs: dict = field(default_factory=dict)     # name -> template item
+    proto_progs: dict = field(default_factory=dict)  # REPOSITORY PROGRAM: name -> ext name
     using: List[tuple] = field(default_factory=list)       # (mode, DataRef)
     using_sizes: List[Any] = field(default_factory=list)  # BY VALUE ... SIZE n
     chaining: list = field(default_factory=list)          # PROCEDURE DIVISION CHAINING items

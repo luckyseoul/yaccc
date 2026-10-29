@@ -213,7 +213,7 @@ class DebugGen:
         """Fill DEBUG-ITEM and perform the debugging section, unless the
         object-time switch is off or a debugging section is running."""
         em = self.em
-        em("if (cob_debug_on && !cob_dbg_busy) {")
+        em("if (cob_debug_enabled() && !cob_dbg_busy) {")
         em.ind += 1
         em(fill)
         em("cob_dbg_busy = 1;")

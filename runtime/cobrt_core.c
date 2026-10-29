@@ -2494,6 +2494,28 @@ void cob_accept_discard(void)
 		;
 }
 
+/* SET ENVIRONMENT "name" TO value */
+void cob_set_env(const cob_field *name, const cob_field *value)
+{
+	char n[256], v[1024];
+	size_t nl = name->size < sizeof n - 1 ? name->size : sizeof n - 1;
+	memcpy(n, name->data, nl);
+	n[nl] = 0;
+	size_t vl = value->size < sizeof v - 1 ? value->size : sizeof v - 1;
+	memcpy(v, value->data, vl);
+	v[vl] = 0;
+	/* trailing spaces in a literal are padding, not part of the name */
+	while (nl && n[nl - 1] == ' ')
+		n[--nl] = 0;
+	while (vl && v[vl - 1] == ' ')
+		v[--vl] = 0;
+#if defined(_WIN32)
+	_putenv_s(n, v);
+#else
+	setenv(n, v, 1);
+#endif
+}
+
 int cob_accept_env(cob_field *f, const cob_field *name)
 {
 	char nm[256];
@@ -2579,11 +2601,21 @@ void cob_switch_set(int n, int v)
 
 int cob_debug_on;
 
-__attribute__((constructor)) static void init_debug_switch(void)
+/* Is the object-time debug switch on? Read every time, because a program can
+ * change it with SET ENVIRONMENT "COB_SET_DEBUG" while it runs. */
+int cob_debug_enabled(void)
 {
 	const char *v = getenv("COB_SET_DEBUG");
-	cob_debug_on = v && (strcasecmp(v, "Y") == 0 || strcasecmp(v, "YES") == 0 || strcasecmp(v, "ON") == 0 ||
-	                     strcasecmp(v, "TRUE") == 0 || strcmp(v, "1") == 0);
+	int on = v && (strcasecmp(v, "Y") == 0 || strcasecmp(v, "YES") == 0 ||
+	               strcasecmp(v, "ON") == 0 || strcasecmp(v, "TRUE") == 0 ||
+	               strcmp(v, "1") == 0);
+	cob_debug_on = on;
+	return on;
+}
+
+__attribute__((constructor)) static void init_debug_switch(void)
+{
+	cob_debug_enabled();
 }
 
 #define DBG_NAME 7

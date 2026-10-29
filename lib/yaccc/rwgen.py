@@ -146,11 +146,24 @@ class ReportWriterGen:
         h = rd.heading or 1
         fd = rd.first_detail or h
         ld = rd.last_detail or rd.footing or pl
-        ft = rd.footing or rd.last_detail or pl
+        # where the page footing sits: an explicit FOOTING clause wins, then a
+        # PAGE FOOTING group's own LINE NUMBER (which is how reports usually
+        # say it), then LAST DETAIL
+        ft = rd.footing or self.page_footing_line(rd) or rd.last_detail or pl
         if not (1 <= h <= fd <= ld <= ft <= pl):
             raise CompileError("PAGE clause: HEADING <= FIRST DETAIL <= LAST DETAIL <= FOOTING <= PAGE LIMIT "
                                "is required", rd.loc)
         ri.page = (pl, h, fd, ld, ft)
+
+    @staticmethod
+    def page_footing_line(rd):
+        """The absolute line a PAGE FOOTING group is presented on, or 0."""
+        for g in rd.groups:
+            t = getattr(g, 'rw_type', None)
+            ln = getattr(g, 'rw_line', None)
+            if t and t[0] == 'PF' and ln and ln[0] == 'ABS':
+                return ln[1]
+        return 0
 
     def rw_group(self, ri, gi):
         g = gi.item

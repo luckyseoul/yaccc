@@ -375,6 +375,19 @@ class Parser:
                             while self.is_user_word():
                                 self.udfs.add(self.next().up)
                             continue
+                        if kind == 'PROGRAM':
+                            # REPOSITORY. PROGRAM p [AS "ext"]: a CALL p uses
+                            # the external name
+                            while self.is_user_word():
+                                nm = self.next().up
+                                ext = nm
+                                if self.accept('AS'):
+                                    t = self.peek()
+                                    if t.kind == 'STR':
+                                        self.next()
+                                        ext = t.val.decode('latin-1')
+                                prog.proto_progs[nm] = ext
+                            continue
                     self.skip_to_period()
             elif self.accept('FILE-CONTROL'):
                 self.accept_kind('.')
@@ -2541,6 +2554,14 @@ class Parser:
             self.next(); self.next()
             self.expect('TO')
             return SetStmt(loc, 'EXCEPTION', [], self.expect('OFF').up)
+        # SET ENVIRONMENT "name" TO value: set a process environment variable
+        if self.accept('ENVIRONMENT'):
+            self.accept('IS')
+            name = self.parse_operand()
+            self.expect('TO')
+            st = SetStmt(loc, 'ENVIRONMENT', [], self.parse_operand())
+            st.addr_ref = name
+            return st
         # SET ADDRESS OF item TO pointer: point a LINKAGE item at storage
         if self.is_word('ADDRESS') and self.is_word('OF', k=1):
             self.next(); self.next()
@@ -2616,6 +2637,10 @@ class Parser:
             prog = StrLit(t.val)
         else:
             prog = self.parse_identifier()
+        if isinstance(prog, DataRef) and not prog.quals and not prog.subs \
+                and prog.name in getattr(self.prog, 'proto_progs', {}):
+            # CALL of a REPOSITORY program prototype: call under its ext name
+            prog = StrLit(self.prog.proto_progs[prog.name].encode('latin-1'))
         args = []
         if self.accept('USING'):
             mode = 'REFERENCE'

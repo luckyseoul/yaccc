@@ -3786,6 +3786,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 it = self.check_receiving(t)
                 em(f"cob_pointer_set({self.field(t)}, (void *)cob_resolve_name({c_string(name)}));")
             return
+        if s.kind == 'ENVIRONMENT':
+            em(f"cob_set_env({self.field(s.addr_ref)}, {self.field(s.value)});")
+            return
         if s.kind == 'ADDRESS':
             # SET ADDRESS OF item TO <pointer>: rebind a LINKAGE item's storage
             it = self.resolve(s.addr_ref)

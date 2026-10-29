@@ -405,7 +405,7 @@ PASS  run_fundamental.at:4767      USE FOR DEBUGGING (no DEBUGGING MODE)
 PASS  run_fundamental.at:4812      USE FOR DEBUGGING (COB_SET_DEBUG deactivated)
 PASS  run_fundamental.at:4857      USE FOR DEBUGGING ON ALL PROCEDURES
 PASS  run_fundamental.at:4908      USE FOR DEBUGGING ON procedure
-CERR  run_fundamental.at:4956      USE FOR DEBUGGING (COB_SET_DEBUG switched)
+PASS  run_fundamental.at:4956      USE FOR DEBUGGING (COB_SET_DEBUG switched)
 SKIP  run_fundamental.at:5005      USE FOR DEBUGGING ON [ALL] REFERENCES OF field
 PASS  run_fundamental.at:5073      USE FOR DEBUGGING, reference within DEBUGGING
 SKIP  run_fundamental.at:5114      USE FOR DEBUGGING, time of execution
@@ -594,7 +594,7 @@ SKIP  run_misc.at:6546             READY TRACE / RESET TRACE
 SKIP  run_misc.at:6908             Trace feature with subroutine
 SKIP  run_misc.at:8977             stack and dump feature
 SKIP  run_misc.at:9700             Test dump feature (2)
-CERR  run_misc.at:9965             CALL with program prototypes
+PASS  run_misc.at:9965             CALL with program prototypes
 PASS  run_misc.at:10021            REDEFINES values on FILLER and INITIALIZE
 SKIP  run_misc.at:10076            PICTURE with constant-name
 PASS  run_misc.at:10104            Quote marks in comment paragraphs
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 452  FAIL 30  CERR 14  XERR 0  SKIP 197
+PASS 454  FAIL 30  CERR 12  XERR 0  SKIP 197
