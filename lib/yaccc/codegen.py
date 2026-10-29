@@ -1756,6 +1756,17 @@ class CodeGen(ReportWriterGen, DebugGen):
         finally:
             self.prog = save
 
+    @staticmethod
+    def float_text(n):
+        """A floating-point literal as a C double constant."""
+        t = n.float_text
+        # C accepts 1.5e+307 and 1.5E-307 alike; strip a leading '+'
+        if t.startswith('+'):
+            t = t[1:]
+        if 'e' not in t.lower():
+            t += 'e0'
+        return t + '' if ('.' in t.lower().split('e')[0]) else ''
+
     def length_of(self, e):
         r = e.ref
         if isinstance(r, DataRef):
@@ -1774,6 +1785,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         return f"({self.field(r)})->size"
 
     def dec(self, e):
+        if isinstance(e, NumLit) and getattr(e, 'float_text', None):
+            return f"cob_d_from_double({self.float_text(e)})"
         if isinstance(e, FuncCall) and e.name in self.udf_names:
             return f"cob_d_get({self.udf_field(e)})"
         if isinstance(e, CDec):
@@ -2205,6 +2218,9 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def rel(self, l, op, r):
         cop = CMP_OP[op]
+        if self.is_float_operand(l) or self.is_float_operand(r):
+            return f"(cob_operand_double({self.field(l)}) {cop} cob_operand_double({self.field(r)}))"
+
         if isinstance(l, AddressOf) or isinstance(r, AddressOf) or \
                 self._is_pointer(l) or self._is_pointer(r):
             return f"({self._addr(l)} {cop} {self._addr(r)})"
@@ -2244,6 +2260,17 @@ class CodeGen(ReportWriterGen, DebugGen):
         except Exception:
             return False
         return getattr(it, 'type', None) == T_POINTER
+
+    def is_float_operand(self, e):
+        """A literal that only a double can hold, so the comparison has to be
+        done in double.
+
+        A COMP-1/COMP-2 item compared with an ordinary literal is NOT one of
+        these: GnuCOBOL rounds the item to the 7 (or 15) significant digits its
+        USAGE implies before comparing, and the decimal path already does that.
+        Comparing in raw double instead made "ADD 360 TO x" fail for
+        FLOAT-SHORT x, because 483.45599... is not 483.456."""
+        return isinstance(e, NumLit) and getattr(e, 'float_text', None) is not None
 
     def _addr(self, e):
         """A pointer value as a C expression, for comparing ADDRESS OF."""

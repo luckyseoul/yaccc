@@ -39,6 +39,11 @@ class Backtrack(Exception):
 
 def make_numlit(text, loc=None):
     t = text
+    if 'E' in t.upper() and not t.upper().startswith('H'):
+        # a floating-point literal kept in exponent form
+        neg = t.startswith('-')
+        num = t.lstrip('+-')
+        return NumLit(text=t, digits='0', scale=0, neg=neg, float_text=num)
     neg = t.startswith('-')
     t = t.lstrip('+-')
     if '.' in t:
@@ -950,10 +955,14 @@ class Parser:
                 item.rw_present = (cond, w == 'ABSENT')
                 return True
             if self.accept('AFTER'):
+                # PRESENT AFTER [NEW|COMPLETE] <control> OR PAGE OR <control>:
+                # names a page or a control; PAGE is a keyword here, not a name
                 self.accept('NEW', 'COMPLETE')
-                self.parse_identifier()
-                while self.accept('OR'):
-                    self.accept('PAGE') or self.parse_identifier()
+                while True:
+                    if not self.accept('PAGE'):
+                        self.parse_identifier()
+                    if not self.accept('OR'):
+                        break
                 return True
             return False
         if w in ('LINE', 'LINES'):

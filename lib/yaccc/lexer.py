@@ -163,7 +163,13 @@ class Lexer:
                     if m and (k + m.end() >= n or text[k + m.end()] in ' .,;)'):
                         lit = text[i:k].replace(',', '.') if self.decimal_comma else text[i:k]
                         expo = int(m.group(0)[1:])
-                        toks.append(Tok('NUM', _float_to_fixed(lit, expo), loc))
+                        fixed = _float_to_fixed(lit, expo)
+                        # A literal with a large exponent cannot be held as a
+                        # 38-digit decimal. Keep it in floating form; the
+                        # compiler emits it as a C double.
+                        if len(fixed.lstrip('+-').replace('.', '').lstrip('0') or '0') > 38:
+                            fixed = f"{lit}E{expo:+d}"
+                        toks.append(Tok('NUM', fixed, loc))
                         i = k + m.end()
                         continue
                 lit = text[i:k]

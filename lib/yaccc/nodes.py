@@ -35,6 +35,7 @@ class NumLit(Expr):
     digits: str                     # digits only, e.g. "1250"
     scale: int
     neg: bool
+    float_text: Any = None          # exponent form, when too large for a decimal
 
     @property
     def is_integer(self):

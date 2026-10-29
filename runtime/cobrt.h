@@ -350,6 +350,21 @@ int cob_d_sign(cob_dec a);
 int cob_d_set(cob_field *f, cob_dec d, int opt);
 cob_s64 cob_d_to_int(cob_dec d);
 double cob_d_to_double(cob_dec d);
+/* a field as a C double, for comparisons that a 38-digit decimal cannot hold */
+static inline double cob_operand_double(const cob_field *f)
+{
+	if (f->attr->type == COB_NUM_FLOAT && f->size == 4) {
+		float x;
+		memcpy(&x, f->data, sizeof x);
+		return (double)x;
+	}
+	if (f->attr->type == COB_NUM_DOUBLE && f->size == 8) {
+		double x;
+		memcpy(&x, f->data, sizeof x);
+		return x;
+	}
+	return cob_d_to_double(cob_d_get((cob_field *)f));
+}
 cob_dec cob_d_from_double(double x);
 cob_s64 cob_get_int(const cob_field *f);
 void cob_set_int(cob_field *f, cob_s64 v);
