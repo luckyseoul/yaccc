@@ -151,9 +151,9 @@ PASS  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
 PASS  run_file.at:2168             ASSIGN DYNAMIC with empty data item
 PASS  run_file.at:2208             ASSIGN DYNAMIC with unset implicit data item
 PASS  run_file.at:2240             INDEXED file key-name
-FAIL  run_file.at:2282             INDEXED file sparse/split keys
-FAIL  run_file.at:2802             INDEXED file split keys WITH DUPLICATES
-FAIL  run_file.at:2960             INDEXED file variable length record
+PASS  run_file.at:2282             INDEXED file sparse/split keys
+PASS  run_file.at:2802             INDEXED file split keys WITH DUPLICATES
+PASS  run_file.at:2960             INDEXED file variable length record
 SKIP  run_file.at:3236             INDEXED sample
 PASS  run_file.at:3639             WRITE + REWRITE FILE name
 PASS  run_file.at:3792             START RELATIVE (1)
@@ -178,7 +178,7 @@ PASS  run_file.at:5103             SEQUENTIAL file REWRITE
 SKIP  run_file.at:5215             SEQUENTIAL file with LOCK MODE EXCLUSIVE
 SKIP  run_file.at:5283             SEQUENTIAL file with OPEN WITH LOCK
 SKIP  run_file.at:5349             SEQUENTIAL file with SHARING NO
-FAIL  run_file.at:5417             SEQUENTIAL file with SHARING READ ONLY
+PASS  run_file.at:5417             SEQUENTIAL file with SHARING READ ONLY
 SKIP  run_file.at:5490             SEQUENTIAL file with blocked lock
 PASS  run_file.at:5561             RELATIVE SEQUENTIAL basic I/O
 PASS  run_file.at:5595             RELATIVE RANDOM basic I/O
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 465  FAIL 30  CERR 0  XERR 0  SKIP 198
+PASS 469  FAIL 26  CERR 0  XERR 0  SKIP 198

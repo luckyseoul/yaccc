@@ -787,7 +787,9 @@ typedef struct cob_file {
 	cob_file_key keys[COB_MAX_KEYS];
 	int is_sort;
 	int has_declarative;
+	int sharing;             /* 0 none, 1 READ ONLY, 2 exclusive (SHARING NO) */
 	/* state */
+	int lockfd;              /* open while SHARING holds a lock on the file */
 	int open_mode;
 	FILE *fp;
 	char path[1024];
@@ -796,6 +798,7 @@ typedef struct cob_file {
 	size_t cur_size;
 	char stat[2];
 	int at_end;
+	int no_current;          /* last START failed: no current record (46) */
 	int linage_lines;
 	void *ix;               /* relative / indexed state */
 	/* sort */

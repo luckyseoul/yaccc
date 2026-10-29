@@ -689,8 +689,11 @@ class Parser:
                 self.next()
             elif self.accept('SHARING'):
                 self.accept('WITH')
+                words = set()
                 while self.is_word('ALL', 'OTHER', 'NO', 'READ', 'ONLY', 'OTHERS'):
-                    self.next()
+                    words.add(self.next().up)
+                # SHARING NO is exclusive, READ ONLY shared, ALL / OTHER shared
+                fc.sharing = 2 if 'NO' in words else 1
             elif self.accept('COLLATING'):
                 self.accept('SEQUENCE')
                 self.accept('IS')

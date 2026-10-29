@@ -4,6 +4,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/file.h>
+#include <fcntl.h>
 
 struct cob_irec {
 	unsigned char *data;
@@ -25,6 +27,7 @@ typedef struct {
 	cob_u64 next_seq;
 	cob_irec **ord[COB_MAX_KEYS];
 	int ord_valid[COB_MAX_KEYS];
+	size_t ord_n[COB_MAX_KEYS];   /* records indexed under each key */
 	int key_ref;
 	unsigned char pos_key[4096];
 	size_t pos_keylen;
@@ -266,6 +269,45 @@ static int ord_cmp(const void *pa, const void *pb)
 	return sa < sb ? -1 : (sa > sb ? 1 : 0);
 }
 
+/* SUPPRESS WHEN: is this record left out of key k's index? The clause names a
+ * value; with ALL every segment must be that value, otherwise any one of them
+ * must. A single character stands for a field filled with it, which is how
+ * GnuCOBOL reads "SUPPRESS WHEN ALL '*'" (its cobc emits char_suppress). */
+static int key_suppressed(const cob_file *f, int k, const unsigned char *rec)
+{
+	const cob_file_key *key = &f->keys[k];
+	if (!key->supp || !key->supplen)
+		return 0;
+	unsigned char kbuf[COB_KEY_MAX_SEGS * 512];
+	gather_key(f, k, rec, kbuf);
+	int seen = 0;
+	size_t off = 0;
+	for (int i = 0; i < key->nseg && i < COB_KEY_MAX_SEGS; i++) {
+		const unsigned char *seg = kbuf + off;
+		size_t n = key->seg[i].size;
+		off += n;
+		int hit;
+		if (key->supplen == 1) {
+			hit = n > 0;
+			for (size_t b = 0; b < n; b++)
+				if (seg[b] != key->supp[0]) {
+					hit = 0;
+					break;
+				}
+		} else {
+			hit = n == key->supplen && memcmp(seg, key->supp, n) == 0;
+		}
+		if (key->supp_all) {
+			if (!hit)
+				return 0;
+			seen++;
+		} else if (hit) {
+			return 1;
+		}
+	}
+	return key->supp_all && seen == key->nseg;
+}
+
 static cob_irec **get_order(cob_file *f, int k)
 {
 	ixstate *s = ixs(f);
@@ -274,13 +316,31 @@ static cob_irec **get_order(cob_file *f, int k)
 	if (!s->ord_valid[k]) {
 		free(s->ord[k]);
 		s->ord[k] = cob_malloc((s->n + 1) * sizeof(cob_irec *));
-		memcpy(s->ord[k], s->recs, s->n * sizeof(cob_irec *));
+		size_t m = 0;
+		for (size_t i = 0; i < s->n; i++) {
+			if (!s->recs[i])
+				continue;
+			if (f->keys[k].supp && key_suppressed(f, k, s->recs[i]->data))
+				continue;
+			s->ord[k][m++] = s->recs[i];
+		}
 		sort_file_ctx = f;
 		sort_key_ctx = k;
-		qsort(s->ord[k], s->n, sizeof(cob_irec *), ord_cmp);
+		qsort(s->ord[k], m, sizeof(cob_irec *), ord_cmp);
+		s->ord_n[k] = m;
 		s->ord_valid[k] = 1;
 	}
 	return s->ord[k];
+}
+
+/* how many records key k indexes: fewer than s->n for a sparse key */
+static size_t ord_count(cob_file *f, int k)
+{
+	ixstate *s = ixs(f);
+	if (k == 0)
+		return s->n;
+	get_order(f, k);
+	return s->ord_n[k];
 }
 
 /* binary search in ordering k: first index with (key prefix, seq) relation */
@@ -288,7 +348,7 @@ static size_t lower_bound(cob_file *f, int k, const unsigned char *key, size_t k
 {
 	ixstate *s = ixs(f);
 	cob_irec **ord = get_order(f, k);
-	size_t lo = 0, hi = s->n;
+	size_t lo = 0, hi = ord_count(f, k);
 	const cob_file_key *fk = &f->keys[k];
 	while (lo < hi) {
 		size_t mid = (lo + hi) / 2;
@@ -464,6 +524,44 @@ static int linage_params(cob_file *f)
 
 static int open_seq(cob_file *f, int mode);
 
+/* SHARING: a program that declares it keeps a lock on the file while it is
+ * open, so another process that opens the same file exclusively is told the
+ * file is in use (status 61) instead of writing over it. A program without the
+ * clause takes no lock, but still looks for one. */
+static int apply_sharing(cob_file *f)
+{
+	if (!f->path[0])
+		return COB_IO_OK;
+	int fd = open(f->path, O_RDWR);
+	if (fd < 0)
+		fd = open(f->path, O_RDONLY);
+	if (fd < 0)
+		return COB_IO_OK;               /* no file to lock (stdout, printer) */
+	if (f->sharing == 0) {
+		/* reading is compatible with another program's READ ONLY lock; any
+		   other mode needs the file to itself */
+		int op = f->open_mode == COB_OPEN_INPUT ? LOCK_SH : LOCK_EX;
+		int rc = flock(fd, op | LOCK_NB);
+		close(fd);
+		return rc == 0 ? COB_IO_OK : set_st(f, "61");
+	}
+	if (flock(fd, (f->sharing == 2 ? LOCK_EX : LOCK_SH) | LOCK_NB) != 0) {
+		close(fd);
+		return set_st(f, "61");
+	}
+	f->lockfd = fd;
+	return COB_IO_OK;
+}
+
+static void release_sharing(cob_file *f)
+{
+	if (f->lockfd > 0) {
+		flock(f->lockfd, LOCK_UN);
+		close(f->lockfd);
+		f->lockfd = 0;
+	}
+}
+
 int cob_open(cob_file *f, int mode)
 {
 	f->use_mode = mode;
@@ -473,11 +571,13 @@ int cob_open(cob_file *f, int mode)
 		return set_st(f, "38");
 	f->at_end = 0;
 	f->last_read_ok = 0;
+	f->no_current = 0;
 	f->linage_lines = 0;
 	f->eop = 0;
 	resolve_path(f);
 	if (!f->path[0])
 		return set_st(f, "31");         /* no file name: the file does not exist */
+	f->lockfd = 0;
 	if (f->organization == COB_ORG_SEQUENTIAL || f->organization == COB_ORG_LINE_SEQ) {
 		int rc = open_seq(f, mode);
 		if (rc == COB_IO_OK && f->linage_ctr && (mode == COB_OPEN_OUTPUT || mode == COB_OPEN_EXTEND)) {
@@ -487,6 +587,10 @@ int cob_open(cob_file *f, int mode)
 			}
 			cob_set_int(f->linage_ctr, 1);
 			f->lin_need_top = 1;
+		}
+		if (rc == COB_IO_OK && apply_sharing(f) != COB_IO_OK) {
+			cob_close_quiet(f);
+			return COB_IO_ERROR;
 		}
 		return rc;
 	}
@@ -601,6 +705,7 @@ int cob_close(cob_file *f)
 		ix_free(f);
 	}
 	f->open_mode = 0;
+	release_sharing(f);
 	unlink_open(f);
 	return set_st(f, "00");
 }
@@ -1134,7 +1239,7 @@ static long find_exact(cob_file *f, int k, const unsigned char *key)
 	size_t klen = f->keys[k].size;
 	size_t i = lower_bound(f, k, key, klen, 0, 0, 0);
 	cob_irec **ord = get_order(f, k);
-	if (i < s->n) {
+	if (i < ord_count(f, k)) {
 		unsigned char got[COB_KEY_MAX_SEGS * 512];
 		gather_key(f, k, ord[i]->data, got);
 		if (memcmp(got, key, f->keys[k].total ? f->keys[k].total : klen) == 0)
@@ -1156,6 +1261,8 @@ static int read_idx(cob_file *f, int next, int key_index)
 	ixstate *s = ixs(f);
 	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
 		return set_st(f, "47");
+	if (f->no_current && next != 0)
+		return set_st(f, "46");      /* a sequential READ after a failed START */
 	cob_irec *r;
 	if (next == 2) {
 		/* READ PREVIOUS: the record before the position (at it after a START) */
@@ -1192,7 +1299,7 @@ static int read_idx(cob_file *f, int next, int key_index)
 			i = lower_bound(f, k, s->pos_key, s->pos_keylen, s->pos_seq, k != 0, 0);
 		else
 			i = lower_bound(f, k, s->pos_key, s->pos_keylen, 0, 0, 0);
-		if (i >= s->n) {
+		if (i >= ord_count(f, k)) {
 			f->at_end = 1;
 			return set_st(f, "10");
 		}
@@ -1215,6 +1322,7 @@ static int read_idx(cob_file *f, int next, int key_index)
 		cob_set_int(f->size_field, (cob_s64)r->size);
 	s->last_read = r;
 	f->last_read_ok = 1;
+	f->no_current = 0;
 	return set_st(f, "00");
 }
 
@@ -1234,7 +1342,7 @@ static int alt_conflict(cob_file *f, const unsigned char *rec, cob_irec *self)
 			unsigned char krec[COB_KEY_MAX_SEGS * 512], kbuf2[COB_KEY_MAX_SEGS * 512];
 			gather_key(f, k, rec, krec);
 			size_t klen_k = f->keys[k].total ? f->keys[k].total : f->keys[k].size;
-			while (j < s->n && (gather_key(f, k, ord[j]->data, kbuf2),
+			while (j < ord_count(f, k) && (gather_key(f, k, ord[j]->data, kbuf2),
 			                    memcmp(kbuf2, krec, klen_k) == 0)) {
 				if (ord[j] != self)
 					return 1;
@@ -1338,28 +1446,29 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 	const unsigned char *key = keybuf;
 	cob_irec **ord = get_order(f, k);
 	size_t i;
+	size_t cnt = ord_count(f, k);      /* sparse keys index fewer records */
 	switch (op) {
 	case 5: /* FIRST */
 	case 6: /* LAST */
-		if (s->n == 0)
+		if (cnt == 0)
 			return set_st(f, "23");
-		i = op == 5 ? 0 : s->n - 1;
+		i = op == 5 ? 0 : cnt - 1;
 		break;
 	case 0: /* EQ */
 		i = lower_bound(f, k, key, keylen, 0, 0, 0);
 		unsigned char got[COB_KEY_MAX_SEGS * 512];
-		gather_key(f, k, i < s->n ? ord[i]->data : key, got);
-		if (i >= s->n || memcmp(got, key, keylen) != 0)
+		gather_key(f, k, i < cnt ? ord[i]->data : key, got);
+		if (i >= cnt || memcmp(got, key, keylen) != 0)
 			return set_st(f, "23");
 		break;
 	case 1: /* GT */
 		i = lower_bound(f, k, key, keylen, 0, 0, 1);
-		if (i >= s->n)
+		if (i >= cnt)
 			return set_st(f, "23");
 		break;
 	case 2: /* GE */
 		i = lower_bound(f, k, key, keylen, 0, 0, 0);
-		if (i >= s->n)
+		if (i >= cnt)
 			return set_st(f, "23");
 		break;
 	case 3: /* LT */
@@ -1463,14 +1572,21 @@ int cob_start(cob_file *f, int op, int key_index, size_t keylen)
 	f->last_read_ok = 0;
 	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
 		return set_st(f, "47");
+	int rc;
 	switch (f->organization) {
 	case COB_ORG_RELATIVE:
-		return start_rel(f, op);
+		rc = start_rel(f, op);
+		break;
 	case COB_ORG_INDEXED:
-		return start_idx(f, op, key_index, keylen);
+		rc = start_idx(f, op, key_index, keylen);
+		break;
 	default:
 		return set_st(f, "30");
 	}
+	/* a START that found nothing leaves no current record: the READ that
+	   follows reports 46, not end of file */
+	f->no_current = rc != COB_IO_OK;
+	return rc;
 }
 
 /* ================================================================ SORT */

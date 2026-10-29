@@ -687,7 +687,10 @@ class CodeGen(ReportWriterGen, DebugGen):
                 else:
                     k = self.resolve(fc.record_key)
                     fi.keys.append((k, False, None, None))
-                fi.key_names[fc.record_key.name] = (0, fi.keys[0][0].size)
+                # a split key's length is the concatenation of its parts
+                n0 = (sum(self.resolve(sr).size for sr in fc.key_sources)
+                      if fc.key_sources else fi.keys[0][0].size)
+                fi.key_names[fc.record_key.name] = (0, n0)
             fi.key_names = getattr(fi, 'key_names', {})
             for kref, dups, sources, supp in fc.alt_keys:
                 if sources:
@@ -695,7 +698,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                     fi.keys.append((self.resolve(sources[0]), dups, sources, supp))
                 else:
                     fi.keys.append((self.resolve(kref), dups, None, supp))
-                fi.key_names[kref.name] = (len(fi.keys) - 1, fi.keys[-1][0].size)
+                nk = (sum(self.resolve(sr).size for sr in sources)
+                      if sources else fi.keys[-1][0].size)
+                fi.key_names[kref.name] = (len(fi.keys) - 1, nk)
             for k, _dups, _srcs, _sup in fi.keys:
                 if getattr(k, 'file', None) is not fi:
                     raise CompileError(f"key '{k.name}' is not part of the record of file '{fc.name}'", fc.loc)
@@ -1250,6 +1255,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         em(f"{f}.organization = {ORG[org]};")
         em(f"{f}.access = {ACC[fc.access]};")
         em(f"{f}.optional = {1 if fc.optional else 0};")
+        em(f"{f}.sharing = {getattr(fc, 'sharing', 0)};")
         kind = {'': 0, 'KEYBOARD': 1, 'DISPLAY': 2, 'PRINTER': 2}.get(fc.assign_kind, 0)
         em(f"{f}.assign_kind = {kind};")
         a = fc.assign
