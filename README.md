@@ -126,20 +126,29 @@ longer passes. `make gctest-update` records a new baseline.
   it has no equivalent for (`-fnotrunc` and so on), C code, a terminal (SCREEN
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
-- **Compile errors** are mostly GnuCOBOL extensions and COBOL 2002/2014
-  features YACCC doesn't have yet: pointers and BASED items,
-  FUNCTION-ID, CHAINING, ENTRY, TYPEDEF and Report Writer PRESENT
-  WHEN, STEP and OCCURS.
-- **Failures** include the deliberate differences listed below (WRITE
-  ADVANCING, Debug module, LINAGE, national (UTF-16) data, file sharing between
-  processes and a few library routines) and 7 Report Writer tests whose output
-  differs only in blank lines: GnuCOBOL 3.1.2 starts a new page one line early
-  after a page overflow and prints a PAGE FOOTING one line late after
-  TERMINATE, while YACCC follows the standard's page geometry. None of the 7
-  differs in any non-blank line. One more (`Sample REPORT with RIGHT/CENTER`)
-  is a dialect difference, not an output difference: its first step expects
-  `cobc` to reject the program in its default dialect, and YACCC compiles it,
-  as GnuCOBOL itself does with `-std=mf`.
+- **Compile errors**: none. Every program the harness can build, YACCC builds.
+- **The 17 failures** are:
+  - 9 Report Writer tests whose output differs only in where pages break.
+    Measured against `cobc`, a page holds `PAGE LIMIT - 1` printed lines, a
+    PAGE FOOTING lands on the line it names only on the first page, and a
+    page heading is written at its HEADING line of the new page; YACCC writes
+    `PAGE LIMIT` lines per page and places footings and headings on their
+    named lines. The data lines and their contents match; what moves is where
+    a page ends, and with it the footing and heading lines and the blank filler
+    around them.
+  - `Sample REPORT with RIGHT/CENTER`, a dialect difference rather than an
+    output difference: its first step expects `cobc` to reject the program in
+    its default dialect, and YACCC compiles it, as GnuCOBOL itself does with
+    `-std=mf`.
+  - `FLOAT-DECIMAL` (decimal64/decimal128, 16 and 34 digits): YACCC maps
+    FLOAT-DECIMAL to a double, so it prints double precision where GnuCOBOL
+    prints the decimal's.
+  - `FUNCTION BYTE-LENGTH` on a NATIONAL item, `COMP-4 No Truncate` (GnuCOBOL's
+    own `-fnotrunc` treats a scaled PICTURE differently), `Binary COMP-1 (2)`
+    (`$SET COMP-1(BINARY)`), `CALL BY VALUE ... WITH SIZE` (GnuCOBOL's own
+    documentation calls its parameter passing there unfinished),
+    `CBL_GC_GETOPT` and `CBL_ERROR_PROC (1)` (library routines YACCC does not
+    provide; the second also wants GnuCOBOL's EXCEPTION-LOCATION text).
 
 ### Performance
 
