@@ -94,7 +94,10 @@ COLUMN clause.
 - Each case may add sidecars: `.in` (stdin), `.args` (the program's own
   arguments), `.flags` (compile flags), `.env` (environment), `.nocmp` (files
   not compared) and `.outfiles/` (files the program writes).
-- `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`).
+- `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
+  `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
+  3.1.2 it agrees on 57 of the 62 cases, and skips the five whose *test
+  program* `cobc` itself rejects.
 
 All 62 pass, built with gcc.
 
