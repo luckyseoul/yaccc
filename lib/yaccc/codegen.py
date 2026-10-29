@@ -1033,12 +1033,21 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.init_tree(r, mode='init')
         # linkage binding
         using_items = []
+        sizes = getattr(prog, 'using_sizes', [])
         for i, (mode, ref) in enumerate(prog.using):
             it = self.resolve(ref)
             if it.section != 'LK' or it.level not in (1, 77):
                 raise CompileError(f"USING item '{ref.name}' must be a level 01/77 LINKAGE item", ref.loc)
+            if mode == 'VALUE':
+                # BY VALUE: the caller passed the value itself, in the number
+                # of bytes SIZE gave, so read it into the item here
+                n = sizes[i] if i < len(sizes) else None
+                em(f"{it.storage} = {it.storage}_dummy;")
+                em(f"if (cob_argc > {i} && cob_argv[{i}]) cob_get_value({n or it.size}, "
+                   f"cob_argv[{i}], CF({it.storage}, {it.size}, &{self.item_attr(it)}));")
+            else:
+                em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : {it.storage}_dummy;")
             using_items.append(it.storage)
-            em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : {it.storage}_dummy;")
         ret_item = None
         if getattr(prog, 'is_function', False) and prog.returning is not None:
             ret_item = self.resolve(prog.returning)
@@ -3983,9 +3992,11 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em(f"cob_av[{i}] = cob_cf{i}->data;")
                 sizes.append(f"(int)cob_cf{i}->size")
             elif a.mode == 'VALUE' and self.is_numeric(v):
-                em(f"int32_t cob_vi{i} = (int32_t){self.int_expr(v)};")
-                em(f"cob_av[{i}] = (unsigned char *)&cob_vi{i};")
-                sizes.append('4')
+                nbytes = getattr(a, 'size', None) or 4
+                em(f"unsigned char cob_vi{i}[{nbytes}] = {{0}};")
+                em(f"cob_put_value({nbytes}, cob_vi{i}, (cob_s64){self.int_expr(v)});")
+                em(f"cob_av[{i}] = cob_vi{i};")
+                sizes.append(str(nbytes))
             else:
                 f = self.field(v)
                 em(f"const cob_field *cob_cf{i} = {f};")

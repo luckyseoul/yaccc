@@ -181,8 +181,10 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
             if st.startswith('>>') or (ind == '>' and raw[6:8] == '>>'):
                 mode = _directive(st, mode, loc, dirs)
                 continue
-            if ind == '$':
-                mode = _directive(raw[6:], mode, loc, dirs)
+            if ind == '$' or st[:1] == '$':
+                # a $ directive may sit anywhere in the source area, not only
+                # in the indicator column
+                mode = _directive(st if ind != '$' else raw[6:], mode, loc, dirs)
                 continue
             if dirs is not None and not dirs.active:
                 continue

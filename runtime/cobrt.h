@@ -370,6 +370,27 @@ int cob_d_to_str(cob_dec d, char *buf, size_t bufsz);
 void cob_move(const cob_field *src, cob_field *dst);
 void cob_move_bytes(const unsigned char *src, size_t n, cob_field *dst);
 void cob_move_text(cob_field *dst, const char *s);
+/* read an integer of n bytes, big-endian, into a field: CALL/READ BY VALUE */
+static inline void cob_get_value(int n, const unsigned char *p, cob_field *f)
+{
+	cob_s64 v = 0;
+	int neg = n > 0 && (p[0] & 0x80);
+	for (int i = 0; i < n; i++)
+		v = (v << 8) | p[i];
+	if (neg && n < 8)
+		v -= (cob_s64)1 << (n * 8);
+	cob_set_int(f, v);
+}
+
+/* store an integer in n bytes of C storage, big-endian, for CALL BY VALUE */
+static inline void cob_put_value(int n, unsigned char *p, cob_s64 v)
+{
+	cob_u64 u = (cob_u64)v;
+	for (int i = n - 1; i >= 0; i--) {
+		p[i] = (unsigned char)(u & 0xFF);
+		u >>= 8;
+	}
+}
 void cob_move_raw(const cob_field *src, cob_field *dst);
 void cob_set_collating(const unsigned short *tbl);
 const unsigned short *cob_get_collating(void);

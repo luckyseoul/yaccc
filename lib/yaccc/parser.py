@@ -1453,6 +1453,18 @@ class Parser:
                     mode = self.next().up
                 elif self.is_user_word():
                     prog.using.append((mode, self.parse_identifier()))
+                    # USING BY VALUE x SIZE n: how many bytes the caller passes
+                    self.accept('UNSIGNED')     # BY VALUE 1 UNSIGNED SIZE 1
+                    if self.accept('SIZE'):
+                        self.accept('UNSIGNED')
+                        if self.accept('DEFAULT'):
+                            prog.using_sizes.append(8)
+                        elif self.accept('AUTO'):
+                            prog.using_sizes.append(None)
+                        else:
+                            prog.using_sizes.append(int(self.expect_kind('NUM', 'size').val))
+                    else:
+                        prog.using_sizes.append(None)
                 elif self.accept('OPTIONAL'):
                     pass
                 else:
@@ -2619,6 +2631,18 @@ class Parser:
                     args.append(CallArg(mode, AddressOf(self.parse_identifier())))
                 elif self.is_operand_start():
                     args.append(CallArg(mode, self.parse_operand()))
+                    # BY VALUE 1 SIZE 1: the number of bytes passed, which is
+                    # how a C function taking several small integers is called
+                    self.accept('UNSIGNED')     # BY VALUE 1 UNSIGNED SIZE 1
+                    if self.accept('SIZE'):
+                        self.accept('UNSIGNED')
+                        if self.accept('DEFAULT'):
+                            args[-1].size = 8       # the platform's natural size
+                        elif self.accept('AUTO'):
+                            args[-1].size = None    # sized from the value
+                        else:
+                            n = self.expect_kind('NUM', 'size')
+                            args[-1].size = int(n.val)
                 else:
                     break
         ret = None

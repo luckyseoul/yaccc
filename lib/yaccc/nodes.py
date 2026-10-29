@@ -438,6 +438,7 @@ class Search(Stmt):
 class CallArg:
     mode: str                       # REFERENCE CONTENT VALUE
     value: Any                      # DataRef / literal / 'OMITTED'
+    size: Any = None                # BY VALUE ... SIZE n: bytes passed
 
 
 @dataclass(eq=False)
@@ -666,6 +667,7 @@ class Program:
     global_constants: dict = field(default_factory=dict)
     typedefs: dict = field(default_factory=dict)     # name -> template item
     using: List[tuple] = field(default_factory=list)       # (mode, DataRef)
+    using_sizes: List[Any] = field(default_factory=list)  # BY VALUE ... SIZE n
     chaining: list = field(default_factory=list)          # PROCEDURE DIVISION CHAINING items
     returning: Any = None
     declaratives: List[Section] = field(default_factory=list)
