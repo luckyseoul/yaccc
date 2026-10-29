@@ -519,6 +519,10 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
 - ANY LENGTH is implemented for LINKAGE items: the size comes from the
   calling program's argument.
 - JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.
+- Report Writer page geometry on reports long enough to break a page. The
+  model GnuCOBOL uses is written up in `docs/report-writer-page-model.md`;
+  yaccc's page advance differs from it in a way that shows up as one extra
+  blank line at each page boundary.
 - Split keys on indexed files (a key made of several SOURCE items).
 - Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.
