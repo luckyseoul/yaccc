@@ -196,6 +196,7 @@ class Occurs:
         self.min = 0
         self.max = 0
         self.depending = None       # DataRef
+        self.unbounded = False      # OCCURS 0 TO UNBOUNDED TIMES
         self.keys = []              # (descending, name)
         self.indexes = []           # index names
         self.loc = None
@@ -335,6 +336,14 @@ class DataItem:
     def contains_odo(self):
         for it in self.walk():
             if it.occurs and it.occurs.depending is not None:
+                return it
+        return None
+
+    def contains_unbounded(self):
+        """The OCCURS ... UNBOUNDED table inside this item, or None. Its extent
+        is only known at run time, so the item has no static size to speak of."""
+        for it in self.walk():
+            if it.occurs and getattr(it.occurs, 'unbounded', False):
                 return it
         return None
 
@@ -558,7 +567,7 @@ def layout(item, offset):
         a = table_align(item)
         if a > 1:
             item.size = (item.size + a - 1) // a * a
-    if item.size == 0:
+    if item.size == 0 and item.contains_unbounded() is None:
         raise CompileError(f"group item '{item.name}' has zero length", item.loc)
 
 

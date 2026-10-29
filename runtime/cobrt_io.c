@@ -121,7 +121,9 @@ static void resolve_path(cob_file *f)
 		snprintf(name, sizeof name, "%s", f->assign_name);
 	else
 		snprintf(name, sizeof name, "%s", f->select_name);
-	if (!f->assign_literal && !f->assign_field && !strchr(name, '/') && !strchr(name, '.')) {
+	/* DD_<name> overrides the name, whatever form ASSIGN took (GnuCOBOL does
+	   the same for a literal and for a data item), unless the name is a path */
+	if (!strchr(name, '/') && !strchr(name, '.')) {
 		char ev[1100];
 		const char *v;
 		snprintf(ev, sizeof ev, "DD_%s", name);

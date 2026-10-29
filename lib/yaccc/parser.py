@@ -253,6 +253,12 @@ class Parser:
         prog.is_function = is_function
         prog.ext_name = ext
         prog.parent = parent
+        if parent is not None:
+            # CONFIGURATION SECTION settings are GLOBAL: a contained program
+            # pictures numbers with the containing program's CURRENCY SIGN and
+            # DECIMAL-POINT unless it says otherwise
+            prog.currency = parent.currency
+            prog.decimal_comma = parent.decimal_comma
         self.prog = prog
         self.class_names = set()
         self.mnemonics = {}
@@ -283,6 +289,7 @@ class Parser:
         if self.is_word('DATA'):
             self.parse_data(prog)
         self._collect_typedefs(prog)
+        self.implicit_assign_items(prog)
         if self.is_word('PROCEDURE'):
             self.parse_procedure(prog)
         # nested programs: only if our END PROGRAM appears later
@@ -299,6 +306,28 @@ class Parser:
                 DIAG.warn(f"END PROGRAM name '{ename}' does not match '{name}'", t.loc)
             self.accept_kind('.')
         return prog
+
+    def implicit_assign_items(self, prog):
+        """GnuCOBOL's implicitly defined ASSIGN data item: SELECT ... ASSIGN
+        name, where name is not a data item, defines PIC X(n) holding the name,
+        so the program can MOVE the file it wants into it."""
+        defined = set()
+        for roots in (prog.working, prog.local, prog.linkage):
+            for r in roots:
+                for it in r.walk():
+                    if it.name:
+                        defined.add(it.name)
+        for fc in prog.file_controls:
+            a = fc.assign
+            if not isinstance(a, DataRef) or a.subs or a.refmod or a.quals:
+                continue
+            if a.name in defined:
+                continue
+            it = DataItem(1, a.name, a.loc)
+            it.pic = Picture(f"X({max(len(a.name), 1)})", a.loc, prog.currency, prog.decimal_comma)
+            it.value = StrLit(a.name.encode('latin-1'))
+            prog.working.append(it)
+            defined.add(a.name)
 
     def _options_paragraph(self, prog):
         """OPTIONS paragraph (COBOL 2014): DEFAULT ROUNDED MODE; other entries
@@ -1071,6 +1100,16 @@ class Parser:
         flat = []
         while self.peek().kind == 'NUM' and '.' not in self.peek().val and self.peek().val[0] not in '+-':
             flat.append(self.parse_entry())
+        for i, e in enumerate(flat):
+            v = e.value
+            if e.level == 78 and isinstance(v, PosOf) and v.pos_kind == 'NEXT':
+                # NEXT is the running position of the entries read so far: the
+                # previous data item's offset plus one element of it, which is
+                # where GnuCOBOL puts it (an OCCURS counts once, not n times)
+                for f in reversed(flat[:i]):
+                    if f.level not in (78, 88):
+                        v.pos_ref = f
+                        break
         return self.build_tree(flat)
 
     def parse_entry(self):
@@ -1284,7 +1323,12 @@ class Parser:
         a = self.const_int('integer')
         if self.accept('TO'):
             oc.min = a
-            oc.max = self.const_int('integer')
+            if self.accept('UNBOUNDED'):
+                # the table has no static extent: its length is DEPENDING ON
+                oc.unbounded = True
+                oc.max = 0
+            else:
+                oc.max = self.const_int('integer')
         else:
             oc.min = a
             oc.max = a
@@ -1310,7 +1354,10 @@ class Parser:
                     oc.indexes.append((self.next().up, self.peek(-1).loc if False else oc.loc))
             else:
                 break
-        if oc.max < 1:
+        if oc.unbounded:
+            if oc.depending is None:
+                raise CompileError("OCCURS UNBOUNDED requires DEPENDING ON", oc.loc)
+        elif oc.max < 1:
             raise CompileError("OCCURS must be at least 1", oc.loc)
         item.occurs = oc
 
@@ -1333,6 +1380,9 @@ class Parser:
         """The value of a constant: an arithmetic expression of literals,
         constants and LENGTH OF / BYTE-LENGTH OF, or a list of literals and
         constants joined with '&' (CONSTANT 'Cat ' & ' & ' & DOG)."""
+        pos = self._pos_of()
+        if pos is not None:
+            return pos
         save = self.pos
         atom = self._const_atom()
         if atom is not None and self.peek().kind == 'OP' and self.peek().val == '&':
@@ -1354,6 +1404,18 @@ class Parser:
         finally:
             self.const_expr = False
         return fold_constant(e, self.decl_sizes)
+
+    def _pos_of(self):
+        """VALUE NEXT / VALUE START OF item: where an item sits in its record."""
+        t = self.peek()
+        if t.kind == 'WORD' and t.up == 'NEXT':
+            self.next()
+            return PosOf('NEXT', None, t.loc)
+        if t.kind == 'WORD' and t.up == 'START' and self.is_word('OF', k=1):
+            self.next()
+            self.next()
+            return PosOf('START', self.parse_identifier(), t.loc)
+        return None
 
     def _const_atom(self):
         """A literal, figurative constant or named constant, or None."""
@@ -1920,6 +1982,14 @@ class Parser:
         elif self.peek().kind == 'NUM':
             st.count = make_numlit(self.next().val, loc)
             self.accept('CHARACTERS', 'BYTES')
+        elif self.is_word('FUNCTION'):
+            st.count = self.parse_function()
+            self.accept('CHARACTERS', 'BYTES')
+        elif self.is_word('LENGTH', 'BYTE-LENGTH') and (
+                self.is_word('OF', k=1) or self.is_operand_start(1)):
+            # ALLOCATE LENGTH OF x CHARACTERS: the size of an item, at run time
+            st.count = self.parse_identifier()
+            self.accept('CHARACTERS', 'BYTES')
         else:
             st.target = self.parse_identifier()
         if self.accept('INITIALIZED'):
@@ -2460,6 +2530,41 @@ class Parser:
         self._end('END-UNSTRING')
         return Unstring(loc, src, delims, intos, ptr, tally, on, noton)
 
+    def _alphabet_operand(self):
+        """An alphabet-name (ALPHABET BETA IS EBCDIC) or an ordinary operand:
+        CONVERTING takes two of them and maps from one ordering to the other."""
+        t = self.peek()
+        if t.kind == 'WORD':
+            spec = self.alphabet_spec(t.up)
+            if spec is not None:
+                self.next()
+                return StrLit(self.alphabet_bytes(spec, t.loc))
+        return self.parse_operand()
+
+    def alphabet_spec(self, name):
+        p = self.prog
+        while p is not None:
+            if name in p.alphabets:
+                return p.alphabets[name]
+            p = p.parent
+        return None
+
+    def alphabet_bytes(self, spec, loc):
+        """The 256 bytes of an alphabet, indexed by ordinal: byte i is the
+        character with code i as that alphabet writes it."""
+        if not isinstance(spec, str):
+            raise CompileError("INSPECT CONVERTING needs an alphabet-name declared "
+                               "IS ASCII, EBCDIC, NATIVE or STANDARD-1", loc)
+        if spec in ('EBCDIC',):
+            out = []
+            for i in range(256):
+                b = chr(i).encode('cp037', 'replace')
+                out.append(b[0] if b else 0x6F)
+            return bytes(out)
+        if spec in ('ASCII', 'NATIVE', 'STANDARD-1', 'STANDARD-2'):
+            return bytes(range(256))
+        raise CompileError(f"alphabet '{spec}' is not usable here", loc)
+
     def _inspect_region(self):
         reg = InspectRegion()
         while self.is_word('BEFORE', 'AFTER'):
@@ -2523,9 +2628,9 @@ class Parser:
                 by = self.parse_operand()
                 st.replacing.append(InspectOp(mode, pat, by, None, self._inspect_region()))
         if self.accept('CONVERTING'):
-            a = self.parse_operand()
+            a = self._alphabet_operand()
             self.expect('TO')
-            b = self.parse_operand()
+            b = self._alphabet_operand()
             st.converting = (a, b, self._inspect_region())
         if not (st.tallying or st.replacing or st.converting):
             raise self.err("TALLYING, REPLACING or CONVERTING expected")

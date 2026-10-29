@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
+from .errors import CompileError
+
 
 @dataclass(frozen=True)
 class Loc:
@@ -86,6 +88,31 @@ class LengthOf(Expr):
 @dataclass(eq=False)
 class AddressOf(Expr):
     ref: Any = None
+
+
+class PosOf(NumLit):
+    """VALUE NEXT / VALUE START OF item: a constant whose value is the place an
+    item occupies in its record. The offset is only known once the record has
+    been laid out, so the object is filled in then and every expression that
+    already holds it sees the value."""
+    def __init__(self, kind, ref, loc):
+        super().__init__('0', '0', 0, False)
+        self.pos_kind = kind          # 'NEXT' or 'START'
+        self.pos_ref = ref            # DataRef, or the DataItem for NEXT
+        self.loc = loc
+        self.resolved = False
+
+    def set_offset(self, off):
+        self.text = str(off)
+        self.digits = str(off)
+        self.scale = 0
+        self.neg = False
+        self.resolved = True
+
+    def check(self):
+        if not self.resolved:
+            raise CompileError("the position of this item is not known yet: "
+                               "VALUE NEXT / START OF cannot be used to size storage", self.loc)
 
 
 # ---------------------------------------------------------------- conditions

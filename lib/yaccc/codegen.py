@@ -706,8 +706,30 @@ class CodeGen(ReportWriterGen, DebugGen):
                                            f"record of file '{fc.name}'", sr.loc)
         # Debug module (DEBUG-ITEM, USE FOR DEBUGGING subjects)
         self.dbg_analyze(prog)
+        # VALUE NEXT / START OF: the places items occupy are known by now
+        self.resolve_pos_consts(prog)
         # REPORT SECTION
         self.rw_analyze(prog)
+
+    def resolve_pos_consts(self, prog):
+        done = set()
+        for d in (prog.constants, getattr(prog, 'global_constants', {})):
+            for v in list(d.values()):
+                if not isinstance(v, PosOf) or id(v) in done:
+                    continue
+                done.add(id(v))
+                tgt = v.pos_ref
+                if isinstance(tgt, DataRef):
+                    tgt = self.resolve(tgt)
+                if isinstance(tgt, DataItem) and v.pos_kind == 'NEXT':
+                    v.set_offset(tgt.offset + tgt.size)
+                    continue
+                if tgt is None:
+                    v.set_offset(0)
+                    continue
+                if not isinstance(tgt, DataItem):
+                    raise CompileError("VALUE START OF names an item with no position", v.loc)
+                v.set_offset(tgt.offset)
 
     def resolve_renames(self, item, record):
         a, b = item.renames
@@ -1321,6 +1343,8 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def field(self, e):
         """C expression of type cob_field* for operand e."""
+        if isinstance(e, PosOf):
+            e.check()
         if isinstance(e, DataRef):
             return self.ref_field(e)
         if isinstance(e, NumLit):
@@ -1391,8 +1415,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 dep = occ.occurs.depending
                 if dep is not None:
                     # the upper bound is the current DEPENDING ON value
+                    dmax = 2147483647 if getattr(occ.occurs, 'unbounded', False) else occ.occurs.max
                     s = (f"cob_chk_odo_sub({s}, {self.field(dep)}, {occ.occurs.min}, "
-                         f"{occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})")
+                         f"{dmax}, {c_string(ref.name)}, {c_string(str(ref.loc))})")
                 else:
                     s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
             terms.append(f"({s} - 1) * {occ.size}")
@@ -1424,6 +1449,10 @@ class CodeGen(ReportWriterGen, DebugGen):
             if obj is not None and any(x is obj for x in it.walk()):
                 return str(it.size)
         cur = self.int_expr(dep)
+        if getattr(d.occurs, 'unbounded', False):
+            # no static extent: the fixed part up to the table plus what
+            # DEPENDING ON says is there
+            return f"({d.offset - it.offset} + ({cur}) * {d.size})"
         return f"({it.size} - ({d.occurs.max} - {cur}) * {d.size})"
 
     def ref_field(self, ref, receiving=False):
@@ -1815,6 +1844,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         return f"({self.field(r)})->size"
 
     def dec(self, e):
+        if isinstance(e, PosOf):
+            e.check()
         if isinstance(e, NumLit) and getattr(e, 'float_text', None):
             return f"cob_d_from_double({self.float_text(e)})"
         if isinstance(e, FuncCall) and e.name in self.udf_names:
@@ -3779,7 +3810,12 @@ class CodeGen(ReportWriterGen, DebugGen):
         if it.occurs and (not root or root_occurs):
             v = self.sym('cob_i')
             self.local(f"cob_s64 {v};")
-            em(f"for ({v} = 0; {v} < {it.occurs.max}; {v}++) {{")
+            if getattr(it.occurs, 'unbounded', False):
+                # OCCURS UNBOUNDED: as many occurrences as DEPENDING ON says
+                bound = self.int_expr(it.occurs.depending)
+            else:
+                bound = str(it.occurs.max)
+            em(f"for ({v} = 0; {v} < {bound}; {v}++) {{")
             em.ind += 1
             self.init_one(it, base, f"{off} + {v} * {it.size}", mode)
             em.ind -= 1

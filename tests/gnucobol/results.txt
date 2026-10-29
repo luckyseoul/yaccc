@@ -50,7 +50,7 @@ SKIP  run_extensions.at:738        Complex OCCURS DEPENDING ON (5)
 SKIP  run_extensions.at:804        Complex OCCURS DEPENDING ON (6)
 SKIP  run_extensions.at:845        OCCURS UNBOUNDED (1)
 SKIP  run_extensions.at:906        OCCURS UNBOUNDED (2)
-CERR  run_extensions.at:1060       INITIALIZE OCCURS UNBOUNDED
+PASS  run_extensions.at:1060       INITIALIZE OCCURS UNBOUNDED
 SKIP  run_extensions.at:1134       INITIALIZE OCCURS ODOSLIDE
 SKIP  run_extensions.at:1231       DEPENDING ON with ODOSLIDE
 SKIP  run_extensions.at:1446       DEPENDING ON with ODOSLIDE for IBM
@@ -346,8 +346,8 @@ PASS  run_fundamental.at:860       ALPHABETIC-UPPER test
 PASS  run_fundamental.at:892       ALPHABETIC-LOWER test
 PASS  run_fundamental.at:924       GLOBAL at same level
 PASS  run_fundamental.at:973       GLOBAL at lower level
-CERR  run_fundamental.at:1022      GLOBAL CONSTANT
-CERR  run_fundamental.at:1106      GLOBAL identifiers from ENVIRONMENT DIVISION
+PASS  run_fundamental.at:1022      GLOBAL CONSTANT
+PASS  run_fundamental.at:1106      GLOBAL identifiers from ENVIRONMENT DIVISION
 SKIP  run_fundamental.at:1187      function with variable-length RETURNING item
 PASS  run_fundamental.at:1270      Entry point visibility (1)
 SKIP  run_fundamental.at:1302      Entry point visibility (2)
@@ -516,7 +516,7 @@ PASS  run_misc.at:1465             Multiple calls of INITIAL program
 SKIP  run_misc.at:1522             CALL binary literal parameter/LENGTH OF
 PASS  run_misc.at:1576             INSPECT REPLACING LEADING ZEROS BY SPACES
 PASS  run_misc.at:1598             INSPECT No repeat conversion check
-CERR  run_misc.at:1624             INSPECT CONVERTING alphabet
+PASS  run_misc.at:1624             INSPECT CONVERTING alphabet
 PASS  run_misc.at:1659             INSPECT CONVERTING TO figurative constant
 PASS  run_misc.at:1683             INSPECT CONVERTING NULL
 PASS  run_misc.at:1707             INSPECT CONVERTING TO NULL
@@ -613,7 +613,7 @@ SKIP  run_misc.at:11235            OSVS Arithmetic Test (2)
 SKIP  run_misc.at:11292            SET CONSTANT directive
 SKIP  run_misc.at:11395            DEFINE OVERRIDE
 SKIP  run_misc.at:11461            DEFINE Defaults
-CERR  run_misc.at:11527            78 VALUE
+PASS  run_misc.at:11527            78 VALUE
 PASS  run_misc.at:11595            01 CONSTANT
 SKIP  run_misc.at:11675            DISPLAY UPON
 FAIL  run_misc.at:11767            FLOAT-DECIMAL w/o SIZE ERROR
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 460  FAIL 30  CERR 5  XERR 0  SKIP 198
+PASS 465  FAIL 30  CERR 0  XERR 0  SKIP 198
