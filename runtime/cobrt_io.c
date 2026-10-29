@@ -721,7 +721,9 @@ static int lin_next_page(cob_file *f, int lc)
 		lin_advance(f, k);
 	if (linage_params(f))
 		return -1;
-	lin_advance(f, f->lin_top + 1);
+	/* the top margin is lin_top blank lines; the page break already closed
+	 * the last line, so the +1 that used to be here is now one too many */
+	lin_advance(f, f->lin_top);
 	cob_set_int(f->linage_ctr, 1);
 	return 0;
 }
@@ -769,8 +771,11 @@ static int write_linage(cob_file *f, const unsigned char *rec, size_t n, int whe
 			fwrite(rec, 1, n, f->fp);
 			f->linage_lines = 1;
 		} else {
-			lin_advance(f, lines);
+			/* AFTER ADVANCING: the record goes on the current line and
+			 * the advance follows it. Doing it the other way round put
+			 * every record one line lower and left a blank at the top. */
 			lin_print(f, rec, n);
+			lin_advance(f, lines);
 		}
 	} else
 		lin_advance(f, lines);

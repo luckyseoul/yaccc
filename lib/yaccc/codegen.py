@@ -3222,6 +3222,17 @@ class CodeGen(ReportWriterGen, DebugGen):
     def when_term(self, kind, sv, ob):
         if ob.kind == 'ANY':
             return '1'
+        if ob.kind == 'RELOP':
+            # "WHEN >= 10000": compare the subject with the object
+            cop = CMP_OP[ob.a]
+            if kind == 'V':
+                c = f"(cob_d_cmp({self.dec(sv)}, {self.dec(ob.b)}) {cop} 0)"
+            elif kind == 'C':
+                c = self.rel(sv, ob.a, ob.b)
+            else:
+                raise CompileError("a relational WHEN object needs a value subject",
+                                   self.cur_loc)
+            return f"!{c}" if ob.neg else c
         if kind == 'B':
             if ob.kind == 'TRUE':
                 return '1' if sv else '0'

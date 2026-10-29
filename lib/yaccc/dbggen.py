@@ -206,7 +206,7 @@ class DebugGen:
         d = self.dbg
         if d is None:
             return []
-        return [f"int cob_dbg_cause = COB_DBG_START, cob_dbg_line = {d.first_line}, cob_dbg_busy = 0;",
+        return [f"int cob_dbg_cause = COB_DBG_START, cob_dbg_line = {0}, cob_dbg_busy = 0;",
                 "(void)cob_dbg_cause; (void)cob_dbg_line; (void)cob_dbg_busy;"]
 
     def dbg_invoke(self, dsec, fill):

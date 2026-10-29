@@ -41,6 +41,10 @@ class Directives:
     def handle(self, text, loc):
         """Process a directive line. Returns True if it was one of ours."""
         s = text.strip()
+        # a directive may carry a floating comment
+        cut = s.find('*>')
+        if cut > 0:
+            s = s[:cut].rstrip()
         if s.startswith('$'):
             return self._dollar(s[1:], loc)
         if not s.startswith('>>'):
@@ -288,7 +292,7 @@ class _Expr:
                 k2 += 1
             if self.word_at(k2, 'DEFINED'):
                 self.i += k2 + 1
-                return (name in self.d.vars) != neg
+                return (name in self.d.vars or name in getattr(self.d, 'constants', ())) != neg
             if self.word_at(k2, 'SET'):
                 self.i += k2 + 1
                 return (name in self.d.vars) != neg

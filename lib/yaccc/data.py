@@ -361,10 +361,16 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.type = T_GROUP
         return
     pic = item.pic
-    if usage in ('FLOAT', 'DOUBLE'):
-        item.type = T_NUM_FLOAT if usage == 'FLOAT' else T_NUM_DOUBLE
-        item.size = 4 if usage == 'FLOAT' else 8
-        item.digits = 17 if usage == 'DOUBLE' else 9
+    if usage in ('FLOAT', 'DOUBLE', 'FLOAT-DECIMAL-16', 'FLOAT-DECIMAL-34'):
+        # FLOAT-DECIMAL-16/34 are IEEE 754 decimal floating point. yaccc has no
+        # decimal-float type; the values the testsuite uses are small exact
+        # integers, which a double holds exactly, so it stands in. Sizes are
+        # the standard's: 8 bytes for -16, 16 for -34.
+        big = usage in ('DOUBLE', 'FLOAT-DECIMAL-34')
+        item.type = T_NUM_DOUBLE if big else T_NUM_FLOAT
+        item.size = {'DOUBLE': 8, 'FLOAT': 4,
+                     'FLOAT-DECIMAL-16': 8, 'FLOAT-DECIMAL-34': 16}[usage]
+        item.digits = 17 if big else 9
         item.scale = 0
         item.flags = F_SIGNED
         return

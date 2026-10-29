@@ -52,7 +52,7 @@ def make_numlit(text, loc=None):
     return NumLit(text=text, digits=(ip + fp) if (ip + fp) else '0', scale=len(fp), neg=neg)
 
 
-def fold_constant(e):
+def fold_constant(e, sizes=None):
     """A constant expression as a literal when it can be computed now:
     arithmetic of numeric literals and LENGTH OF a literal. Otherwise the
     expression itself (LENGTH OF a data item is computed where it is used).
@@ -64,57 +64,17 @@ def fold_constant(e):
     def trunc(v):
         return v.quantize(Decimal(1), rounding=ROUND_DOWN)
 
-    def flatten(x):
-        """The operands and operators of an expression in source order.
-
-        COBOL evaluates a constant expression strictly left to right, so a
-        tree built with operator precedence has to be read back in source
-        order before folding: "1 + 2 * 3" is 9, not 7, which is what GnuCOBOL
-        does for a level-78 VALUE and what its testsuite checks."""
-        if isinstance(x, BinOp):
-            out = flatten(x.left)
-            out.append((x.op, None))
-            out.extend(flatten(x.right))
-            return out
-        return [(None, x)]
-
-    def fold_left(items):
-        acc = None
-        op = None
-        for o, v in items:
-            if o is not None:
-                op = o
-                continue
-            n = val(v)
-            if n is None:
-                return None
-            if acc is None:
-                acc = n
-            elif op == '+':
-                acc = acc + n
-            elif op == '-':
-                acc = acc - n
-            elif op == '*':
-                acc = acc * n
-            elif op == '/':
-                if n == 0:
-                    return None
-                acc = trunc(acc / n)
-            elif op == '**':
-                acc = acc ** n if n == n.to_integral_value() else None
-                if acc is None:
-                    return None
-            else:
-                return None
-        return acc
-
     def val(x):
-        if isinstance(x, BinOp):
-            return fold_left(flatten(x))
         if isinstance(x, NumLit):
             return Decimal(x.text)
         if isinstance(x, LengthOf) and isinstance(x.ref, StrLit):
             return Decimal(len(x.ref.value))
+        if isinstance(x, LengthOf) and isinstance(x.ref, DataRef):
+            # LENGTH OF an item already declared: its PICTURE fixes the size
+            n = getattr(getattr(x.ref, 'item', None), 'decl_size', None)
+            if n is None and sizes is not None:
+                n = sizes.get(x.ref.name)
+            return None if n is None else Decimal(n)
         if isinstance(x, Neg):
             v = val(x.e)
             return None if v is None else -v
@@ -159,6 +119,7 @@ class Parser:
         self.compile_vars = compile_vars if compile_vars is not None else {}
         self.pos = 0
         self.udfs = set()
+        self.decl_sizes = {}
         self.prog = None
         self.subj = None
         self.relop = None
@@ -1125,10 +1086,8 @@ class Parser:
                 self.accept('IS')
                 if self.accept('GLOBAL'):
                     item.is_global = True
-                if self.peek().kind == 'STR' or self.peek().kind == 'NUM' or \
-                        self.is_word('ALL') or self.peek().up in FIGURATIVES:
-                    item.value = self.parse_constant_value()
-                elif self.accept('FROM'):
+                self.accept('AS')
+                if self.accept('FROM'):
                     vt = self.next()
                     v = self.compile_vars.get(vt.up)
                     if v is None or v is True:
@@ -1139,8 +1098,9 @@ class Parser:
                         t = format(v.normalize(), 'f')
                         item.value = make_numlit(t.rstrip('0').rstrip('.') if '.' in t else t)
                 else:
-                    self.accept('AS')
-                    item.value = self.parse_constant_value()
+                    # GnuCOBOL: a level-01 CONSTANT keeps operator precedence,
+                    # while a level-78 VALUE is evaluated left to right
+                    item.value = self.parse_constant_value(left_to_right=False)
                 level = 78
                 item.level = 78
                 if item.name and item.value is not None:
@@ -1181,6 +1141,13 @@ class Parser:
                 item.any_length = True
             else:
                 raise self.err("unexpected word in data description")
+        if item.pic is not None and item.usage in (None, 'DISPLAY'):
+            try:
+                item.decl_size = item.pic.size
+                if item.name:
+                    self.decl_sizes[item.name] = item.decl_size
+            except AttributeError:
+                pass
         self.expect_period()
         if level == 78:
             if item.value is None:
@@ -1258,13 +1225,41 @@ class Parser:
         if not item.values:
             raise self.err("condition value expected")
 
-    def parse_constant_value(self):
-        """The value of a constant: a literal, or an arithmetic expression of
-        literals, constants and LENGTH OF / BYTE-LENGTH OF."""
+    def parse_constant_value(self, left_to_right=True):
+        """The value of a constant: an arithmetic expression of literals,
+        constants and LENGTH OF / BYTE-LENGTH OF, or a list of literals and
+        constants joined with '&' (CONSTANT 'Cat ' & ' & ' & DOG)."""
+        save = self.pos
+        atom = self._const_atom()
+        if atom is not None and self.peek().kind == 'OP' and self.peek().val == '&':
+            parts = [atom]
+            while self.peek().kind == 'OP' and self.peek().val == '&':
+                self.next()
+                nxt = self._const_atom()
+                if nxt is None:
+                    raise self.err("literal or constant expected after '&'")
+                parts.append(nxt)
+            out = b''
+            for p in parts:
+                out += p.value if isinstance(p, StrLit) else b' '
+            return StrLit(out)
+        self.pos = save
+        self.const_expr = left_to_right
+        try:
+            e = self.parse_expr()
+        finally:
+            self.const_expr = False
+        return fold_constant(e, self.decl_sizes)
+
+    def _const_atom(self):
+        """A literal, figurative constant or named constant, or None."""
         t = self.peek()
         if t.kind == 'STR' or (t.kind == 'WORD' and (t.up in FIGURATIVES or t.up == 'ALL')):
             return self.parse_value_literal()
-        return fold_constant(self.parse_expr())
+        if t.kind == 'WORD' and t.up in self.visible_constants():
+            self.next()
+            return self.visible_constants()[t.up]
+        return None
 
     def visible_constants(self):
         """Constants this program can name: its own, and the GLOBAL ones of the
@@ -1277,7 +1272,7 @@ class Parser:
             p = p.parent
         for pc in reversed(chain):
             out.update(getattr(pc, 'global_constants', {}))
-        out.update(self.prog.constants)
+        out.update(self.prog.constants if self.prog is not None else {})
         return out
 
     def const_int(self, what):
@@ -2089,6 +2084,10 @@ class Parser:
             return WhenObj('FALSE')
         if subj in ('TRUE', 'FALSE'):
             return WhenObj('COND', self.parse_condition())
+        # "WHEN >= 10000" / "WHEN < 5": a relation with the subject implied
+        if subj not in ('TRUE', 'FALSE') and self._relop_start(allow_not=False):
+            op = self.parse_relop()
+            return WhenObj('RELOP', op, self.parse_expr())
         neg = bool(self.accept('NOT'))
         save = self.pos
         try:
@@ -3019,6 +3018,21 @@ class Parser:
 
     # ---------------------------------------------------------- expressions
     def parse_expr(self, split_signed=True):
+        if getattr(self, 'const_expr', False):
+            # A constant expression has no operator precedence: it applies
+            # each operator to the accumulated value in source order, with
+            # parentheses grouping (GnuCOBOL's "left to right precedence").
+            left = self._unary()
+            while True:
+                t = self.peek()
+                if t.kind == 'OP' and t.val in ('+', '-', '*', '/', '**'):
+                    self.next()
+                    left = BinOp(t.val, left, self._unary())
+                elif split_signed and t.kind == 'NUM' and t.val[0] in '+-':
+                    self.next()
+                    left = BinOp(t.val[0], left, self._unary(make_numlit(t.val[1:], t.loc)))
+                else:
+                    return left
         left = self._term()
         while True:
             t = self.peek()
@@ -3053,7 +3067,9 @@ class Parser:
             left = BinOp('**', left, right)
         return left
 
-    def _unary(self):
+    def _unary(self, first=None):
+        if first is not None:
+            return first
         t = self.peek()
         if t.kind == 'OP' and t.val == '-':
             self.next()

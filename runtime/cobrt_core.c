@@ -2532,7 +2532,8 @@ int cob_switch_get(int n)
 		char nm[32];
 		snprintf(nm, sizeof nm, "COB_SWITCH_%d", n);
 		const char *v = getenv(nm);
-		switches[n] = (v && strcasecmp(v, "ON") == 0) ? 1 : -1;
+		switches[n] = (v && (strcasecmp(v, "ON") == 0 || strcmp(v, "1") == 0 ||
+		                     strcasecmp(v, "TRUE") == 0 || strcasecmp(v, "YES") == 0)) ? 1 : -1;
 	}
 	return switches[n] == 1;
 }

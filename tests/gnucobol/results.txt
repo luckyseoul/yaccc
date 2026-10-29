@@ -6,10 +6,10 @@ SKIP  data_binary.at:763           BINARY: 1--8 big-endian
 SKIP  data_binary.at:945           BINARY: 1--8 native
 SKIP  data_binary.at:1133          BINARY: full-print
 PASS  data_binary.at:1185          BINARY: 64bit unsigned compare
-SKIP  data_binary.at:1210          BINARY: 64bit unsigned arithmetic notrunc
-SKIP  data_binary.at:1240          BINARY: 64bit signed negative constant range
+FAIL  data_binary.at:1210          BINARY: 64bit unsigned arithmetic notrunc
+PASS  data_binary.at:1240          BINARY: 64bit signed negative constant range
 PASS  data_binary.at:1261          COMP-4 Truncate
-SKIP  data_binary.at:1322          COMP-4 No Truncate
+FAIL  data_binary.at:1322          COMP-4 No Truncate
 SKIP  data_display.at:21           DISPLAY: Sign ASCII
 SKIP  data_display.at:80           DISPLAY: Sign ASCII (2)
 SKIP  data_display.at:126          DISPLAY: Sign EBCDIC
@@ -131,7 +131,7 @@ PASS  run_file.at:534              REWRITE a RELATIVE file with RANDOM access
 PASS  run_file.at:601              File SORT, SEQUENTIAL
 PASS  run_file.at:651              File SORT, SEQUENTIAL variable records
 PASS  run_file.at:733              File SORT, LINE SEQUENTIAL
-FAIL  run_file.at:792              LINAGE and LINAGE-COUNTER sample
+PASS  run_file.at:792              LINAGE and LINAGE-COUNTER sample
 PASS  run_file.at:1078             File SORT, LINE SEQUENTIAL same file
 PASS  run_file.at:1125             File SORT, LINE SEQUENTIAL variable records
 PASS  run_file.at:1189             File MERGE, LINE SEQUENTIAL variable records
@@ -403,7 +403,7 @@ PASS  run_fundamental.at:4721      debugging lines, free format (not active)
 PASS  run_fundamental.at:4744      debugging lines, free format (-fdebugging-line)
 PASS  run_fundamental.at:4767      USE FOR DEBUGGING (no DEBUGGING MODE)
 PASS  run_fundamental.at:4812      USE FOR DEBUGGING (COB_SET_DEBUG deactivated)
-FAIL  run_fundamental.at:4857      USE FOR DEBUGGING ON ALL PROCEDURES
+PASS  run_fundamental.at:4857      USE FOR DEBUGGING ON ALL PROCEDURES
 PASS  run_fundamental.at:4908      USE FOR DEBUGGING ON procedure
 CERR  run_fundamental.at:4956      USE FOR DEBUGGING (COB_SET_DEBUG switched)
 SKIP  run_fundamental.at:5005      USE FOR DEBUGGING ON [ALL] REFERENCES OF field
@@ -525,7 +525,7 @@ PASS  run_misc.at:1755             INSPECT TALLYING BEFORE
 PASS  run_misc.at:1790             INSPECT TALLYING AFTER
 PASS  run_misc.at:1825             INSPECT REPLACING TRAILING ZEROS BY SPACES
 PASS  run_misc.at:1849             INSPECT REPLACING complex
-FAIL  run_misc.at:1875             SWITCHES (environment COB_SWITCH_n and SET)
+PASS  run_misc.at:1875             SWITCHES (environment COB_SWITCH_n and SET)
 PASS  run_misc.at:1972             Nested PERFORM
 PASS  run_misc.at:1996             PERFORM VARYING BY -0.2
 SKIP  run_misc.at:2023             PERFORM VARYING BY phrase omitted
@@ -578,8 +578,8 @@ PASS  run_misc.at:4253             STOP RUN WITH NORMAL STATUS
 PASS  run_misc.at:4271             STOP RUN WITH ERROR STATUS
 PASS  run_misc.at:4289             SYMBOLIC clause
 PASS  run_misc.at:4326             OCCURS clause with 1 entry
-CERR  run_misc.at:4375             Computing of different USAGEs w/o decimal point
-CERR  run_misc.at:5011             Computing of different USAGEs w/- decimal point
+PASS  run_misc.at:4375             Computing of different USAGEs w/o decimal point
+PASS  run_misc.at:5011             Computing of different USAGEs w/- decimal point
 SKIP  run_misc.at:5646             C/C++ reserved words/predefined identifiers
 SKIP  run_misc.at:6106             ON EXCEPTION clause of DISPLAY
 SKIP  run_misc.at:6131             EC-SCREEN-LINE-NUMBER and -STARTING-COLUMN
@@ -598,7 +598,7 @@ CERR  run_misc.at:9965             CALL with program prototypes
 PASS  run_misc.at:10021            REDEFINES values on FILLER and INITIALIZE
 SKIP  run_misc.at:10076            PICTURE with constant-name
 PASS  run_misc.at:10104            Quote marks in comment paragraphs
-CERR  run_misc.at:10130            Numeric MOVE with/without -fbinary-truncate
+SKIP  run_misc.at:10130            Numeric MOVE with/without -fbinary-truncate
 PASS  run_misc.at:10190            Alphanumeric MOVE with truncation
 PASS  run_misc.at:10241            PROGRAM-ID / CALL literal/variable with spaces
 SKIP  run_misc.at:10309            C-API Test (param based)
@@ -614,9 +614,9 @@ SKIP  run_misc.at:11292            SET CONSTANT directive
 SKIP  run_misc.at:11395            DEFINE OVERRIDE
 SKIP  run_misc.at:11461            DEFINE Defaults
 CERR  run_misc.at:11527            78 VALUE
-CERR  run_misc.at:11595            01 CONSTANT
+PASS  run_misc.at:11595            01 CONSTANT
 SKIP  run_misc.at:11675            DISPLAY UPON
-CERR  run_misc.at:11767            FLOAT-DECIMAL w/o SIZE ERROR
+FAIL  run_misc.at:11767            FLOAT-DECIMAL w/o SIZE ERROR
 CERR  run_misc.at:11941            FLOAT-SHORT / FLOAT-LONG w/o SIZE ERROR
 FAIL  run_misc.at:12140            FLOAT-SHORT with SIZE ERROR
 PASS  run_misc.at:12191            FLOAT-LONG with SIZE ERROR
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 436  FAIL 29  CERR 29  XERR 0  SKIP 199
+PASS 443  FAIL 29  CERR 24  XERR 0  SKIP 197

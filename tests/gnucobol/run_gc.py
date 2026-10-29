@@ -40,6 +40,13 @@ QUADRIGRAPHS = (('@<:@', '['), ('@:>@', ']'), ('@S|@', '$'), ('@%:@', '#'), ('@&
 # cobc options that do not change behavior here, and translations
 IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra'}
 FLAG_MAP = {'-free': ['-free'], '-fixed': ['-fixed'], '-fdebugging-line': ['--debugging-mode'],
+            # yaccc has these as its own options
+            '-fnotrunc': ['-fno-binary-truncate'],
+            '-fbinary-truncate': [],        # yaccc's default
+            '-fno-ec=BOUND': ['--no-check'],
+            '-fno-ec=BOUND-REF-MOD': ['--no-check'],
+            '-fno-ec=BOUND-REF-MOD-ALL': ['--no-check'],
+            '-fno-ec=ALL': ['--no-check'],
             '-fbinary-size=2-4-8': ['--binary-size', '2-4-8'],
             '-fbinary-size=1-2-4-8': ['--binary-size', '1-2-4-8'],
             '-fdpc-in-data=none': ['-fdpc-in-data', 'none'],

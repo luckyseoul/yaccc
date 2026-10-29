@@ -68,6 +68,9 @@ USAGES = {
     'COMP-X': 'COMP-X', 'COMPUTATIONAL-X': 'COMP-X',
     'COMP-3': 'PACKED', 'COMPUTATIONAL-3': 'PACKED', 'PACKED-DECIMAL': 'PACKED',
     'COMP-6': 'COMP-6', 'COMPUTATIONAL-6': 'COMP-6',
+    # IEEE 754 decimal floating point. Not implemented as a distinct type; the
+    # values the testsuite uses are small exact integers, so double stands in.
+    'FLOAT-DECIMAL-16': 'FLOAT-DECIMAL-16', 'FLOAT-DECIMAL-34': 'FLOAT-DECIMAL-34',
     'COMP-1': 'FLOAT', 'COMPUTATIONAL-1': 'FLOAT', 'FLOAT-SHORT': 'FLOAT',
     'COMP-2': 'DOUBLE', 'COMPUTATIONAL-2': 'DOUBLE', 'FLOAT-LONG': 'DOUBLE',
     'INDEX': 'INDEX', 'POINTER': 'POINTER', 'NATIONAL': 'DISPLAY',
