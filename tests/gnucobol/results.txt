@@ -150,7 +150,7 @@ CERR  run_file.at:1910             ASSIGN DYNAMIC with BASED data item
 FAIL  run_file.at:1996             ASSIGN DYNAMIC with data item in LINKAGE
 PASS  run_file.at:2168             ASSIGN DYNAMIC with empty data item
 PASS  run_file.at:2208             ASSIGN DYNAMIC with unset implicit data item
-CERR  run_file.at:2240             INDEXED file key-name
+PASS  run_file.at:2240             INDEXED file key-name
 CERR  run_file.at:2282             INDEXED file sparse/split keys
 CERR  run_file.at:2802             INDEXED file split keys WITH DUPLICATES
 CERR  run_file.at:2960             INDEXED file variable length record
@@ -560,7 +560,7 @@ PASS  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
 PASS  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
 CERR  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
 SKIP  run_misc.at:3463             Initialized value with defaultbyte
-CERR  run_misc.at:3488             CALL with OMITTED parameter
+PASS  run_misc.at:3488             CALL with OMITTED parameter
 SKIP  run_misc.at:3527             CALL in from C, cob_call_params explicitly set
 SKIP  run_misc.at:3588             CALL in from C, cob_call_params unknown
 SKIP  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTERN
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 429  FAIL 28  CERR 37  XERR 0  SKIP 199
+PASS 431  FAIL 28  CERR 35  XERR 0  SKIP 199

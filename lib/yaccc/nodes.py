@@ -115,6 +115,12 @@ class SignTest(Cond):
 
 
 @dataclass(eq=False)
+class OmittedCond(Cond):
+    ref: Any
+    neg: bool = False
+
+
+@dataclass(eq=False)
 class CondRef(Cond):
     ref: DataRef
 

@@ -2126,6 +2126,7 @@ typedef struct {
 static cob_frame_info frames[256];
 static int frame_depth;
 const int *cob_call_sizes;                  /* set by a CALL for the program it enters */
+const unsigned char *cob_call_arg_omitted;  /* per argument: 1 when OMITTED */
 static unsigned char ncp_data[4];
 static const cob_attr attr_ncp = { COB_NUM_BINARY, 9, 0, COB_F_SIGNED, NULL, 0 };
 cob_field cob_ncp_reg = { 4, ncp_data, &attr_ncp };
@@ -2156,6 +2157,8 @@ void cob_module_push(const char *name, int argc)
 		}
 	}
 	cob_call_sizes = NULL;
+	/* cob_call_arg_omitted is deliberately not cleared here: the caller sets it
+	 * immediately before the call, and this push happens inside the callee */
 	frame_depth++;
 	set_ncp();
 }
@@ -2422,6 +2425,17 @@ unsigned char *cob_alloc_chars(cob_s64 n)
 void cob_free_chars(unsigned char *p)
 {
 	free(p);
+}
+
+/* IF item OMITTED: a CALL passed no argument in this position */
+int cob_param_omitted(int n)
+{
+	if (frame_depth <= 0 || frame_depth > 256)
+		return 0;
+	const cob_frame_info *fr = &frames[frame_depth - 1];
+	if (n < 1 || n > fr->nargs)
+		return 1;
+	return cob_call_arg_omitted && cob_call_arg_omitted[n - 1];
 }
 
 const char *cob_chain_arg(int n)

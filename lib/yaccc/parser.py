@@ -553,6 +553,12 @@ class Parser:
                 self.accept('KEY')
                 self.accept('IS')
                 fc.record_key = self.parse_identifier()
+                # RECORD KEY IS key-name = data-name: the key's own name, then
+                # the item that holds it
+                if self.peek().kind == 'OP' and self.peek().val == '=':
+                    self.next()
+                    fc.key_name = fc.record_key
+                    fc.record_key = self.parse_identifier()
                 if self.is_word('SOURCE'):
                     raise self.err("split keys are not supported")
             elif self.accept('ALTERNATE'):
@@ -3066,6 +3072,16 @@ class Parser:
 
     def _simple(self):
         t = self.peek()
+        # IF item OMITTED: was the CALL argument left out?
+        if t.kind == 'WORD' and self.is_user_word() and (
+                self.is_word('OMITTED', k=1) or
+                (self.is_word('NOT', k=1) and self.is_word('OMITTED', k=2))):
+            ref = self.parse_identifier()
+            neg = False
+            if self.accept('NOT'):
+                neg = True
+            self.expect('OMITTED')
+            return OmittedCond(ref, neg)
         if t.kind == '(':
             save = self.pos
             ctx = (self.subj, self.relop)

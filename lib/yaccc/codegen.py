@@ -2051,6 +2051,8 @@ class CodeGen(ReportWriterGen, DebugGen):
             op = {'POSITIVE': '> 0', 'NEGATIVE': '< 0', 'ZERO': '== 0'}[c.sign]
             x = f"({d} {op})"
             return f"(!{x})" if c.neg else x
+        if isinstance(c, OmittedCond):
+            return self.cond_omitted(c)
         if isinstance(c, CondRef):
             return self.cond_name(c.ref)
         if isinstance(c, MaybeCond):
@@ -2141,6 +2143,24 @@ class CodeGen(ReportWriterGen, DebugGen):
             return "((void *)0)"
         raise CompileError("ADDRESS OF can only be compared with NULL or "
                            "another ADDRESS OF", getattr(e, 'loc', None))
+
+    def cond_omitted(self, c):
+        """IF item OMITTED: the CALL argument in this USING position was not
+        passed."""
+        it = self.resolve(c.ref)
+        n = self.any_length_param(self.prog, c.ref) if getattr(it, 'any_length', False) \
+            else self.using_position(self.prog, c.ref)
+        e = f"cob_param_omitted({n})"
+        return f"(!{e})" if c.neg else f"({e})"
+
+    def using_position(self, prog, ref):
+        it = self.resolve(ref)
+        names = [self.resolve(r).name for _m, r in prog.using]
+        try:
+            return names.index(it.name) + 1
+        except ValueError:
+            raise CompileError(f"'{ref.name}' must be named in the PROCEDURE "
+                               f"DIVISION USING list to test OMITTED", ref.loc) from None
 
     def cond_name(self, ref):
         c = self.resolve(ref)
@@ -3808,11 +3828,13 @@ class CodeGen(ReportWriterGen, DebugGen):
         n = len(s.args)
         frees = []
         sizes = []
+        omitted = []
         em(f"unsigned char *cob_av[{max(n, 1)}];")
         for i, a in enumerate(s.args):
             if a.value == 'OMITTED':
                 em(f"cob_av[{i}] = NULL;")
                 sizes.append('0')
+                omitted.append(i)
                 continue
             v = a.value
             if a.mode == 'REFERENCE' and isinstance(v, DataRef):
@@ -3865,6 +3887,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("cob_call_rejected = 0;")
         if sizes:
             em(f"cob_call_sizes = (const int[]){{{', '.join(sizes)}}};")
+        em("cob_call_arg_omitted = NULL;")
+        if omitted:
+            flags = ', '.join('1' if k in omitted else '0' for k in range(n))
+            em(f"cob_call_arg_omitted = (const unsigned char[]){{{flags}}};")
         em(f"int cob_rc = cob_fn({n}, cob_av);")
         em("if (cob_call_rejected) {")
         em.ind += 1
