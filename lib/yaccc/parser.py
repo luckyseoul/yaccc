@@ -1153,7 +1153,8 @@ class Parser:
                 self._occurs(item)
             elif w in ('SYNC', 'SYNCHRONIZED'):
                 self.next()
-                self.accept('LEFT', 'RIGHT')
+                self.accept('LEFT', 'RIGHT')   # both map to natural alignment
+                item.sync = True
             elif w in ('JUST', 'JUSTIFIED'):
                 self.next()
                 self.accept('RIGHT')

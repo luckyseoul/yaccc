@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 """Report Writer: analysis of the REPORT SECTION and generation of the report
 tables and callbacks driven by the runtime RWCS (runtime/cobrt_rw.c)."""
-from .data import DataItem, Picture, layout, resolve_types, T_NUM_BINARY, T_NUM_EDITED
+from .data import (DataItem, Picture, layout, resolve_types, Occurs, T_NUM_BINARY,
+                  T_NUM_EDITED)
 from .errors import CompileError
 from .nodes import DataRef, NumLit, StrLit
 
@@ -61,6 +62,17 @@ def _num_pic(digits, scale):
     return "S" + (f"9({ip})" if ip > 0 else "") + f"V9({scale})"
 
 
+class Spacer:
+    """Marks a report line's current position at the start of one occurrence of
+    a repeated group; it prints nothing."""
+    rw_spacer = True
+    rw_slot = 0
+
+    def __init__(self, col, loc):
+        self.rw_column = col
+        self.loc = loc
+
+
 class ReportWriterGen:
     """Mixed into CodeGen."""
 
@@ -70,6 +82,7 @@ class ReportWriterGen:
         ctx.reports = {}
         ctx.rw_groups = {}
         ctx.rw_init = []
+        ctx.rw_trees = []
         for rd in prog.reports:
             if rd.name in ctx.reports:
                 raise CompileError(f"duplicate report name '{rd.name}'", rd.loc)
@@ -113,13 +126,13 @@ class ReportWriterGen:
                     ctx.rw_groups[g.name] = (ri, gi)
                 self.rw_group(ri, gi)
             self.rw_link_sums(ri)
-            ri.width = max([ri.width] + [len(ri.code) + f.rw_column - 1 + f.size
+            ri.width = max([ri.width] + [len(ri.code) + f.rw_column - 1 + f.rw_slot
                                          for g in ri.groups for _, fl in g.lines for f in fl])
             if rd.line_limit:
                 for g in ri.groups:
                     for _, fl in g.lines:
                         for f in fl:
-                            if f.rw_column - 1 + f.size > rd.line_limit:
+                            if f.rw_column - 1 + f.rw_slot > rd.line_limit:
                                 raise CompileError(f"report item ends in column {f.rw_column - 1 + f.size}, "
                                                    f"beyond the LINE LIMIT of {rd.line_limit}", f.loc)
 
@@ -181,54 +194,102 @@ class ReportWriterGen:
             src = it.rw_source
             if isinstance(src, DataRef) and src.name in ('LINE-COUNTER', 'PAGE-COUNTER') and not src.quals:
                 src.quals = [ri.name]
+            if getattr(it, 'rw_columns', None) and not it.occurs:
+                # COLUMN 1, 11, 21, 27: one occurrence per column, subscripted
+                # like a table (GnuCOBOL gives the item an implicit OCCURS)
+                oc = Occurs()
+                oc.min = oc.max = len(it.rw_columns)
+                oc.loc = it.loc
+                it.occurs = oc
         resolve_types(g, self.opts)
         layout(g, 0)
+        # report items live in their own storage: a program can MOVE to them or
+        # read them by name, and the presentation copies the item's current value
+        # into the print line (GnuCOBOL's reportio.c, copy_line_fields)
+        sym = self.sym('rwd_')
+        self.glob.append(f"static unsigned char {sym}[{g.total_size()}];"
+                         f" /* report group {g.name or 'FILLER'} */")
+        for it in g.walk():
+            it.storage = sym
+            it.section = 'WS'
+            it.record = g
+            it.report_name = ri.name
+        self.register_tree(g)
+        self.ctx.rw_trees.append(g)
         cur = None
 
-        def walk(it):
+        def walk(it, shift=0, subs=()):
             nonlocal cur
             if it.rw_line is not None:
                 cur = (it.rw_line, [])
                 gi.lines.append(cur)
             if not it.children:
-                if cur is None:
-                    # a group without LINE clauses: its items go on the next line
-                    cur = (('REL', 1), [])
-                    gi.lines.append(cur)
-                prev = cur[1][-1] if cur[1] else None
-                col = it.rw_column
-                if col is None:
-                    # no COLUMN clause: the item follows the previous one
-                    col = prev.rw_column + prev.size if prev else 1
-                elif isinstance(col, tuple):
-                    # COLUMN PLUS n: n positions right of the previous item of the line
-                    col = (prev.rw_column + prev.size - 1 if prev else 0) + col[1]
-                if it.rw_just == 'R':           # COLUMN RIGHT n: the item ends in column n
-                    col = col - it.size + 1
-                elif it.rw_just == 'C':         # COLUMN CENTER n: centered on column n
-                    col = col - (it.size - 1) // 2 if it.size % 2 else col - it.size // 2 + 1
-                if col < 1:
-                    raise CompileError("report item starts before column 1", it.loc)
-                if getattr(it, 'rw_columns', None):
-                    # one copy per listed column, each reading the same source
-                    import copy as _copy
-                    for c in it.rw_columns:
-                        rep = _copy.copy(it)
-                        rep.rw_column = c
-                        rep.rw_columns = None
-                        cur[1].append(rep)
-                else:
-                    it.rw_column = col
-                    cur[1].append(it)
-                if it.rw_group_indicate and gi.type != 'DE':
-                    raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
-                if it.rw_sums:
-                    if gi.type not in ('CF', 'RF'):
-                        raise CompileError("SUM is only allowed in CONTROL FOOTING and REPORT FOOTING groups",
-                                           it.loc)
-                    self.rw_counter(ri, gi, it)
+                place(it, shift, subs)
+                return
+            if it.occurs:
+                # OCCURS on a group repeats everything inside it, each occurrence
+                # STEP columns right of the one before (default: the group width)
+                step = it.rw_step or it.size
+                c0 = start_col(it, shift)
+                for k in range(it.occurs.max):
+                    cur[1].append(Spacer(c0 + k * step, it.loc))
+                    for c in it.children:
+                        walk(c, 0, subs + ((it, k + 1),))
+                return
             for c in it.children:
-                walk(c)
+                walk(c, shift, subs)
+
+        def start_col(it, shift):
+            """Column of an item's first occurrence, from the previous item of
+            the line and its own COLUMN clause."""
+            prev = cur[1][-1] if cur[1] else None
+            prev_end = prev.rw_column + prev.rw_slot if prev else 1
+            col = it.rw_column
+            if col is None:
+                # no COLUMN clause: the item follows the previous one
+                return prev_end + shift
+            if isinstance(col, tuple):
+                # COLUMN PLUS n: n positions right of the previous item of the line
+                return (prev_end - 1 if prev else 0) + col[1] + shift
+            return col + shift
+
+        def place(it, shift, subs):
+            nonlocal cur
+            if cur is None:
+                # a group without LINE clauses: its items go on the next line
+                cur = (('REL', 1), [])
+                gi.lines.append(cur)
+            col = start_col(it, shift)
+            step = (it.rw_step or it.size) if it.occurs else 0
+            n = it.occurs.max if it.occurs else 1
+            listed = getattr(it, 'rw_columns', None)
+            if listed and len(listed) != n:
+                raise CompileError(f"'{it.name or 'FILLER'}' lists {len(listed)} COLUMN values for "
+                                   f"{n} occurrence(s)", it.loc)
+            import copy as _copy
+            for k in range(n):
+                base = (listed[k] + shift) if listed else col + k * step
+                if it.rw_just == 'R':           # COLUMN RIGHT n: the item ends in column n
+                    base = base - it.size + 1
+                elif it.rw_just == 'C':         # COLUMN CENTER n: centered on column n
+                    base = base - (it.size - 1) // 2 if it.size % 2 else base - it.size // 2 + 1
+                if base < 1:
+                    raise CompileError("report item starts before column 1", it.loc)
+                rep = _copy.copy(it)
+                rep.rw_column = base
+                rep.rw_slot = it.size if listed else (step if step else it.size)
+                rep.rw_subs = subs + ((it, k + 1),) if it.occurs else subs
+                rep.rw_columns = None
+                cur[1].append(rep)
+            if it.rw_group_indicate and gi.type != 'DE':
+                raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
+            if it.rw_sums and not getattr(it, 'rw_counted', False):
+                if gi.type not in ('CF', 'RF'):
+                    raise CompileError("SUM is only allowed in CONTROL FOOTING and REPORT FOOTING groups",
+                                       it.loc)
+                it.rw_counted = True
+                self.rw_counter(ri, gi, it)
+
         walk(g)
         for spec, _ in gi.lines[1:]:
             if spec[0] in ('ABSNP', 'NP'):
@@ -238,29 +299,25 @@ class ReportWriterGen:
         if entry.category() not in ('NUMERIC', 'NUMERIC-EDITED'):
             raise CompileError("a SUM item must have a numeric or numeric-edited PICTURE", entry.loc)
         sc = SumCounter(entry, gi)
-        edited = entry.type == T_NUM_EDITED
-        ctr = DataItem(1, None if edited else entry.name, entry.loc)
-        ctr.pic = entry.pic if not edited else Picture(_num_pic(entry.pic.digits, entry.pic.scale),
-                                                       entry.loc, '$', False)
-        items = [ctr]
-        if edited and entry.name:
-            img = DataItem(1, entry.name, entry.loc)
-            img.pic = entry.pic
-            img.blank_zero = entry.blank_zero
-            img.justified = entry.justified
-            sc.image = img
-            items.append(img)
-        for it in items:
-            resolve_types(it, self.opts)
-            layout(it, 0)
+        if entry.type == T_NUM_EDITED:
+            # an edited item cannot be added to; accumulate in a numeric field
+            # and move the result through the item itself for presentation
+            ctr = DataItem(1, None, entry.loc)
+            ctr.pic = Picture(_num_pic(entry.pic.digits, entry.pic.scale), entry.loc, '$', False)
+            resolve_types(ctr, self.opts)
+            layout(ctr, 0)
             sym = self.sym('rsum_')
-            self.glob.append(f"static unsigned char {sym}[{it.size}]; /* sum counter {entry.name or ''} */")
-            it.storage = sym
-            it.section = 'WS'
-            it.record = it
-            it.offset = 0
-            self.register_tree(it)
-            self.ctx.rw_init.append(it)
+            self.glob.append(f"static unsigned char {sym}[{ctr.size}];"
+                             f" /* sum counter {entry.name or ''} */")
+            ctr.storage = sym
+            ctr.section = 'WS'
+            ctr.record = ctr
+            ctr.offset = 0
+            self.ctx.rw_init.append(ctr)
+            sc.image = entry
+        else:
+            # the item is its own accumulator: GnuCOBOL sums into the item's field
+            ctr = entry
         sc.item = ctr
         if gi.type == 'RF':
             sc.reset_level = None
@@ -388,6 +445,8 @@ class ReportWriterGen:
                     em(f"case {li}:")
                     em.ind += 1
                     for f in fields:
+                        if getattr(f, 'rw_spacer', False):
+                            continue
                         src = self.rw_source(ri, f)
                         if src is None:
                             continue
@@ -525,8 +584,17 @@ class ReportWriterGen:
         if f.rw_source is not None:
             return self.field(f.rw_source)
         if f.value is not None:
+            # a VALUE clause is refreshed at every presentation, so a MOVE to the
+            # item does not show (reportio.c, copy_line_fields: rf->litval)
             return self.field(f.value)
-        return None
+        return self.rw_item_ref(f)
+
+    def rw_item_ref(self, it):
+        """C field for a report item's own storage, at one occurrence."""
+        terms = [str(it.offset)]
+        for occ, k in getattr(it, 'rw_subs', ()) or ():
+            terms.append(f"({k} - 1) * {occ.size}")
+        return f"CF({it.storage} + {' + '.join(terms)}, {it.size}, &{self.item_attr(it)})"
 
     # ------------------------------------------------------------ statements
     def rw_report(self, name, loc):

@@ -258,6 +258,7 @@ class DataItem:
         self.rw_sums = []           # [(operands, upon-names)]
         self.rw_reset = None        # control name or 'FINAL'
         self.rw_group_indicate = False
+        self.sync = False               # SYNCHRONIZED: align to a natural boundary
         # computed
         self.type = None
         self.digits = 0
@@ -504,6 +505,31 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.flags |= F_DEC_COMMA
 
 
+def align_of(it):
+    """Natural alignment of an item, 1 when unaligned (as GnuCOBOL: binary and
+    pointer items align to their own size, packed and character data do not)."""
+    t = it.type
+    if t in (T_NUM_BINARY, T_NUM_COMP5):
+        return it.size if it.size in (2, 4, 8) else 1
+    if t in (T_POINTER, T_INDEX):
+        return 8
+    if t == T_NUM_FLOAT:
+        return 4
+    if t == T_NUM_DOUBLE:
+        return 8
+    return 1
+
+
+def table_align(it):
+    """Alignment a table's element size is rounded up to: the largest alignment
+    of an item declared SYNCHRONIZED inside it."""
+    best = 1
+    for c in it.walk():
+        if c is not it and getattr(c, 'sync', False):
+            best = max(best, align_of(c))
+    return best
+
+
 def layout(item, offset):
     item.offset = offset
     if not item.children:
@@ -516,10 +542,22 @@ def layout(item, offset):
         if c.redefines is not None:
             layout(c, c.redefines.offset)
         else:
+            if getattr(c, 'sync', False):
+                a = align_of(c)
+                if a > 1:
+                    # SYNCHRONIZED: the item starts on a natural boundary,
+                    # measured from the start of the record
+                    pos = (pos + a - 1) // a * a
             layout(c, pos)
             pos = c.offset + c.total_size()
         extent = max(extent, c.offset + c.total_size())
     item.size = extent - offset
+    if item.occurs:
+        # a table element containing aligned items is padded to that alignment,
+        # so every occurrence is aligned the same way (GnuCOBOL's layout)
+        a = table_align(item)
+        if a > 1:
+            item.size = (item.size + a - 1) // a * a
     if item.size == 0:
         raise CompileError(f"group item '{item.name}' has zero length", item.loc)
 

@@ -113,8 +113,10 @@ static void trim_copy(char *dst, size_t dsz, const unsigned char *src, size_t n)
 static void resolve_path(cob_file *f)
 {
 	char name[1024];
-	if (f->assign_field)
+	if (f->assign_field && f->assign_field->data)
 		trim_copy(name, sizeof name, f->assign_field->data, f->assign_field->size);
+	else if (f->assign_field)
+		name[0] = 0;            /* BASED assign item never allocated */
 	else if (f->assign_name)
 		snprintf(name, sizeof name, "%s", f->assign_name);
 	else
@@ -472,6 +474,8 @@ int cob_open(cob_file *f, int mode)
 	f->linage_lines = 0;
 	f->eop = 0;
 	resolve_path(f);
+	if (!f->path[0])
+		return set_st(f, "31");         /* no file name: the file does not exist */
 	if (f->organization == COB_ORG_SEQUENTIAL || f->organization == COB_ORG_LINE_SEQ) {
 		int rc = open_seq(f, mode);
 		if (rc == COB_IO_OK && f->linage_ctr && (mode == COB_OPEN_OUTPUT || mode == COB_OPEN_EXTEND)) {

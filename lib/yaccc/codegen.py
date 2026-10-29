@@ -168,6 +168,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         self.attr_cache = {}
         self.lit_cache = {}
         self.static_fields = {}
+        self.dyn_fields = []        # static fields over BASED storage, bound at OPEN
         self.n = 0
         self.prog_syms = {}
         self.externals = {}
@@ -968,6 +969,8 @@ class CodeGen(ReportWriterGen, DebugGen):
             em(f"memset({self.dbg.sym}, ' ', {self.dbg.size});")
         for it in ctx.rw_init:
             em(f"cob_move(&cob_fig_zero, {self.rw_item_field(it)});")
+        for g in getattr(ctx, 'rw_trees', ()):
+            self.init_tree(g, 'init')
         for fi in ctx.files.values():
             if fi.external:
                 em(f"if (!{fi.sym}_inited) {{")
@@ -1046,7 +1049,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em(f"if (cob_argc > {i} && cob_argv[{i}]) cob_get_value({n or it.size}, "
                    f"cob_argv[{i}], CF({it.storage}, {it.size}, &{self.item_attr(it)}));")
             else:
-                em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : {it.storage}_dummy;")
+                # an argument left out binds NULL, as in GnuCOBOL: ADDRESS OF
+                # the item is then NULL, which is how a program tests OMITTED
+                em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : NULL;")
             using_items.append(it.storage)
         ret_item = None
         if getattr(prog, 'is_function', False) and prog.returning is not None:
@@ -1172,9 +1177,21 @@ class CodeGen(ReportWriterGen, DebugGen):
         if key in self.static_fields:
             return self.static_fields[key]
         s = self.sym('sf_')
+        rec = getattr(it, 'record', None)
+        if getattr(rec, 'based', False):
+            # BASED storage: the address is only known once ALLOCATE has run, so
+            # the field is bound where it is used (see g_Open)
+            self.glob.append(f"static cob_field {s} = {{{it.size}, NULL, &{self.item_attr(it)}}};")
+            expr = (f"cob_based_ptr({rec.based_sym}, {c_string(rec.name)}) + {it.offset}")
+            self.dyn_fields.append((s, expr))
+            self.static_fields[key] = '&' + s
+            return '&' + s
         if it.section in ('LK', 'LS'):
             self.glob.append(f"static cob_field {s} = {{{it.size}, NULL, &{self.item_attr(it)}}};")
             self.ctx.rebinds.append(f"{s}.data = {it.storage} + {it.offset};")
+            # a LINKAGE item can be re-pointed with SET ADDRESS OF between the
+            # program's entry and the OPEN that names it
+            self.dyn_fields.append((s, f"{it.storage} + {it.offset}"))
             self.static_fields[key] = '&' + s
             return '&' + s
         self.glob.append(f"static cob_field {s} = {{{it.size}, {it.storage} + {it.offset}, &{self.item_attr(it)}}};")
@@ -1435,11 +1452,21 @@ class CodeGen(ReportWriterGen, DebugGen):
         base = it.storage
         if getattr(getattr(it, 'record', None), 'based', False):
             base = f'cob_based_ptr({base}, {c_string(it.record.name)})'
+        elif getattr(it, 'section', None) == 'LK':
+            base = (f"cob_lk_ptr({base}, {c_string(self.lk_root_name(it))}, "
+                    f"{c_string(ref.name)}, {c_string(str(ref.loc))})")
         off = self.offset_expr(ref, it)
         f = f"CF({base} + {off}, {self.size_expr(it, receiving)}, &{self.item_attr(it)})"
         if ref.refmod:
             f = self.apply_refmod(f, ref.refmod, ref.loc)
         return f
+
+    @staticmethod
+    def lk_root_name(it):
+        p = it
+        while p.parent is not None:
+            p = p.parent
+        return p.name or 'FILLER'
 
     def any_length_param(self, prog, ref):
         """The 1-based USING position of an ANY LENGTH item, for
@@ -1463,6 +1490,9 @@ class CodeGen(ReportWriterGen, DebugGen):
         base = it.storage
         if getattr(getattr(it, 'record', None), 'based', False):
             base = f'cob_based_ptr({base}, {c_string(it.record.name)})'
+        elif getattr(it, 'section', None) == 'LK':
+            base = (f"cob_lk_ptr({base}, {c_string(self.lk_root_name(it))}, "
+                    f"{c_string(ref.name)}, {c_string(str(ref.loc))})")
         off = self.offset_expr(ref, it)
         return f"({base} + {off})"
 
@@ -2871,6 +2901,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         it = self.resolve(ref)
         if getattr(it, 'based', False):
             return f"((unsigned char *){it.storage})"
+        if getattr(it, 'section', None) == 'LK':
+            # ADDRESS OF is how a program tests whether an argument was passed:
+            # it must yield NULL rather than fail like a reference would
+            return f"((unsigned char *)({it.storage} + {self.offset_expr(ref, it)}))"
         return f"({self.data_ptr(ref)})"
 
     # ---------------------------------------------------------------- XML
@@ -4306,6 +4340,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 fi = self.file_info(fn, s.loc)
                 if fi.is_sort:
                     raise CompileError(f"cannot OPEN sort file '{fn}'", s.loc)
+                # BASED storage named in ASSIGN is allocated (or not) by now
+                for sym, expr in self.dyn_fields:
+                    self.em(f"{sym}.data = {expr};")
                 self.io_result(fi, f"cob_open(&{fi.sym}, {OPEN_MODE[mode]})", flush=False)
 
     def g_Close(self, s):

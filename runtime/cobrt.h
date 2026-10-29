@@ -624,6 +624,16 @@ static inline unsigned char *cob_based_ptr(unsigned char *p, const char *name)
 		cob_fatal("BASED item '%s' used before ALLOCATE", name);
 	return p;
 }
+/* a LINKAGE item whose CALL argument was left out has a NULL address: touching
+   it is an error, not a wild read (GnuCOBOL reports the same) */
+static inline unsigned char *cob_lk_ptr(unsigned char *p, const char *item,
+                                        const char *by, const char *loc)
+{
+	if (!p)
+		cob_fatal("%s: error: LINKAGE item '%s' (accessed by '%s') not passed by caller",
+		          loc, item, by);
+	return p;
+}
 unsigned char *cob_alloc_chars(cob_s64 n);
 void cob_free_chars(unsigned char *p);
 void cob_fill_block(unsigned char *p, size_t n, const cob_field *v);
