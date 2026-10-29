@@ -349,7 +349,7 @@ PASS  run_fundamental.at:973       GLOBAL at lower level
 CERR  run_fundamental.at:1022      GLOBAL CONSTANT
 CERR  run_fundamental.at:1106      GLOBAL identifiers from ENVIRONMENT DIVISION
 SKIP  run_fundamental.at:1187      function with variable-length RETURNING item
-CERR  run_fundamental.at:1270      Entry point visibility (1)
+PASS  run_fundamental.at:1270      Entry point visibility (1)
 SKIP  run_fundamental.at:1302      Entry point visibility (2)
 PASS  run_fundamental.at:1336      Contained program visibility (1)
 PASS  run_fundamental.at:1391      Contained program visibility (2)
@@ -553,8 +553,8 @@ PASS  run_misc.at:3047             PIC ZZZ-, ZZZ+
 SKIP  run_misc.at:3100             PERFORM type OSVS
 SKIP  run_misc.at:3137             Sticky LINKAGE
 PASS  run_misc.at:3184             COB_PRE_LOAD
-CERR  run_misc.at:3210             COB_PRE_LOAD with entry points
-CERR  run_misc.at:3281             Lookup ENTRY from main executable
+FAIL  run_misc.at:3210             COB_PRE_LOAD with entry points
+FAIL  run_misc.at:3281             Lookup ENTRY from main executable
 PASS  run_misc.at:3322             COB_LOAD_CASE=UPPER test
 PASS  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
 PASS  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 451  FAIL 26  CERR 19  XERR 0  SKIP 197
+PASS 452  FAIL 28  CERR 16  XERR 0  SKIP 197

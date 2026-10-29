@@ -206,6 +206,12 @@ class Exhibit(Stmt):
 
 
 @dataclass(eq=False)
+class EntryStmt(Stmt):
+    name: Any = None
+    name_ref: Any = None
+
+
+@dataclass(eq=False)
 class Allocate(Stmt):
     target: Any = None
     count: Any = None

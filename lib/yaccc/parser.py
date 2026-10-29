@@ -1850,6 +1850,17 @@ class Parser:
             raise self.err("EXHIBIT needs at least one operand")
         return Exhibit(loc, items, named, changed)
 
+    def p_ENTRY(self, loc):
+        """ENTRY "name": another entry point into this program."""
+        t = self.peek()
+        if t.kind == 'STR':
+            self.next()
+            return EntryStmt(loc, t.val.decode('latin-1'))
+        if t.kind == 'WORD':
+            # ENTRY <identifier>: the name is that item's content
+            return EntryStmt(loc, None, self.parse_identifier())
+        return EntryStmt(loc, None)
+
     def p_ALLOCATE(self, loc):
         """ALLOCATE item [INITIALIZED] | ALLOCATE n CHARACTERS [INITIALIZED]"""
         st = Allocate(loc)
@@ -2548,6 +2559,13 @@ class Parser:
                     self.expect('TO')
                     more.append(SetStmt(loc, 'SWITCH', tg, self.expect('ON', 'OFF').up == 'ON'))
                 return first if len(more) == 1 else StmtBlock(loc, more)
+            if self.accept('ENTRY'):
+                # SET ptr TO ENTRY "name": the address of a program's entry
+                t = self.peek()
+                if t.kind != 'STR':
+                    raise self.err("ENTRY needs a literal name")
+                self.next()
+                return SetStmt(loc, 'TO_ENTRY', targets, StrLit(t.val))
             if self.is_word('SIZE') and self.is_word('OF', k=1):
                 self.next(); self.next()
                 return SetStmt(loc, 'TO', targets, LengthOf(self.parse_identifier()))

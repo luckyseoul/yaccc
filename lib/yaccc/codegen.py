@@ -258,6 +258,31 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append(f'static unsigned char cob_wc_reg_d[16] = {c_string(reg)};')
         out.append('static cob_field cob_wc_reg = {16, cob_wc_reg_d, &cob_attr_alnum};')
         out.append('')
+        # ENTRY aliases: a name that starts the program part-way in. Their
+        # prototypes and functions are added before the tables are written out,
+        # because the order protos -> glob -> funcs matters: a report's format
+        # function is declared in protos and defined in funcs, and its address
+        # is taken in glob.
+        aliases = []
+        counts = {}
+        for p in self.all_progs:
+            counts[p.ext_name] = counts.get(p.ext_name, 0) + 1
+        for p in self.all_progs:
+            if p.parent is not None and counts[p.ext_name] != 1:
+                continue
+            for k, st in enumerate(getattr(p, '_entries', []), 1):
+                nm = getattr(st, 'name', None)
+                if nm is None:
+                    continue        # a computed entry name is not registered
+                alias = f"{self.prog_syms[id(p)]}_ent{k}"
+                self.protos.append(f"static int {alias}(int, unsigned char **);")
+                self.funcs.append(f"static int {alias}(int cob_argc, unsigned char **cob_argv)")
+                self.funcs.append('{')
+                self.funcs.append(f"\tcob_enter_at({k});")
+                self.funcs.append(f"\treturn {self.prog_syms[id(p)]}(cob_argc, cob_argv);")
+                self.funcs.append('}')
+                self.funcs.append('')
+                aliases.append((p, nm, alias))
         out.extend(self.protos)
         out.append('')
         out.extend(self.glob)
@@ -268,12 +293,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append('{')
         # CALL by data name finds separately compiled programs, and contained
         # programs whose names are unique in the executable
-        counts = {}
-        for p in self.all_progs:
-            counts[p.ext_name] = counts.get(p.ext_name, 0) + 1
         for p in self.all_progs:
             if p.parent is None or counts[p.ext_name] == 1:
                 out.append(f'\tcob_register_program({c_string(p.ext_name)}, {self.prog_syms[id(p)]}, {p._cancel_sym});')
+        for p, nm, alias in aliases:
+            out.append(f'\tcob_register_program({c_string(nm)}, {alias}, {p._cancel_sym});')
         out.append('}')
         out.append('')
         out.append('int main(int argc, char **argv)')
@@ -980,6 +1004,21 @@ class CodeGen(ReportWriterGen, DebugGen):
         gdecls = [sec for sec in prog.declaratives if sec.use_global or sec.use_reporting]
         if gdecls:
             em("if (cob_argc == COB_DECL_ENTRY) goto L_decl_entry;")
+        entries = [st for st in self.all_stmts(prog) if isinstance(st, EntryStmt)]
+        for k, st in enumerate(entries, 1):
+            st._entry_no = k
+        if entries:
+            prog._entries = entries
+            # a CALL to an ENTRY point asked to start there
+            em("if (cob_entry_pending) {")
+            em.ind += 1
+            em("int cob_ep = cob_entry_pending;")
+            em("cob_entry_pending = 0;")
+            for k in range(1, len(entries) + 1):
+                em(f"if (cob_ep == {k}) goto L_entry_{k};")
+            em.ind -= 1
+            em("}")
+            prog._entry_count = len(entries)
         active = self.sym('cob_active_')
         self.protos.append(f"static int {active};")
         prog._active_sym = active
@@ -2790,6 +2829,13 @@ class CodeGen(ReportWriterGen, DebugGen):
         return f"({self.data_ptr(ref)})"
 
     # ---------------------------------------------------------------- XML
+    def g_EntryStmt(self, s):
+        # a label the dispatch at the top of the function can jump to
+        k = getattr(s, '_entry_no', None)
+        if k:
+            self.em.label(f"L_entry_{k}")
+        return
+
     def g_XmlGenerate(self, s):
         em = self.em
         src = self.resolve(s.src)
@@ -3715,6 +3761,12 @@ class CodeGen(ReportWriterGen, DebugGen):
         em = self.em
         if s.kind == 'EXCEPTION':
             em("cob_clear_exception();")
+            return
+        if s.kind == 'TO_ENTRY':
+            name = s.value.value.decode('latin-1')
+            for t in s.targets:
+                it = self.check_receiving(t)
+                em(f"cob_pointer_set({self.field(t)}, (void *)cob_resolve_name({c_string(name)}));")
             return
         if s.kind == 'ADDRESS':
             # SET ADDRESS OF item TO <pointer>: rebind a LINKAGE item's storage

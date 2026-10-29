@@ -564,6 +564,7 @@ cob_field *cob_fn_content_of(const unsigned char *p, cob_s64 len);
 void cob_clear_exception(void);
 const char *cob_chain_arg(int n);   /* CHAINING argument n, or NULL */
 int cob_param_omitted(int n);       /* was CALL argument n left out? */
+void cob_enter_at(int n);           /* CALL to an ENTRY point: start there */
 /* a POINTER item holds the address itself */
 static inline unsigned char *cob_pointer_get(const cob_field *f)
 {
@@ -647,6 +648,7 @@ void cob_module_push(const char *name, int argc);
 void cob_module_pop(void);
 extern const int *cob_call_sizes;
 extern const unsigned char *cob_call_arg_omitted;
+extern int cob_entry_pending;
 extern cob_field cob_ncp_reg;            /* NUMBER-OF-CALL-PARAMETERS */
 int cob_frame_nargs(void);
 int cob_frame_param_size(int i);
