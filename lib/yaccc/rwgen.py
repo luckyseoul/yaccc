@@ -327,8 +327,17 @@ class ReportWriterGen:
             ngk, ngn = ('0', 0)
             if g.next_group is not None:
                 ngk, ngn = RW_KIND_C[g.next_group[0]], g.next_group[1]
+            # PRESENT WHEN / ABSENT WHEN: a function returning the condition
+            pw, ab = 'NULL', 0
+            cond = getattr(g.item, 'rw_present', None)
+            if cond is not None:
+                c, invert = cond
+                fsym = f"{n}_when{g.idx}"
+                body = self.cond(c)
+                self.glob.append(f"static int {fsym}(void) {{ return {body}; }}")
+                pw, ab = fsym, 1 if invert else 0
             rows.append(f"{{{RW_TYPE_C[g.type]}, {g.level}, {len(g.lines)}, {lsym}, {ngk}, {ngn}, "
-                        f"{1 if g.decl_sec else 0}}}")
+                        f"{1 if g.decl_sec else 0}, {pw}, {ab}}}")
         self.glob.append(f"static const cob_rw_group {n}_g[] = {{{', '.join(rows)}}};")
         code = 'NULL'
         if ri.code:

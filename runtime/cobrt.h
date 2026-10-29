@@ -802,6 +802,8 @@ typedef struct {
 	const cob_rw_lspec *lines;
 	short ng_kind, ng_num;     /* NEXT GROUP */
 	int has_decl;              /* USE BEFORE REPORTING */
+	int (*present_when)(void); /* PRESENT WHEN: NULL when unconditional */
+	int absent;                /* ABSENT WHEN: invert the condition */
 } cob_rw_group;
 
 typedef struct cob_report {

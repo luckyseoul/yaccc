@@ -909,6 +909,22 @@ class Parser:
 
     def _rw_clause(self, item, w):
         """Report Writer clauses of a REPORT SECTION entry; returns False if w is not one."""
+        if w in ('PRESENT', 'ABSENT'):
+            # PRESENT WHEN cond / ABSENT WHEN cond: is the group (or item)
+            # presented? PRESENT/ABSENT AFTER NEW/COMPLETE <control> are the
+            # page-or-control forms, which this accepts but does not act on.
+            self.next()
+            if self.accept('WHEN'):
+                cond = self.parse_condition()
+                item.rw_present = (cond, w == 'ABSENT')
+                return True
+            if self.accept('AFTER'):
+                self.accept('NEW', 'COMPLETE')
+                self.parse_identifier()
+                while self.accept('OR'):
+                    self.accept('PAGE') or self.parse_identifier()
+                return True
+            return False
         if w in ('LINE', 'LINES'):
             self.next()
             self.accept('NUMBER')

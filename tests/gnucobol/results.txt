@@ -662,7 +662,7 @@ FAIL  run_reportwriter.at:776      Sample Charge Report
 FAIL  run_reportwriter.at:1129     Sample Charge Report 2
 PASS  run_reportwriter.at:1499     Sample Charge Report 3
 FAIL  run_reportwriter.at:1799     Sample Charge Report 4
-CERR  run_reportwriter.at:2215     Sample Payroll Report
+FAIL  run_reportwriter.at:2215     Sample Payroll Report
 FAIL  run_reportwriter.at:2900     Sample REPORT with RIGHT/CENTER
 PASS  run_reportwriter.at:3068     STUDENT REPORT with INITIAL
 PASS  run_reportwriter.at:3220     ORDER REPORT; Test substring
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 436  FAIL 28  CERR 30  XERR 0  SKIP 199
+PASS 436  FAIL 29  CERR 29  XERR 0  SKIP 199

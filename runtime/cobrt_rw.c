@@ -195,6 +195,17 @@ static int first_body_line(cob_report *r, const cob_rw_group *g, int lc)
 static void present_body(cob_report *r, int gi, int apply_ng)
 {
 	const cob_rw_group *g = &r->groups[gi];
+	if (g->present_when) {
+		/* PRESENT WHEN cond / ABSENT WHEN cond on the group */
+		int on = g->present_when() != 0;
+		if (g->absent)
+			on = !on;
+		if (!on) {
+			if (apply_ng)
+				next_group(r, g);
+			return;
+		}
+	}
 	if (g->nlines == 0) {
 		if (apply_ng)
 			next_group(r, g);
