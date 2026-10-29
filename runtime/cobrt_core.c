@@ -2,6 +2,7 @@
 /* cobrt_core.c - core runtime: decimal arithmetic, field access, MOVE,
  * comparison, editing, DISPLAY/ACCEPT, CALL registry. */
 #include "cobrt.h"
+#include <float.h>
 #include <stdarg.h>
 #include <ctype.h>
 #include <math.h>
@@ -1586,6 +1587,19 @@ void cob_move(const cob_field *src, cob_field *dst)
 	unsigned char buf[256];
 	if (src == dst)
 		return;
+	if ((st == COB_NUM_FLOAT || st == COB_NUM_DOUBLE)
+	 && (dt == COB_NUM_FLOAT || dt == COB_NUM_DOUBLE)) {
+		/* float to float keeps the value exactly: going through the decimal
+		   would round it to 7 significant digits on the way */
+		double x = cob_operand_double(src);
+		if (dt == COB_NUM_FLOAT) {
+			float y = (float)x;
+			memcpy(dst->data, &y, 4);
+		} else {
+			memcpy(dst->data, &x, 8);
+		}
+		return;
+	}
 	if (st == COB_ALL) {
 		if ((src->attr->flags & COB_F_ZERO) && (cob_is_num_type(dt) || dt == COB_NUM_EDITED)) {
 			cob_d_set(dst, cob_d_int(0), 0);
@@ -1789,6 +1803,57 @@ int cob_cmp(const cob_field *a, const cob_field *b)
 }
 
 /* ================================================================ class tests */
+
+/* Comparing a floating-point item: GnuCOBOL treats two values as equal when
+ * they differ by no more than 1e-7 relative, which is what makes a COMP-1
+ * holding 1.1234567 and a COMP-2 holding the same literal compare equal.
+ * Measured on the oracle: 1.0 = 1.0000001 is true, 1.0 = 1.0000002 is false,
+ * and 1000000.0 = 1000000.1 is true. */
+/* COMPUTE with a floating-point receiver: the arithmetic is done in double
+ * and the receiver's own range decides whether it overflowed (a decimal would
+ * give up at 38 digits, far below FLT_MAX) */
+double cob_dbl_div(double a, double b)
+{
+	if (b == 0.0) {
+		cob_zero_div_seen = 1;
+		return 0.0;
+	}
+	return a / b;
+}
+
+int cob_put_float(cob_field *f, double v)
+{
+	if (f->attr->type == COB_NUM_FLOAT) {
+		if (isfinite(v) && fabs(v) > (double)FLT_MAX)
+			return 1;               /* too big for COMP-1: SIZE ERROR */
+		float x = (float)v;
+		memcpy(f->data, &x, sizeof x);
+		return 0;
+	}
+	if (isinf(v) || isnan(v))
+		return 1;
+	memcpy(f->data, &v, sizeof v);
+	return 0;
+}
+
+int cob_cmp_dbl(double x, double y);
+
+int cob_cmp_float(const cob_field *a, const cob_field *b)
+{
+	return cob_cmp_dbl(cob_operand_double(a), cob_operand_double(b));
+}
+
+int cob_cmp_dbl(double x, double y)
+{
+	if (x == y)
+		return 0;
+	double ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+	double m = ax > ay ? ax : ay;
+	double d = x < y ? y - x : x - y;
+	if (m > 0 && d <= 1e-7 * m)
+		return 0;
+	return x < y ? -1 : 1;
+}
 
 int cob_is_numeric(const cob_field *f)
 {

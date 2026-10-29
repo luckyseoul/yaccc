@@ -337,7 +337,7 @@ PASS  run_fundamental.at:365       MOVE to item with simple and floating inserti
 PASS  run_fundamental.at:400       MOVE to JUSTIFIED item
 PASS  run_fundamental.at:445       MOVE integer literal to alphanumeric
 PASS  run_fundamental.at:470       Compare FLOAT-LONG with floating-point literal
-FAIL  run_fundamental.at:523       Check for equality of FLOAT-SHORT / FLOAT-LONG
+PASS  run_fundamental.at:523       Check for equality of FLOAT-SHORT / FLOAT-LONG
 PASS  run_fundamental.at:646       Overlapping MOVE
 PASS  run_fundamental.at:747       Overlapping MOVE
 SKIP  run_fundamental.at:789       IBM MOVE
@@ -617,8 +617,8 @@ PASS  run_misc.at:11527            78 VALUE
 PASS  run_misc.at:11595            01 CONSTANT
 SKIP  run_misc.at:11675            DISPLAY UPON
 FAIL  run_misc.at:11767            FLOAT-DECIMAL w/o SIZE ERROR
-FAIL  run_misc.at:11941            FLOAT-SHORT / FLOAT-LONG w/o SIZE ERROR
-FAIL  run_misc.at:12140            FLOAT-SHORT with SIZE ERROR
+PASS  run_misc.at:11941            FLOAT-SHORT / FLOAT-LONG w/o SIZE ERROR
+PASS  run_misc.at:12140            FLOAT-SHORT with SIZE ERROR
 PASS  run_misc.at:12191            FLOAT-LONG with SIZE ERROR
 PASS  run_misc.at:12248            EC-SIZE-ZERO-DIVIDE
 PASS  run_misc.at:12291            EC-SIZE-OVERFLOW
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 475  FAIL 20  CERR 0  XERR 0  SKIP 198
+PASS 478  FAIL 17  CERR 0  XERR 0  SKIP 198

@@ -1841,6 +1841,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             t += 'e0'
         return t + '' if ('.' in t.lower().split('e')[0]) else ''
 
+    def float_lit(self, e):
+        """A floating-point literal as a C double constant, sign included
+        (float_text carries the magnitude only)."""
+        return ('-' if getattr(e, 'neg', False) else '') + self.float_text(e)
+
     def length_of(self, e):
         r = e.ref
         if isinstance(r, DataRef):
@@ -1862,7 +1867,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         if isinstance(e, PosOf):
             e.check()
         if isinstance(e, NumLit) and getattr(e, 'float_text', None):
-            return f"cob_d_from_double({self.float_text(e)})"
+            return f"cob_d_from_double({self.float_lit(e)})"
         if isinstance(e, FuncCall) and e.name in self.udf_names:
             return f"cob_d_get({self.udf_field(e)})"
         if isinstance(e, CDec):
@@ -2292,8 +2297,28 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return (self.data_ptr(e), it.size)
         return None
 
+    def float_item(self, e):
+        """The USAGE of a floating-point data item operand, or None."""
+        if not isinstance(e, DataRef) or e.refmod:
+            return None
+        try:
+            it = self.resolve(e)
+        except Exception:
+            return None
+        if isinstance(it, DataItem) and it.type in (T_NUM_FLOAT, T_NUM_DOUBLE):
+            return it.type
+        return None
+
     def rel(self, l, op, r):
         cop = CMP_OP[op]
+        if self.float_item(l) is not None or self.float_item(r) is not None:
+            # a floating-point item compares with a relative tolerance, which
+            # is why a COMP-1 and the literal it came from are equal
+            dl = self.dbl(l)
+            dr = self.dbl(r)
+            if dl is not None and dr is not None:
+                return f"(cob_cmp_dbl({dl}, {dr}) {cop} 0)"
+            return f"(cob_cmp_float({self.field(l)}, {self.field(r)}) {cop} 0)"
         if self.is_float_operand(l) or self.is_float_operand(r):
             return f"(cob_operand_double({self.field(l)}) {cop} cob_operand_double({self.field(r)}))"
 
@@ -2512,6 +2537,20 @@ class CodeGen(ReportWriterGen, DebugGen):
             raise CompileError(f"condition-name '{ref.name}' cannot be a receiving item", ref.loc)
         return it
 
+    def big_float_move(self, src, dst):
+        """MOVE of a literal too large for a decimal into a COMP-1/COMP-2: the
+        value only exists as a double, so it goes there directly."""
+        if not isinstance(src, NumLit) or getattr(src, 'float_text', None) is None:
+            return None
+        try:
+            it = self.resolve(dst)
+        except Exception:
+            return None
+        if not isinstance(it, DataItem) or it.type not in (T_NUM_FLOAT, T_NUM_DOUBLE):
+            return None
+        return (f"cob_put_float({self.ref_field(dst, True)}, "
+                f"{self.float_lit(src)});")
+
     def g_Move(self, s):
         em = self.em
         if s.corr:
@@ -2525,6 +2564,10 @@ class CodeGen(ReportWriterGen, DebugGen):
             if isinstance(it, IndexName):
                 raise CompileError(f"index '{d.name}' cannot be a MOVE target; use SET", d.loc)
         if len(s.dsts) == 1:
+            big = self.big_float_move(s.src, s.dsts[0])
+            if big is not None:
+                em(big)
+                return
             line = self.fast_move(s.src, s.dsts[0])
             em(line if line else f"cob_move({self.field(s.src)}, {self.ref_field(s.dsts[0], True)});")
             return
@@ -2837,6 +2880,45 @@ class CodeGen(ReportWriterGen, DebugGen):
         em.ind -= 1
         em("}")
 
+    def dbl(self, e):
+        """A C double expression for an arithmetic operand, or None when the
+        expression is outside what this simple form can carry."""
+        if isinstance(e, NumLit):
+            if getattr(e, 'float_text', None) is not None:
+                return f"({self.float_lit(e)})"
+            return f"({e.text})"
+        if isinstance(e, Neg):
+            inner = self.dbl(e.e)
+            return f"(-{inner})" if inner is not None else None
+        if isinstance(e, DataRef):
+            it = self.resolve(e)
+            if isinstance(it, DataItem) and it.type in NUMERIC_TYPES and not e.refmod:
+                return f"cob_operand_double({self.field(e)})"
+            return None
+        if isinstance(e, BinOp):
+            a = self.dbl(e.left)
+            b = self.dbl(e.right)
+            if a is None or b is None:
+                return None
+            if e.op == '/':
+                return f"cob_dbl_div({a}, {b})"
+            if e.op in ('+', '-', '*', '**'):
+                if e.op == '**':
+                    return f"pow({a}, {b})"
+                return f"({a} {e.op} {b})"
+            return None
+        return None
+
+    def float_target_kind(self, t):
+        """T_NUM_FLOAT / T_NUM_DOUBLE when the COMPUTE receiver is one."""
+        try:
+            it = self.resolve(t.ref)
+        except Exception:
+            return None
+        if isinstance(it, DataItem) and it.type in (T_NUM_FLOAT, T_NUM_DOUBLE):
+            return it.type
+        return None
+
     def g_Compute(self, s):
         em = self.em
         em(f"cob_cur_loc = &{self.loc_sym(s)};")
@@ -2860,6 +2942,24 @@ class CodeGen(ReportWriterGen, DebugGen):
                         em.ind -= 1
                         em("}")
                     return
+        fkinds = [self.float_target_kind(t) for t in s.targets]
+        dexpr = self.dbl(s.expr) if all(fk is not None for fk in fkinds) else None
+        if dexpr is not None:
+            # a floating-point receiver takes the arithmetic in double: a
+            # COMP-1 holds up to FLT_MAX, which a 38-digit decimal cannot
+            em("{")
+            em.ind += 1
+            em("cob_zero_div_seen = 0;")
+            em(f"double cob_fv = {dexpr};")
+            em("int cob_err = 0;")
+            for t in s.targets:
+                em(f"cob_err |= cob_put_float({self.field(t.ref)}, cob_fv);")
+            self.handlers('cob_err', s.on_error, s.not_on_error)
+            self.raise_size_exceptions('cob_err', s.on_error, s.not_on_error)
+            em("(void)cob_err;")
+            em.ind -= 1
+            em("}")
+            return
         em("{")
         em.ind += 1
         em("int cob_err = 0;")
