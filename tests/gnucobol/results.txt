@@ -414,7 +414,7 @@ SKIP  run_fundamental.at:5197      USE FOR DEBUGGING, referencing BASED item
 PASS  run_fundamental.at:5234      USE FOR DEBUGGING file
 PASS  run_fundamental.at:5277      Abbreviated Expressions
 PASS  run_fundamental.at:5383      integer arithmetic on floating-point var
-CERR  run_fundamental.at:5425      TYPEDEF application
+PASS  run_fundamental.at:5425      TYPEDEF application
 PASS  run_initialize.at:27         INITIALIZE group entry with OCCURS
 PASS  run_initialize.at:55         INITIALIZE OCCURS with numeric edited
 PASS  run_initialize.at:88         INITIALIZE OCCURS with SIGN LEADING / TRAILING
@@ -497,7 +497,7 @@ PASS  run_misc.at:732              Floating continuation indicator
 PASS  run_misc.at:754              Fixed continuation indicator
 PASS  run_misc.at:796              Concatenation operator
 PASS  run_misc.at:820              SOURCE FIXED/FREE directives
-FAIL  run_misc.at:856              TURN directive
+PASS  run_misc.at:856              TURN directive
 SKIP  run_misc.at:897              Level 01 subscripts
 PASS  run_misc.at:919              Class check with reference modification
 PASS  run_misc.at:943              Index and parenthesized expression
@@ -689,7 +689,7 @@ PASS  run_subscripts.at:242        length of ODO w/- reference modification
 PASS  run_subscripts.at:298        SEARCH ALL with OCCURS DEPENDING ON
 SKIP  run_subscripts.at:351        enable / disable subscript check
 SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
-FAIL  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
+PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 447  FAIL 25  CERR 24  XERR 0  SKIP 197
+PASS 450  FAIL 23  CERR 23  XERR 0  SKIP 197

@@ -82,6 +82,7 @@ class Options:
         self.source_name = ''
         self.debugging = False
         self.line_map = False        # #line directives, so a debugger shows COBOL
+        self.directives = None       # for >>TURN / $SET SSRANGE
 
 
 class FileInfo:
@@ -1257,7 +1258,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         start, length = refmod
         s = self.int_expr(start)
         l = self.int_expr(length) if length is not None else '-1'
-        return f"cob_refmod(&(cob_field){{0}}, {f}, {s}, {l}, {1 if self.opts.check else 0}, {c_string(str(loc))})"
+        return f"cob_refmod(&(cob_field){{0}}, {f}, {s}, {l}, {1 if self.checks_on(loc) else 0}, {c_string(str(loc))})"
 
     def item_base(self, it):
         return it.storage
@@ -1285,7 +1286,7 @@ class CodeGen(ReportWriterGen, DebugGen):
                 const += (v - 1) * occ.size
                 continue
             s = self.int_expr(sub)
-            if self.opts.check:
+            if self.checks_on(ref.loc):
                 dep = occ.occurs.depending
                 if dep is not None:
                     # the upper bound is the current DEPENDING ON value
@@ -1295,6 +1296,16 @@ class CodeGen(ReportWriterGen, DebugGen):
                     s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
             terms.append(f"({s} - 1) * {occ.size}")
         return ' + '.join([str(const)] + terms)
+
+    def checks_on(self, loc):
+        """Bounds checks at this source position: a >>TURN or $SET SSRANGE in
+        the source overrides the compile-wide flag."""
+        d = getattr(self.opts, 'directives', None)
+        if d is not None and loc is not None:
+            state = d.check_at(getattr(loc, 'file', None), getattr(loc, 'line', 0))
+            if state is not None:
+                return state
+        return getattr(self.opts, 'check', True)
 
     def size_expr(self, it, receiving=False):
         d = it.contains_odo() if it.children or it.occurs else None

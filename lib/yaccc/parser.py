@@ -277,6 +277,7 @@ class Parser:
             self.parse_environment(prog)
         if self.is_word('DATA'):
             self.parse_data(prog)
+        self._collect_typedefs(prog)
         if self.is_word('PROCEDURE'):
             self.parse_procedure(prog)
         # nested programs: only if our END PROGRAM appears later
@@ -645,6 +646,33 @@ class Parser:
             fc.organization = self.expect('SEQUENTIAL', 'RELATIVE', 'INDEXED').up
 
     # ---------------------------------------------------------- data division
+    def _collect_typedefs(self, prog):
+        """Templates out of the section lists, and instances filled in from
+        them. A TYPEDEF item describes a type and owns no storage."""
+        for attr in ('working', 'local', 'linkage'):
+            roots = getattr(prog, attr)
+            keep = []
+            for r in roots:
+                for it in r.walk():
+                    if getattr(it, 'is_typedef', False) and it.name:
+                        prog.typedefs[it.name] = it
+                if getattr(r, 'is_typedef', False):
+                    continue
+                keep.append(r)
+            setattr(prog, attr, keep)
+        for attr in ('working', 'local', 'linkage'):
+            for r in getattr(prog, attr):
+                for it in r.walk():
+                    name = getattr(it, 'typedef_name', None)
+                    if not name or name not in prog.typedefs:
+                        continue
+                    tpl = prog.typedefs[name]
+                    for f in ('pic', 'usage', 'usage_signed', 'external'):
+                        if getattr(it, f, None) in (None, False) and getattr(tpl, f, None):
+                            setattr(it, f, getattr(tpl, f))
+                    if it.value is None and tpl.value is not None:
+                        it.value = tpl.value
+
     def parse_data(self, prog):
         self.expect('DATA')
         self.expect('DIVISION')
@@ -1030,6 +1058,12 @@ class Parser:
                 item.redefines_name = self.user_word('data name')
             elif w == 'IS':
                 self.next()
+                if self.accept('TYPEDEF'):
+                    item.is_typedef = True
+            elif w == 'TYPEDEF':
+                # 77 X IS TYPEDEF BINARY-LONG: a template, not storage
+                self.next()
+                item.is_typedef = True
             elif w == 'EXTERNAL':
                 self.next()
                 item.external = True
@@ -1148,6 +1182,9 @@ class Parser:
                     self.decl_sizes[item.name] = item.decl_size
             except AttributeError:
                 pass
+        if getattr(item, 'is_typedef', False) and item.name:
+            # a template is usable from the next entry on
+            self.prog.typedefs[item.name] = item
         self.expect_period()
         if level == 78:
             if item.value is None:
@@ -1161,6 +1198,11 @@ class Parser:
         w = self.next().up
         u = USAGES.get(w)
         if u is None:
+            # USAGE <typedef-name>: instantiate the template
+            tpl = getattr(self.prog, 'typedefs', {}).get(w)
+            if tpl is not None:
+                item.typedef_name = w
+                return
             raise self.err("unknown USAGE")
         item.usage = u
         if w.startswith('UNSIGNED-'):

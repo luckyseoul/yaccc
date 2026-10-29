@@ -657,6 +657,7 @@ class Program:
     linkage: list = field(default_factory=list)
     constants: dict = field(default_factory=dict)
     global_constants: dict = field(default_factory=dict)
+    typedefs: dict = field(default_factory=dict)     # name -> template item
     using: List[tuple] = field(default_factory=list)       # (mode, DataRef)
     chaining: list = field(default_factory=list)          # PROCEDURE DIVISION CHAINING items
     returning: Any = None

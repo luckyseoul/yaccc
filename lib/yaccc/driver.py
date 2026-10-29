@@ -81,6 +81,7 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
         ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging, defines=defines)
         toks = ss.load(p)
         parser = Parser(toks, ss.directives.vars)
+        opts.directives = ss.directives
         parser.missing_period = getattr(opts, 'missing_period', False)
         if getattr(ss, 'dpc_in_data', None) and opts.dpc_in_data == 'none':
             opts.dpc_in_data = ss.dpc_in_data

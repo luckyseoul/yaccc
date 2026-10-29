@@ -29,6 +29,8 @@ class Directives:
         # conditional state: list of [active, taken, kind] per open >>IF / >>EVALUATE
         self.stack = []
         self.dpc_in_data = None
+        self.check = None      # None: unchanged
+        self.check_changes = []   # (file, line, on) in source order
 
     @property
     def active(self):
@@ -41,6 +43,15 @@ class Directives:
     def handle(self, text, loc):
         """Process a directive line. Returns True if it was one of ours."""
         s = text.strip()
+        # >>TURN ... CHECKING OFF/ON and the Micro Focus $SET SSRANGE forms
+        # switch the bounds checks from this line on
+        up = s.upper()
+        if 'NOSSRANGE' in up or ('CHECKING' in up and 'OFF' in up):
+            self.check = False
+            self.check_changes.append((loc.file, loc.line, False))
+        elif 'SSRANGE' in up or ('CHECKING' in up and 'ON' in up):
+            self.check = True
+            self.check_changes.append((loc.file, loc.line, True))
         # a directive may carry a floating comment
         cut = s.find('*>')
         if cut > 0:
@@ -188,6 +199,15 @@ class Directives:
         return False
 
     # ------------------------------------------------------------ conditions
+    def check_at(self, path, line):
+        """Are bounds checks on at this source position? None when the
+        directives say nothing, so the compile-wide flag decides."""
+        state = None
+        for f, l, on in self.check_changes:
+            if f == path and l < line:
+                state = on
+        return state
+
     def _cond(self, text, loc):
         return _Expr(_tokens(text, loc), self, loc).cond()
 
