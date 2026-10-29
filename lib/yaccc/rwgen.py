@@ -209,8 +209,17 @@ class ReportWriterGen:
                     col = col - (it.size - 1) // 2 if it.size % 2 else col - it.size // 2 + 1
                 if col < 1:
                     raise CompileError("report item starts before column 1", it.loc)
-                it.rw_column = col
-                cur[1].append(it)
+                if getattr(it, 'rw_columns', None):
+                    # one copy per listed column, each reading the same source
+                    import copy as _copy
+                    for c in it.rw_columns:
+                        rep = _copy.copy(it)
+                        rep.rw_column = c
+                        rep.rw_columns = None
+                        cur[1].append(rep)
+                else:
+                    it.rw_column = col
+                    cur[1].append(it)
                 if it.rw_group_indicate and gi.type != 'DE':
                     raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
                 if it.rw_sums:

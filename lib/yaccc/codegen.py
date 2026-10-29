@@ -3371,6 +3371,11 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return sv
             if ob.kind == 'FALSE':
                 return f"!{sv}"
+            if ob.kind == 'COND':
+                # a condition subject compared with a condition object: the two
+                # truth values must agree
+                c = self.cond(ob.a)
+                return f"(({sv}) == ({c}))"
             raise CompileError("WHEN object must be TRUE or FALSE", self.cur_loc)
         # value subject
         if ob.kind in ('TRUE', 'FALSE'):

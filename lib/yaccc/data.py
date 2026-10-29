@@ -250,6 +250,8 @@ class DataItem:
         self.external_name = None       # EXTERNAL AS "name"
         self.any_length = False         # PIC X ANY LENGTH: size from the caller
         self.based = False              # storage allocated by ALLOCATE
+        self.rw_step = 0
+        self.rw_columns = None
         self.rw_column = None
         self.rw_just = None             # COLUMN LEFT / RIGHT / CENTER: 'L', 'R', 'C'
         self.rw_source = None

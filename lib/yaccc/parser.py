@@ -1025,6 +1025,13 @@ class Parser:
                 rel = True
             n = int(t.val.lstrip('+'))
             item.rw_column = ('REL', n) if rel else n
+            # COLUMN 1, 11, 21, 27: one copy of the item at each column, all
+            # reading the same source (a report heading row of column markers)
+            cols = [n]
+            while self.peek().kind == 'NUM':
+                cols.append(int(self.next().val))
+            if len(cols) > 1:
+                item.rw_columns = cols
         elif w == 'SOURCE':
             self.next()
             self.accept('IS')
@@ -1272,6 +1279,9 @@ class Parser:
             oc.min = a
             oc.max = a
         self.accept('TIMES')
+        if self.accept('STEP'):
+            # report groups: OCCURS n STEP m, each occurrence m columns right
+            item.rw_step = self.const_int('integer')
         while True:
             if self.accept('DEPENDING'):
                 self.accept('ON')
@@ -2200,6 +2210,9 @@ class Parser:
         try:
             a = self.parse_expr()
             if self._cond_continues() and not self.is_word('AND', 'OR') and not self.is_word('NOT'):
+                raise Backtrack()
+            if self.is_word('NOT') and self._relop_start(1, allow_not=False):
+                # "WHEN VAR NOT = SPACES": an abbreviated relation, not a value
                 raise Backtrack()
         except (Backtrack, ParseError):
             self.pos = save
