@@ -76,6 +76,9 @@ class Options:
         self.binary_size = '2-4-8'
         self.binary_truncate = True  # a BINARY item holds its PICTURE's digits
         self.missing_period = False  # accept a statement where '.' is required
+        self.host_sign = False       # signed packed with sign F is NUMERIC (ibm)
+        self.nonnum_zero = False     # MOVE SPACE/QUOTE/LOW/HIGH or "abc" to numeric moves 0 (mf)
+        self.space_raw = False       # MOVE SPACE to numeric DISPLAY stores spaces (acu)
         self.dialect = 'default'
         self.dpc_in_data = 'none'    # -fdpc-in-data: '.' or ',' in JSON/XML numbers
         self.check = True
@@ -309,6 +312,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append('int main(int argc, char **argv)')
         out.append('{')
         out.append('\tcob_init(argc, argv);')
+        if getattr(self.opts, 'host_sign', False):
+            out.append('\tcob_host_sign = 1;')
         out.append(f'\tcob_when_compiled = {c_string(wc)};')
         out.append('\tcob_register_all();')
         out.append(f'\tint rc = {self.prog_syms[id(main)]}(-1, NULL);')
@@ -2628,11 +2633,27 @@ class CodeGen(ReportWriterGen, DebugGen):
             for d in s.dsts:
                 self.gen_corr(s.src, d, 'MOVE', None)
             return
+        # -std=mf: a non-numeric figurative constant or literal moved to a
+        # numeric item moves zero instead
+        src = s.src
+        if getattr(self.opts, 'nonnum_zero', False) and (
+                (isinstance(src, Figurative) and src.kind in ('SPACE', 'QUOTE', 'LOW-VALUE', 'HIGH-VALUE')) or
+                (isinstance(src, StrLit) and not src.value.isdigit())):
+            zero = Figurative('ZERO')
+            for d in s.dsts:
+                it = self.check_receiving(d)
+                if isinstance(it, DataItem) and it.type in NUMERIC_TYPES:
+                    DIAG.warn("source is non-numeric - substituting zero", s.loc)
+                    em(f"cob_move({self.field(zero)}, {self.ref_field(d, True)});")
+                else:
+                    em(f"cob_move({self.field(src)}, {self.ref_field(d, True)});")
+            return
         # GnuCOBOL stores the figurative's own byte in a numeric DISPLAY item
         # rather than converting it to zero: MOVE LOW-VALUES leaves x"00"x n,
         # which then fails IS NUMERIC and reads as 0
-        if isinstance(s.src, Figurative) and s.src.kind in ('LOW-VALUE', 'HIGH-VALUE'):
-            byte = '0' if s.src.kind == 'LOW-VALUE' else '255'
+        if isinstance(s.src, Figurative) and (s.src.kind in ('LOW-VALUE', 'HIGH-VALUE') or
+                                              (s.src.kind == 'SPACE' and getattr(self.opts, 'space_raw', False))):
+            byte = {'LOW-VALUE': '0', 'HIGH-VALUE': '255', 'SPACE': '32'}[s.src.kind]
             for d in s.dsts:
                 it = self.check_receiving(d)
                 if isinstance(it, DataItem) and it.type == T_NUM_DISPLAY:

@@ -2225,6 +2225,8 @@ int cob_cmp_dbl(double x, double y)
 	return x < y ? -1 : 1;
 }
 
+int cob_host_sign;      /* -std=ibm: sign F is valid in signed packed items */
+
 int cob_is_numeric(const cob_field *f)
 {
 	const cob_attr *a = f->attr;
@@ -2255,10 +2257,11 @@ int cob_is_numeric(const cob_field *f)
 				return 0;
 		}
 		/* a signed packed field carries C or D (measured on the oracle:
-		   A, B, E and F are all rejected, F only valid for unsigned) */
+		   A, B, E and F are all rejected, F only valid for unsigned),
+		   and F too under -std=ibm */
 		unsigned char s = p[n - 1] & 0x0F;
 		if (a->flags & COB_F_SIGNED)
-			return s == 0x0C || s == 0x0D;
+			return s == 0x0C || s == 0x0D || (cob_host_sign && s == 0x0F);
 		return s == 0x0F;
 	}
 	case COB_NUM_DISPLAY: {
@@ -2432,6 +2435,21 @@ void cob_display(int dev, const cob_field *f)
 	case COB_NUM_BINARY:
 	case COB_NUM_COMP5:
 	case COB_INDEX: {
+		if (a->type == COB_NUM_DISPLAY && !(a->flags & COB_F_SIGNED) && a->scale == 0 &&
+		    (int)f->size == a->digits) {
+			/* an unsigned integer item holding something other than digits
+			   (MOVE SPACES / LOW-VALUES, a REDEFINES) shows its bytes, up to
+			   the first NUL, as GnuCOBOL does */
+			size_t n = 0;
+			int bad = 0;
+			for (; n < f->size && f->data[n]; n++)
+				if (f->data[n] < '0' || f->data[n] > '9')
+					bad = 1;
+			if (bad || n < f->size) {
+				fwrite(f->data, 1, n, fp);
+				return;
+			}
+		}
 		cob_dec d = cob_d_get(f);
 		int digits = disp_digits(f);
 		int scale = (a->type == COB_INDEX || (a->flags & COB_F_NO_SCALE)) ? 0 : a->scale;

@@ -346,10 +346,18 @@ class DataItem:
             yield from c.walk()
 
     def contains_odo(self):
-        for it in self.walk():
-            if it.occurs and it.occurs.depending is not None:
-                return it
-        return None
+        """The OCCURS DEPENDING ON table that sets this item's length, or None.
+        When a group holds several (the GnuCOBOL / Micro Focus "complex ODO"
+        extension) it is the last one: the tables before it keep their
+        maximum size. A table nested in another one doesn't count."""
+        if self.occurs and self.occurs.depending is not None:
+            return self
+        last = None
+        for c in self.children:
+            r = c.contains_odo()
+            if r is not None:
+                last = r
+        return last
 
     def contains_unbounded(self):
         """The OCCURS ... UNBOUNDED table inside this item, or None. Its extent

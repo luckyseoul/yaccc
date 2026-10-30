@@ -199,6 +199,9 @@ def main(argv=None):
     opts.binary_size = args.binary_size or d.binary_size
     opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
     opts.missing_period = d.missing_period if args.missing_period is None else args.missing_period
+    opts.host_sign = d.host_sign
+    opts.nonnum_zero = d.nonnum_zero
+    opts.space_raw = d.space_raw
     if args.dpc_in_data is not None:
         opts.dpc_in_data = args.dpc_in_data
     opts.check = args.check

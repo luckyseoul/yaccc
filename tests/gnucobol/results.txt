@@ -20,7 +20,7 @@ PASS  data_packed.at:216           PACKED-DECIMAL used with MOVE
 PASS  data_packed.at:273           PACKED-DECIMAL used with INITIALIZE
 PASS  data_packed.at:312           PACKED-DECIMAL arithmetic
 PASS  data_packed.at:348           PACKED-DECIMAL numeric test (1)
-FAIL  data_packed.at:490           PACKED-DECIMAL numeric test (2)
+PASS  data_packed.at:490           PACKED-DECIMAL numeric test (2)
 PASS  data_packed.at:606           COMP-6 used with DISPLAY
 PASS  data_packed.at:643           COMP-6 used with MOVE
 PASS  data_packed.at:690           COMP-6 arithmetic
@@ -43,7 +43,7 @@ PASS  run_extensions.at:287        LENGTH OF
 PASS  run_extensions.at:451        SET TO SIZE OF
 PASS  run_extensions.at:488        WHEN-COMPILED
 SKIP  run_extensions.at:517        Complex OCCURS DEPENDING ON (1)
-FAIL  run_extensions.at:546        Complex OCCURS DEPENDING ON (2)
+PASS  run_extensions.at:546        Complex OCCURS DEPENDING ON (2)
 SKIP  run_extensions.at:609        Complex OCCURS DEPENDING ON (3)
 SKIP  run_extensions.at:672        Complex OCCURS DEPENDING ON (4)
 SKIP  run_extensions.at:738        Complex OCCURS DEPENDING ON (5)
@@ -586,7 +586,7 @@ SKIP  run_misc.at:6131             EC-SCREEN-LINE-NUMBER and -STARTING-COLUMN
 SKIP  run_misc.at:6172             LINE/COLUMN 0 exceptions
 PASS  run_misc.at:6210             SET LAST EXCEPTION TO OFF
 PASS  run_misc.at:6246             void PROCEDURE
-FAIL  run_misc.at:6275             Figurative constants to numeric field
+PASS  run_misc.at:6275             Figurative constants to numeric field
 SKIP  run_misc.at:6337             MF FIGURATIVE to NUMERIC
 SKIP  run_misc.at:6472             CALL RETURNING
 SKIP  run_misc.at:6511             void PROCEDURE, NOTHING return
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 497  FAIL 9  CERR 0  XERR 0  SKIP 187
+PASS 500  FAIL 6  CERR 0  XERR 0  SKIP 187

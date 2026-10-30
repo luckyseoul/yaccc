@@ -446,6 +446,7 @@ const unsigned short *cob_get_collating(void);
 int cob_cmp(const cob_field *a, const cob_field *b);
 int cob_cmp_alnum(const unsigned char *a, size_t al, const unsigned char *b, size_t bl);
 int cob_is_numeric(const cob_field *f);
+extern int cob_host_sign;
 int cob_cmp_float(const cob_field *a, const cob_field *b);
 int cob_cmp_dbl(double x, double y);
 double cob_dbl_div(double a, double b);

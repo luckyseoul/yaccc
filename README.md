@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   497     9              0      187
+  693   500     6              0      187
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,32 +127,23 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 12 failures**: 9 of them only became *visible* now. The harness used to
-  skip any `AT_CHECK` whose command contained a backslash-newline (it read the
-  continuation as a shell operator) and any test using `-std=mf` or
-  `-fdefine-constant-directive` (no equivalent in its option table). Those are
-  now run: 3 of them pass (including `Sample REPORT with RIGHT/CENTER`, which
-  was never a defect -- see below) and 9 fail, all of which had been failing
-  silently. No test that used to pass now fails.
-- **The 3 Report Writer failures** are:
-  - 4 Report Writer tests whose output differs in where a page break lands.
-    `cobc` reaches a page break through several branches of `reportio.c` and
-    does not place it consistently: measuring a dozen PAGE clause shapes
-    against a live 3.1.2 shows a page ending one line short in some shapes and
-    at its full `PAGE LIMIT` in others. YACCC uses the rule that fits the
-    majority -- `PAGE LIMIT - 1` lines when the report declares a LAST DETAIL,
-    a FOOTING or a page footing group (and not when the page starts with its
-    first detail line), with the last page always `PAGE LIMIT` lines -- and 14
-    of the 19 runnable Report Writer tests match `cobc` byte for byte, up
-    from 1.
-  - `Sample REPORT with RIGHT/CENTER`, a dialect difference rather than an
-    output difference: its first step expects `cobc` to reject the program in
-    its default dialect, and YACCC compiles it, as GnuCOBOL itself does with
-    `-std=mf`.
-  - `CALL BY VALUE ... WITH SIZE` (GnuCOBOL's own documentation calls its
-    parameter passing there unfinished), and `CBL_GC_GETOPT` and
-    `CBL_ERROR_PROC (1)`, library routines YACCC does not provide (the second
-    also wants GnuCOBOL's EXCEPTION-LOCATION text).
+- **The 6 failures**:
+  - 4 Report Writer tests (`Sample Payroll Report`, `Sample Inventory
+    Report`, `Next Group Next Page`, `Report PRESENT AFTER`) whose output
+    differs in where a page break lands. `cobc` reaches a page break through
+    several branches of `reportio.c` and does not place it consistently:
+    measuring a dozen PAGE clause shapes against a live 3.1.2 shows a page
+    ending one line short in some shapes and at its full `PAGE LIMIT` in
+    others. YACCC uses the rule that fits the majority -- `PAGE LIMIT - 1`
+    lines when the report declares a LAST DETAIL, a FOOTING or a page footing
+    group (and not when the page starts with its first detail line), with the
+    last page always `PAGE LIMIT` lines.
+  - `OSVS Arithmetic Test (2)`: under `-std=ibm`, `cobc` stores a scaled
+    item's value normally and only prints it without its decimal point, while
+    YACCC also stores and reads it unscaled; and IBM OS/VS intermediate
+    precision (`arithmetic-osvs`) is not implemented.
+  - `System routine CBL_ERROR_PROC (2)`: an error procedure that should stop
+    the standard error handling.
 
 ### Performance
 
@@ -227,15 +218,16 @@ follow `--`:
 
 `-std` selects the choices a compiler has to make where the standards leave one
 open, or where implementations have long differed. A dialect is not a claim of
-conformance to a vendor's implementation: it sets the four settings below, and
-`-f` overrides any of them individually.
+conformance to a vendor's implementation: it sets the settings below, and
+`-f` overrides the first three individually.
 
-| Dialect | `binary-size` | `binary-truncate` | `missing-period` |
-|---|---|---|---|
-| `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no |
-| `gnu` (GnuCOBOL) | 2-4-8 | on | yes |
-| `ibm` | 2-4-8 | on | yes |
-| `mf` (Micro Focus) | 1-2-4-8 | off | yes |
+| Dialect | `binary-size` | `binary-truncate` | `missing-period` | `host-sign` | `non-numeric-zero` | `space-raw` |
+|---|---|---|---|---|---|---|
+| `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no | no | no | no |
+| `gnu` (GnuCOBOL) | 2-4-8 | on | yes | no | no | no |
+| `ibm` | 2-4-8 | off | yes | yes | no | no |
+| `mf` (Micro Focus) | 1-2-4-8 | on | yes | no | yes | no |
+| `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes |
 
 - **`binary-size`** — the byte widths `PIC 9(n) COMP` uses. Under `2-4-8`
   (IBM and the default here) a 2-digit COMP item occupies 2 bytes; under
@@ -247,6 +239,13 @@ conformance to a vendor's implementation: it sets the four settings below, and
 - **`missing-period`** — whether a statement may stand at a point where a `.`
   is required. The standards require the period; several implementations accept
   its absence, and so does YACCC under these dialects.
+- **`host-sign`** — whether a signed PACKED-DECIMAL item whose sign nibble is
+  `F` passes the NUMERIC class test, as on IBM mainframes.
+- **`non-numeric-zero`** — whether MOVE of SPACE, QUOTE, LOW-VALUE, HIGH-VALUE
+  or an alphanumeric literal that isn't all digits to a numeric item moves zero
+  (with a warning), as Micro Focus does.
+- **`space-raw`** — whether MOVE SPACE to a numeric DISPLAY item stores spaces,
+  the way MOVE LOW-VALUE and HIGH-VALUE store their bytes.
 
 `yaccc -std=ibm prog.cbl` and `yaccc -std=mf prog.cbl` therefore produce
 different binaries for the same source. Anything not listed above is the same
