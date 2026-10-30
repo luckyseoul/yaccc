@@ -15,8 +15,12 @@ DIALECTS = {
     'cobol85':   ('2-4-8',   True,  False),
     'cobol2002': ('2-4-8',   True,  False),
     'cobol2014': ('2-4-8',   True,  False),
-    'mf':        ('1-2-4-8', False, True),
-    'ibm':       ('2-4-8',   True,  True),
+    # measured against cobc 3.1.2: PIC 9(2) COMP holding 1289 displays as 09
+    # under mf (one-byte storage, value cut to the PICTURE) and as 01289 under
+    # ibm (no truncation, and a scaled item loses its decimal point too), so it
+    # is ibm that switches truncation off, not mf
+    'mf':        ('1-2-4-8', True,  True),
+    'ibm':       ('2-4-8',   False, True),
 }
 
 _ALIASES = {

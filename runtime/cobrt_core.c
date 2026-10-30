@@ -1846,11 +1846,29 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz)
 	case COB_NUM_DOUBLE: {
 		cob_dec d = cob_d_get(f);
 		int digits = a->digits ? a->digits : 18;
-		int sc = a->scale;
+		/* -fnotrunc / -std=ibm: the item has no decimal point, and cob_d_get
+		 * already says so, so the text is the raw digits. `digits` is then the
+		 * storage capacity, so the PICTURE's count pads the text instead. */
+		int sc = (a->flags & COB_F_NO_SCALE) ? d.scale : a->scale;
+		if (a->pdigits)
+			digits = a->pdigits;
 		int ovf = 0;
 		cob_s128 v = rescale(d.v, d.scale, sc, 0, &ovf);
 		cob_u128 u = cob_uabs(v);
 		size_t n = (size_t)digits;
+		/* pad to the PICTURE's digit count, but never cut a value that is
+		 * wider than it: -fnotrunc keeps the whole stored number, and cobc
+		 * prints all of it */
+		{
+			size_t need = 1;
+			cob_u128 t = u;
+			while (t >= 10) {
+				t /= 10;
+				need++;
+			}
+			if (need > n)
+				n = need;
+		}
 		if (n > bufsz)
 			n = bufsz;
 		for (size_t i = n; i > 0; i--) {
@@ -2010,10 +2028,11 @@ void cob_move(const cob_field *src, cob_field *dst)
 			return;
 		}
 		size_t n = cob_field_text(src, buf, sizeof buf);
-		if (dt == COB_ALNUM_EDITED)
+		if (dt == COB_ALNUM_EDITED) {
 			edit_alnum(buf, n, dst);
-		else
-			cob_move_bytes(buf, n, dst);
+			return;
+		}
+		cob_move_bytes(buf, n, dst);
 		return;
 	}
 	if (st == COB_NUM_EDITED) {
@@ -2382,6 +2401,16 @@ void cob_display_warn_punch(const char *loc)
 static int disp_digits(const cob_field *f)
 {
 	const cob_attr *a = f->attr;
+	if ((a->flags & COB_F_NO_SCALE) && (a->type == COB_NUM_BINARY || a->type == COB_NUM_COMP5)) {
+		/* -fnotrunc / -std=ibm: an untruncated BINARY item prints as many
+		 * digits as its storage holds (2 bytes: 5, 4: 10, 8: 20), measured on
+		 * cobc -- PIC 9(2) COMP holding 5 prints "00005" */
+		static const int cap[] = { 0, 3, 5, 0, 10, 0, 0, 0, 20 };
+		int c = (f->size < sizeof cap / sizeof *cap) ? cap[f->size] : 0;
+		if (c > a->digits)
+			return c;
+		return a->digits;
+	}
 	if (a->type == COB_NUM_COMP5) {
 		/* as many digits as the largest value of the size */
 		static const unsigned char dig[17] = { 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25, 27, 29, 32, 34, 37, 39 };

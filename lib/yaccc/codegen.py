@@ -318,14 +318,15 @@ class CodeGen(ReportWriterGen, DebugGen):
         return '\n'.join(out) + '\n'
 
     # ================================================================ attributes / literals
-    def attr(self, typ, digits=0, scale=0, flags=0, pic=None, currency=0):
-        key = (typ, digits, scale, flags, pic, currency)
+    def attr(self, typ, digits=0, scale=0, flags=0, pic=None, currency=0, pdigits=0):
+        key = (typ, digits, scale, flags, pic, currency, pdigits)
         s = self.attr_cache.get(key)
         if s:
             return s
         s = self.sym('a_')
         pc = c_string(pic) if pic else 'NULL'
-        self.glob.append(f"static const cob_attr {s} = {{{TYPE_NAMES[typ]}, {digits}, {scale}, {flags}, {pc}, {currency}}};")
+        tail = f", {pdigits}" if pdigits else ""
+        self.glob.append(f"static const cob_attr {s} = {{{TYPE_NAMES[typ]}, {digits}, {scale}, {flags}, {pc}, {currency}{tail}}};")
         self.attr_cache[key] = s
         return s
 
@@ -338,7 +339,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             pic = it.pic.edited_pic
             if it.pic.currency != '$':
                 cur = ord(it.pic.currency)
-        it.attr_sym = self.attr(it.type, min(it.digits, 255), it.scale, it.flags, pic, cur)
+        # under -fnotrunc `digits` holds the storage capacity; the PICTURE's own
+        # count is kept alongside for the numeric-to-alphanumeric text width
+        pdig = getattr(it, 'pic_digits', 0) if (it.flags & F_NO_SCALE) else 0
+        it.attr_sym = self.attr(it.type, min(it.digits, 255), it.scale, it.flags, pic, cur,
+                                min(pdig or 0, 255))
         return it.attr_sym
 
     def lit_str(self, b):

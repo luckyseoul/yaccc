@@ -39,6 +39,8 @@ typedef struct {
 	unsigned short flags;         /* COB_F_*: more than eight are defined */
 	const char *pic;              /* edited picture (expanded) */
 	unsigned char currency;
+	unsigned char pdigits;        /* PICTURE digits when `digits` is the
+	                               * storage capacity (-fnotrunc), else 0 */
 } cob_attr;
 
 typedef struct {

@@ -55,7 +55,7 @@ SKIP  run_extensions.at:1134       INITIALIZE OCCURS ODOSLIDE
 SKIP  run_extensions.at:1231       DEPENDING ON with ODOSLIDE
 SKIP  run_extensions.at:1446       DEPENDING ON with ODOSLIDE for IBM
 PASS  run_extensions.at:1551       INITIALIZE level 01
-FAIL  run_extensions.at:1603       MOVE of non-integer to alphanumeric
+PASS  run_extensions.at:1603       MOVE of non-integer to alphanumeric
 SKIP  run_extensions.at:1693       CALL USING file-name
 PASS  run_extensions.at:1738       CALL unusual PROGRAM-ID.
 PASS  run_extensions.at:1802       CALL / GOBACK with LOCAL-STORAGE
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 495  FAIL 11  CERR 0  XERR 0  SKIP 187
+PASS 496  FAIL 10  CERR 0  XERR 0  SKIP 187

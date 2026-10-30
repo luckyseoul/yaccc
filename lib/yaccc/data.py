@@ -556,6 +556,10 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
             # A PICTURE with a decimal point loses it as well: GnuCOBOL reads
             # and prints the raw digits, so PIC V99 holding 9.85 prints 217 in
             # a 1-byte item -- measured, and what data_binary.at asserts.
+            # -fnotrunc: keep the whole stored value, so the item can hold
+            # everything its storage holds; the PICTURE's own digit count is
+            # remembered for the places that need it (numeric -> alphanumeric)
+            item.pic_digits = item.digits
             item.digits = min(len(str(2 ** (8 * item.size) - 1)), 20)
     elif usage == 'COMP-5':
         item.type = T_NUM_COMP5
