@@ -47,6 +47,7 @@ class Picture:
         self.loc = loc
         self.currency = currency
         self.decimal_comma = decimal_comma
+        self.national = False           # PICTURE N: two bytes per character
         self.constants = constants or {}
         self.symbols = self._expand(src)        # list of single symbols ('CR','DB' as one)
         self._classify()
@@ -85,7 +86,13 @@ class Picture:
                 continue
             if c not in 'AX9SVPZ*B0/,.+-$N':
                 raise CompileError(f"invalid character '{s[i]}' in PICTURE '{s}'", self.loc)
-            out.append('X' if c == 'N' else c)
+            if c == 'N':
+                # a national position: stored as a character, but two bytes
+                # wide (see resolve_types), the way GnuCOBOL 3.1.2 lays it out
+                self.national = True
+                out.append('X')
+            else:
+                out.append(c)
             i += 1
         return out
 
@@ -394,6 +401,26 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.digits = 17 if big else 9
         item.scale = 0
         item.flags = F_SIGNED
+        return
+    if usage == 'NATIONAL':
+        # USAGE NATIONAL on a PIC X item (or PIC N, which sets pic.national):
+        # each character takes two bytes, the content stays one byte per
+        # character -- GnuCOBOL 3.1.2's layout for its (unfinished) national
+        # support, which is what its own tests compare against
+        if pic is None or pic.category not in ('ALPHANUMERIC', 'ALPHABETIC'):
+            raise CompileError(f"USAGE NATIONAL needs an alphanumeric PICTURE", item.loc)
+        item.type = T_ALNUM
+        item.digits = pic.size
+        item.scale = 0
+        item.size = pic.size * 2
+        item.national = True
+        return
+    if pic is not None and getattr(pic, 'national', False):
+        item.type = T_ALNUM
+        item.digits = pic.size
+        item.scale = 0
+        item.size = pic.size * 2
+        item.national = True
         return
     if usage == 'INDEX':
         item.type = T_INDEX

@@ -2064,7 +2064,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             return f"cob_fn_length(cob_fn_trim({F(0)}, 2))"
         if name in ('LENGTH', 'BYTE-LENGTH'):
             if isinstance(a[0], DataRef) and not a[0].refmod:
-                return f"cob_d_int((cob_s64)({self.length_of(LengthOf(a[0]))}))"
+                it = self.resolve(a[0])
+                n = self.length_of(LengthOf(a[0]))
+                if name == 'LENGTH' and getattr(it, 'national', False):
+                    n = f"({n} / 2)"       # national: two bytes per character
+                return f"cob_d_int((cob_s64)({n}))"
             if isinstance(a[0], StrLit):
                 return f"cob_d_int({len(a[0].value)})"
             return f"cob_fn_length({F(0)})"

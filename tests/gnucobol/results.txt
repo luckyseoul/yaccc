@@ -207,7 +207,7 @@ PASS  run_functions.at:46          FUNCTION ACOS
 PASS  run_functions.at:70          FUNCTION ANNUITY
 PASS  run_functions.at:94          FUNCTION ASIN
 PASS  run_functions.at:118         FUNCTION ATAN
-FAIL  run_functions.at:142         FUNCTION BYTE-LENGTH
+PASS  run_functions.at:142         FUNCTION BYTE-LENGTH
 PASS  run_functions.at:212         FUNCTION CHAR
 PASS  run_functions.at:250         FUNCTION COMBINED-DATETIME
 PASS  run_functions.at:275         FUNCTION CONCAT / CONCATENATE
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 485  FAIL 9  CERR 0  XERR 0  SKIP 199
+PASS 486  FAIL 8  CERR 0  XERR 0  SKIP 199
