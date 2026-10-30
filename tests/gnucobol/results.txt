@@ -9,7 +9,7 @@ PASS  data_binary.at:1185          BINARY: 64bit unsigned compare
 PASS  data_binary.at:1210          BINARY: 64bit unsigned arithmetic notrunc
 PASS  data_binary.at:1240          BINARY: 64bit signed negative constant range
 PASS  data_binary.at:1261          COMP-4 Truncate
-FAIL  data_binary.at:1322          COMP-4 No Truncate
+PASS  data_binary.at:1322          COMP-4 No Truncate
 SKIP  data_display.at:21           DISPLAY: Sign ASCII
 SKIP  data_display.at:80           DISPLAY: Sign ASCII (2)
 SKIP  data_display.at:126          DISPLAY: Sign EBCDIC
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 487  FAIL 7  CERR 0  XERR 0  SKIP 199
+PASS 488  FAIL 6  CERR 0  XERR 0  SKIP 199

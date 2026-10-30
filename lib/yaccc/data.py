@@ -39,6 +39,7 @@ F_BLANK_ZERO = 0x10
 F_DEC_COMMA = 0x20
 F_BINARY_TRUNC = 0x40
 F_UNSIGNED_PACKED = 0x100     # COMP-6: packed decimal, no sign nibble
+F_NO_SCALE = 0x200            # -fnotrunc: read a BINARY item without its point
 
 
 class Picture:
@@ -501,6 +502,11 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
             item.flags |= F_BLANK_ZERO
         if pic.decimal_comma:
             item.flags |= F_DEC_COMMA
+        if pic.scale > 0 and item.type == T_NUM_DISPLAY \
+                and not getattr(opts, 'binary_truncate', True):
+            # -fnotrunc: a scaled DISPLAY item is read and printed without its
+            # decimal point (cobc prints "012+", not "+0.12")
+            item.flags |= F_NO_SCALE
         return
     if cat != 'NUMERIC':
         if usage in ('COMP-5', 'COMP-X') and cat == 'ALPHANUMERIC' and set(pic.symbols) <= {'X'}:
@@ -533,10 +539,13 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.size = binary_size(pic.digits, opts.binary_size)
         if getattr(opts, 'binary_truncate', True):
             item.flags |= F_BINARY_TRUNC
-        elif pic.scale == 0:
+        else:
             # -fnotrunc: the value is not cut back to the PICTURE's digits, so
             # the item can hold everything its storage holds, and that capacity
-            # is what DISPLAY prints (GnuCOBOL: u16 5, u32 10, u64 20 digits)
+            # is what DISPLAY prints (GnuCOBOL: u16 5, u32 10, u64 20 digits).
+            # A PICTURE with a decimal point loses it as well: GnuCOBOL reads
+            # and prints the raw digits, so PIC V99 holding 9.85 prints 217 in
+            # a 1-byte item -- measured, and what data_binary.at asserts.
             item.digits = min(len(str(2 ** (8 * item.size) - 1)), 20)
     elif usage == 'COMP-5':
         item.type = T_NUM_COMP5
@@ -553,6 +562,12 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         raise CompileError(f"unsupported USAGE {usage}", item.loc)
     if pic.decimal_comma:
         item.flags |= F_DEC_COMMA
+    if pic.scale > 0 and not getattr(opts, 'binary_truncate', True) \
+            and item.type in (T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY):
+        # -fnotrunc: the PICTURE's decimal point is not applied when the value
+        # is read back or printed (storage is unchanged) -- measured on 3.1.2
+        # for DISPLAY, PACKED-DECIMAL and BINARY items alike
+        item.flags |= F_NO_SCALE
 
 
 def align_of(it):

@@ -763,12 +763,20 @@ cob_dec cob_d_get(const cob_field *f)
 	cob_dec r;
 	switch (f->attr->type) {
 	case COB_NUM_DISPLAY:
-		return get_display(f);
+		r = get_display(f);
+		if (f->attr->flags & COB_F_NO_SCALE)
+			r.scale = 0;
+		return r;
 	case COB_NUM_PACKED:
-		return get_packed(f);
+		r = get_packed(f);
+		if (f->attr->flags & COB_F_NO_SCALE)
+			r.scale = 0;
+		return r;
 	case COB_NUM_BINARY:
 		r.v = get_binary_raw(f, 1, f->attr->flags & COB_F_SIGNED);
-		r.scale = f->attr->scale;
+		/* -fnotrunc: the PICTURE's decimal point is not applied when the item
+		 * is read back (the stored value is unchanged) */
+		r.scale = (f->attr->flags & COB_F_NO_SCALE) ? 0 : f->attr->scale;
 		return r;
 	case COB_NUM_COMP5:
 		r.v = get_binary_raw(f, 0, f->attr->flags & COB_F_SIGNED);
@@ -939,6 +947,12 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		/* COB_SIZE_REPORT: the value is stored truncated, as without a size
 		 * check, but the overflow is reported so the exception can be raised */
 		int report = 0;
+		if ((a->flags & COB_F_NO_SCALE) && a->type != COB_INDEX) {
+			/* -fnotrunc: the item has no decimal point, and the value written
+			 * to it keeps the digits it had -- measured on 3.1.2, where
+			 * MOVE 0.12 to a PIC 9V99 COMP-4 stores 12 and prints 00012 */
+			v = d.v;
+		} else {
 		if (d.scale < a->scale && !(opt & (COB_SIZE_CHECK | COB_SIZE_REPORT))) {
 			/* drop the high-order digits no item can hold before scaling up */
 			int k = a->scale - d.scale;
@@ -946,6 +960,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 				d.v %= P10[38 - k];
 		}
 		v = rescale(d.v, d.scale, a->scale, opt, &ovf);
+		}
 		if (ovf) {
 			if (opt & COB_SIZE_CHECK)
 				return 1;
@@ -2061,7 +2076,7 @@ void cob_display(int dev, const cob_field *f)
 	case COB_INDEX: {
 		cob_dec d = cob_d_get(f);
 		int digits = disp_digits(f);
-		int scale = a->type == COB_INDEX ? 0 : a->scale;
+		int scale = (a->type == COB_INDEX || (a->flags & COB_F_NO_SCALE)) ? 0 : a->scale;
 		int sgn = (a->flags & COB_F_SIGNED) || a->type == COB_INDEX;
 		int o = 0;
 		int ovf = 0;

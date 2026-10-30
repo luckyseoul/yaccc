@@ -29,6 +29,8 @@ enum cob_type {
 #define COB_F_BINARY_TRUNC 0x40
 #define COB_F_ZERO         0x80   /* COB_ALL: figurative ZERO */
 #define COB_F_UNSIGNED_PACKED 0x100 /* COMP-6: packed with no sign nibble */
+#define COB_F_NO_SCALE     0x200 /* -fnotrunc: a BINARY item is read back without
+                                  * its PICTURE's decimal point */
 
 typedef struct {
 	unsigned char type;

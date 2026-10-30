@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   487     7              0      199
+  693   488     6              0      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,7 +127,7 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 7 failures** are:
+- **The 6 failures** are:
   - 4 Report Writer tests whose output differs in where a page break lands.
     `cobc` reaches a page break through several branches of `reportio.c` and
     does not place it consistently: measuring a dozen PAGE clause shapes
@@ -759,7 +759,7 @@ it, and DISPLAY printing all its digits -- a genuine feature, not a bug fix.
 Everything else in the float family already passes, so the current `double`
 mapping is only wrong for these two USAGEs.
 
-### 3. CALL BY VALUE numeric literal WITH SIZE
+### 3. CALL BY VALUE numeric literal WITH SIZE *(fixed)*
 
 `run_extensions.at:1889`. The caller passes `BY VALUE 4 0 0 1 0` (automatic
 size) or `BY VALUE 1 SIZE 1 2 0 0 0`; the callee declares
@@ -775,7 +775,7 @@ callee takes its `WHEN 1` branch. Involved: the `BY VALUE ... SIZE` clauses in
 parameter passing here unfinished, so match `cobc`'s observed behaviour rather
 than the standard.
 
-### 4. COMP-4 No Truncate
+### 4. COMP-4 No Truncate *(fixed)*
 
 `data_binary.at:1322`, compiled with `-fnotrunc`. Under that flag `cobc` ignores
 the PICTURE's decimal point for a BINARY item, both when storing and when

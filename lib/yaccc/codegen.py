@@ -7,7 +7,7 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_NUM_EDITED,
                    T_INDEX, T_ALL, T_POINTER, TYPE_NAMES, NUMERIC_TYPES,
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
-                   F_BINARY_TRUNC, F_UNSIGNED_PACKED)
+                   F_BINARY_TRUNC, F_UNSIGNED_PACKED, F_NO_SCALE)
 from .errors import CompileError, DIAG
 from .nodes import *
 from .dbggen import DebugGen
@@ -1563,6 +1563,8 @@ class CodeGen(ReportWriterGen, DebugGen):
             return None
         if it.scale < 0 or it.digits > 18 or it.children:
             return None
+        if it.flags & F_NO_SCALE:
+            return None     # -fnotrunc: the runtime path reads it without its point
         t = it.type
         if t == T_NUM_BINARY and it.size in (2, 4, 8):
             kind = 'BIN'
