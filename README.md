@@ -798,7 +798,11 @@ scored 10 of 23 Report Writer tests against the heuristic's 18, so it is not in
 the tree and its branch is deleted. A second, more careful port -- one
 `write_to_line` primitive for every record, per
 `docs/report-writer-page-model.md` -- scored 492 pass against this heuristic's
-503 and was reverted too. Before a third, read "Observing the real cursor" in
+503 and was reverted too, as was a third that let each page start at the file
+position (494). That note carries the scoreboard of all four models and why
+correcting the page arithmetic alone loses: the heuristic's padding happens to
+reproduce most shapes' file geometry, so a port has to replace the padding and
+the stride in one change. Before a third, read "Observing the real cursor" in
 that note: 3.1.2 can print its own cursor decisions, and doing so is how the
 page lengths below were measured rather than guessed. The pieces it got wrong were the pad
 endpoints inside `do_page_footing` and the report-footing placement at

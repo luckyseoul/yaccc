@@ -152,6 +152,30 @@ output file and so recovers the page offsets directly.
   constant page length; the drift comes from the cursor being able to sit on a
   line the file has already passed.
 
+### Measured scoreboard (the thing to beat)
+
+Every model below was implemented and run against the full suite. The measured
+heuristic that is in the tree wins every time:
+
+| model | Report Writer tests | whole suite |
+|---|---|---|
+| measured heuristic in `cobrt_rw.c` (current) | 21 of 25 | 503 / 3 |
+| full cursor port (`curr_line`, `write_at`, footing/heading branches) | 10 of 23 | 485 |
+| `write_to_line` as the only primitive, per this note | -- | 492 / 14 |
+| `page_start = file position` (drop the computed stride) | -- | 494 / 12 |
+
+The last one is the most informative: "each page starts wherever the file
+actually is" is *true of GnuCOBOL* -- the trace shows page 2 of
+`run_reportwriter.at:23` starting at file line 12, exactly after page 1 ended at
+line 11 -- and implementing it still loses nine tests. The reason is that the
+heuristic's padding (`pad_page` filling to `PAGE LIMIT`) happens to reproduce
+the *file* geometry of most shapes even though its page arithmetic is wrong, so
+correcting the arithmetic alone removes the compensation without adding the
+reproduction.
+
+So a fourth attempt has to replace the padding and the stride **together**, in
+one change, and be scored against this table rather than against a single test.
+
 ### What a third attempt should not repeat
 
 - Porting `write_to_line` alone is not enough: a version that made it the only
