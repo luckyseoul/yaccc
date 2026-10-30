@@ -327,6 +327,14 @@ void cob_xml_text_just(xmlw *w, cob_field *f)
 
 void cob_xml_num(xmlw *w, cob_field *f, int dpc)
 {
+	if (f->attr->type == COB_NUM_DEC_FLOAT) {
+		char t[160];
+		int n = cob_dec_float_str(f, t, sizeof t);
+		flush_open(w);
+		for (int i = 0; i < n; i++)
+			xput(w, t[i]);
+		return;
+	}
 	cob_dec d = cob_d_get(f);
 	flush_open(w);
 	if (d.scale == COB_DEC_ERR) {
