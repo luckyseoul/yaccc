@@ -324,3 +324,45 @@ pre-overflow skip it performs (`curr_line += line - 1`) runs even when the
 group would not fit, which moves the footing by one line. The stride rule and
 that skip are entangled, so the next attempt must change both together -- the
 same conclusion as before, now with a measurement behind each half.
+
+### Step 2, attempted: a fresh 3.1.2 engine
+
+A rewrite following the algorithm above was implemented on a branch and scored
+three times. It is not in the tree; the measurements are worth keeping.
+
+**What improved.** With the cursor rules in place (every print line positions
+itself from its own `LINE` clause; `LINE PLUS n` skips `n-1` lines and writes on
+the next; the overflow test runs before and after positioning), the generated
+sweep went from **128 differing shapes to 85** -- the best any model has scored
+on that axis.
+
+**What regressed.** The same engine took the Report Writer testsuite from 21 to
+13, and after folding the footing and heading into one atomic `page_advance`,
+to 3 (and 131/131 on the sweep: the fill-to-end-of-page branch fired on every
+page end, not only on overflow).
+
+**Three things the attempt established:**
+
+- **The page advance must be atomic.** Doing the footing and the heading as two
+  calls lets a line placed inside the footing eject a page of its own: the
+  footing appeared twice on page 1 of `run_reportwriter.at:23`. One function
+  that foots, pads, bumps the page, heads and skips to FIRST DETAIL avoids it --
+  but it then has to know *why* it was called (an overflow, not the first
+  GENERATE), so the caller has to say so rather than the callee inferring it.
+- **Padding has to consume the rest of the page.** After the footing pads, the
+  next page's heading lands directly after the last padding line; leaving the
+  cursor on `PAGE LIMIT` makes the heading write one more line and every
+  following page drifts by one. Measured on `run_reportwriter.at:23`:
+  `PAGE LIMIT 12`, footing at `LINE 10`, one padding line, heading next.
+- **The two axes disagree, and the sweep is the one that generalises.** The
+  layout engine halved the generated mismatches while making the curated tests
+  worse. That is not a contradiction: the testsuite exercises report headings,
+  `NEXT GROUP` and control footings heavily, and those paths were the ones left
+  unported. A complete port has to carry all of them, which is why partial ones
+  lose to a heuristic tuned on exactly those shapes.
+
+**Next step is therefore narrower than "port the engine":** port the *complete*
+set -- report heading, page heading, control heading/footing, detail, page
+footing, report footing, plus `NEXT GROUP` in all three forms and `PRESENT WHEN`
+-- and score on both axes after each one, starting from the 85-shape engine
+rather than from the heuristic.
