@@ -2623,6 +2623,18 @@ class CodeGen(ReportWriterGen, DebugGen):
             for d in s.dsts:
                 self.gen_corr(s.src, d, 'MOVE', None)
             return
+        # GnuCOBOL stores the figurative's own byte in a numeric DISPLAY item
+        # rather than converting it to zero: MOVE LOW-VALUES leaves x"00"x n,
+        # which then fails IS NUMERIC and reads as 0
+        if isinstance(s.src, Figurative) and s.src.kind in ('LOW-VALUE', 'HIGH-VALUE'):
+            byte = '0' if s.src.kind == 'LOW-VALUE' else '255'
+            for d in s.dsts:
+                it = self.check_receiving(d)
+                if isinstance(it, DataItem) and it.type == T_NUM_DISPLAY:
+                    self.em(f"memset({self.data_ptr(d)}, {byte}, {it.size});")
+                else:
+                    self.em(f"cob_move({self.field(s.src)}, {self.ref_field(d, True)});")
+            return
         for d in s.dsts:
             it = self.check_receiving(d)
             if isinstance(it, IndexName):

@@ -30,6 +30,9 @@ class Directives:
         self.stack = []
         self.dpc_in_data = None
         self.comp1_binary = False   # $SET COMP-1(BINARY): COMP-1 is a binary integer
+        # constants in source order: (line, name, value), so a constant used
+        # before a later >>DEFINE ... OVERRIDE still sees the earlier value
+        self.const_history = []
         self.check = None      # None: unchanged
         self.check_changes = []   # (file, line, on) in source order
 
@@ -157,6 +160,18 @@ class Directives:
             return
         if name in self.vars and not override and name in self.params:
             return                          # a -D value wins unless OVERRIDE
+        if len(toks) == 1 and toks[0][0] in ('str', 'string'):
+            # $SET CONSTANT DOGGY "Barky": a text constant, usable wherever a
+            # literal is (VALUE, DISPLAY, comparisons)
+            v = toks[0][1]
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+                v = v[1:-1]
+            if name in self.vars and not override:
+                return      # a constant cannot be redefined without OVERRIDE
+            self.vars[name] = v
+            if loc is not None:
+                self.const_history.append((loc.line, name, v))
+            return
         self.vars[name] = _Expr(toks, self, loc).arith()
 
     def _set(self, rest, loc):
@@ -217,6 +232,14 @@ class Directives:
                 return True             # $SET in skipped code takes no effect
             return self._set(rest, loc)
         return False
+
+    def const_at(self, name, line):
+        """The value of a text constant as it stood at `line`."""
+        val = None
+        for ln, nm, v in self.const_history:
+            if nm == name and ln <= line:
+                val = v
+        return val
 
     # ------------------------------------------------------------ conditions
     def check_at(self, path, line):

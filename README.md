@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   490     4              0      199
+  693   495    12              0      186
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,7 +127,14 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 4 failures** are:
+- **The 12 failures**: 9 of them only became *visible* now. The harness used to
+  skip any `AT_CHECK` whose command contained a backslash-newline (it read the
+  continuation as a shell operator) and any test using `-std=mf` or
+  `-fdefine-constant-directive` (no equivalent in its option table). Those are
+  now run: 3 of them pass (including `Sample REPORT with RIGHT/CENTER`, which
+  was never a defect -- see below) and 9 fail, all of which had been failing
+  silently. No test that used to pass now fails.
+- **The 3 Report Writer failures** are:
   - 4 Report Writer tests whose output differs in where a page break lands.
     `cobc` reaches a page break through several branches of `reportio.c` and
     does not place it consistently: measuring a dozen PAGE clause shapes

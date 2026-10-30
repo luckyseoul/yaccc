@@ -1058,6 +1058,11 @@ class Parser:
                     ctl = 'FINAL'
                 else:
                     ctl = self.user_word('control name')
+                    # CONTROL HEADING FOR a OR PAGE OR b: the group is also
+                    # presented for the other controls and on a new page
+                    while self.accept('OR'):
+                        if not self.accept('PAGE'):
+                            self.user_word('control name')
             item.rw_type = (kind, ctl)
         elif w in ('COLUMN', 'COL', 'COLUMNS', 'COLS'):
             # COLUMN [NUMBER IS] [LEFT | RIGHT | CENTER] [PLUS | +] integer
@@ -1068,6 +1073,12 @@ class Parser:
             if j:
                 item.rw_just = j.up[0]
             rel = bool(self.accept('PLUS') or self.accept_op('+'))
+            if rel and j and getattr(self, 'dialect', None) is not None \
+                    and self.dialect.name != 'mf':
+                # GnuCOBOL's default dialect rejects a relative COLUMN combined
+                # with LEFT/RIGHT/CENTER; Micro Focus accepts it with a warning
+                raise CompileError("PLUS is not allowed with LEFT, RIGHT or CENTER",
+                                   self.peek(-1).loc)
             t = self.expect_kind('NUM', 'column number')
             if t.val.startswith('+'):
                 rel = True
@@ -1437,6 +1448,14 @@ class Parser:
             return self.visible_constants()[t.up]
         return None
 
+    def _const_at(self, name, loc):
+        """A text constant as it stood at this source line (directives are
+        applied in a pre-pass, so the live table holds the final value)."""
+        d = getattr(self, 'directives_state', None)
+        if d is None or loc is None:
+            return None
+        return d.const_at(name, loc.line)
+
     def visible_constants(self):
         """Constants this program can name: its own, and the GLOBAL ones of the
         programs that contain it."""
@@ -1491,6 +1510,20 @@ class Parser:
             if t.up in self.prog.constants:
                 self.next()
                 return self.prog.constants[t.up]
+            # a GLOBAL constant of a containing program, or a >>DEFINE value
+            vc = self.visible_constants()
+            if t.up in vc:
+                self.next()
+                return vc[t.up]
+            # $SET CONSTANT / >>SET CONSTANT name "text"
+            if t.up in self.compile_vars:
+                v = self._const_at(t.up, t.loc) or self.compile_vars[t.up]
+                if isinstance(v, str):
+                    self.next()
+                    return StrLit(v.encode('latin-1'))
+                if isinstance(v, NumLit):
+                    self.next()
+                    return v
         raise self.err("literal expected")
 
     def _make_all(self, v, t):
@@ -3164,6 +3197,14 @@ class Parser:
             if u in vcx:
                 self.next()
                 return vcx[u]
+            if u in self.compile_vars:
+                v = self._const_at(u, t.loc) or self.compile_vars[u]
+                if isinstance(v, str):
+                    self.next()
+                    return StrLit(v.encode('latin-1'))
+                if isinstance(v, NumLit):
+                    self.next()
+                    return v
             return self.parse_identifier()
         raise self.err("operand expected")
 

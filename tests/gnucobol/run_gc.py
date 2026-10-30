@@ -45,6 +45,10 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '-fnotrunc': ['-fno-binary-truncate'],
             '-fbinary-truncate': [],        # yaccc's default
             '-fno-ref-mod-zero-length': ['--refmod-zero-length'],
+            # $SET CONSTANT is always defined here; the flag only switches it on
+            '-fdefine-constant-directive=ok': [], '-fdefine-constant-directive': [],
+            '-std=mf': ['-std', 'mf'], '-std=default': ['-std', 'default'],
+            '-std=ibm': ['-std', 'ibm'], '-std=gnu': ['-std', 'gnu'],
             '-fno-ec=BOUND': ['--no-check'],
             '-fno-ec=BOUND-REF-MOD': ['--no-check'],
             '-fno-ec=BOUND-REF-MOD-ALL': ['--no-check'],
@@ -285,8 +289,10 @@ class Runner:
             m = re.match(r'^(.*\S)\s*<\s*(\S+)$', cmd)
             if m:
                 cmd, stdin_file = m.group(1), m.group(2)
-            if '\n' in cmd or '|' in cmd or ';' in cmd or '>' in cmd or '<' in cmd or '`' in cmd:
+            if '|' in cmd or ';' in cmd or '>' in cmd or '<' in cmd or '`' in cmd:
                 return 'SKIP', 'shell command'
+            # a backslash-newline is a line continuation, not a shell operator
+            cmd = cmd.replace('\\\n', ' ').replace('\n', ' ')
             try:
                 words = shlex.split(cmd)
             except ValueError:
