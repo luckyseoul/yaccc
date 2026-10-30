@@ -903,112 +903,66 @@ void cob_sort_end(cob_file *sd);
 void cob_table_sort(unsigned char *base, size_t n, size_t elem, int nkeys, const cob_sort_key *keys);
 
 /* ---------------------------------------------------------------- Report Writer */
-/* line and item flags (bit values as in the compiler's tables) */
-#define COB_RWF_LINE        (1u << 0)
-#define COB_RWF_LINE_PLUS   (1u << 1)
-#define COB_RWF_COL_PLUS    (1u << 2)
-#define COB_RWF_RESET_FINAL (1u << 3)
-#define COB_RWF_RH          (1u << 4)
-#define COB_RWF_RF          (1u << 5)
-#define COB_RWF_PH          (1u << 6)
-#define COB_RWF_PF          (1u << 7)
-#define COB_RWF_CH          (1u << 8)
-#define COB_RWF_CH_FINAL    (1u << 9)
-#define COB_RWF_CF          (1u << 10)
-#define COB_RWF_CF_FINAL    (1u << 11)
-#define COB_RWF_DE          (1u << 12)
-#define COB_RWF_NG_LINE     (1u << 13)
-#define COB_RWF_NG_PLUS     (1u << 14)
-#define COB_RWF_NG_PAGE     (1u << 15)
-#define COB_RWF_LINE_NP     (1u << 16)
-#define COB_RWF_NEXT_PAGE   (1u << 17)
-#define COB_RWF_GI          (1u << 18)
-#define COB_RWF_GROUP       (1u << 19)
-#define COB_RWF_WHEN        (1u << 20)
-#define COB_RWF_LEFT        (1u << 21)
-#define COB_RWF_CENTER      (1u << 22)
-#define COB_RWF_RIGHT       (1u << 23)
-#define COB_RWF_PRESENT     (1u << 24)
-#define COB_RWF_BEFORE      (1u << 25)
-#define COB_RWF_PAGE        (1u << 26)
-#define COB_RWF_ALL         (1u << 27)
-#define COB_RWF_NEGATE      (1u << 28)
+enum { COB_RW_RH = 1, COB_RW_PH, COB_RW_CH, COB_RW_DE, COB_RW_CF, COB_RW_PF, COB_RW_RF };
+enum { COB_RW_ABS = 1, COB_RW_REL, COB_RW_ABSNP, COB_RW_NP };   /* LINE / NEXT GROUP kinds */
+#define COB_RW_MAX_LINES 256
 
-/* one report item of a print line */
-typedef struct cob_rwfld {
-	struct cob_rwfld *next;
-	cob_field *f;              /* the item's own storage */
-	int src;                   /* SOURCE / SUM: id for the report's src callback, 0 none */
-	int ctl;                   /* PRESENT AFTER control: control index, -1 none */
-	const char *lit;           /* VALUE */
-	int litlen;
-	unsigned flags;
-	int line, column, step, ngl, level;
-	unsigned char gi, sup, now; /* group indicated, suppressed, present now */
-} cob_rwfld;
+typedef struct {
+	short kind;
+	short num;
+} cob_rw_lspec;
 
-/* one print line: an 01 group or a LINE entry */
-typedef struct cob_rwline {
-	struct cob_rwline *next_line;  /* the next line in the same run */
-	struct cob_rwline *first_line; /* the line an item-carrying group hangs from */
-	cob_rwfld *fields;
-	int ctl;                   /* CONTROL of a CH/CF group: control index, -1 none */
-	int decl;                  /* USE BEFORE REPORTING procedure, 0 none */
-	unsigned flags;
-	int line, step, ngl;
-	unsigned char sup;
-} cob_rwline;
-
-/* one CONTROL data item, minor first */
-typedef struct cob_rwctl {
-	int seq;                   /* 1 = the most minor control */
-	int nrefs;
-	cob_rwline *const *refs;   /* the CH / CF lines of this control */
-	unsigned char *val, *save; /* previous and saved values */
-	unsigned char changed, sup;
-} cob_rwctl;
-
-/* one SUM counter */
-typedef struct cob_rwsum {
-	cob_field *counter;
-	int ctl;                   /* control whose footing resets it, -1 none */
-	int nops;                  /* number of SUM operands */
-	unsigned char final, subtotal;
-	int nroll;
-	const int *roll;           /* counters that SUM this one (rolling forward) */
-	int nupon;
-	struct cob_rwline *const *upon; /* SUM ... UPON: the DETAIL lines that add */
-} cob_rwsum;
+typedef struct {
+	int type;                  /* COB_RW_RH ... COB_RW_RF */
+	int level;                 /* CH/CF: 0 = FINAL, 1..n = CONTROL data items */
+	int nlines;
+	const cob_rw_lspec *lines;
+	short ng_kind, ng_num;     /* NEXT GROUP */
+	int has_decl;              /* USE BEFORE REPORTING */
+	int (*present_when)(void); /* PRESENT WHEN: NULL when unconditional */
+	int absent;                /* ABSENT WHEN: invert the condition */
+} cob_rw_group;
 
 typedef struct cob_report {
 	const char *name;
 	cob_file *file;
-	cob_field *page_counter, *line_counter;
-	cob_rwline *first;
-	int ncontrols;
-	cob_rwctl *controls;
-	int nsums;
-	cob_rwsum *sums;
-	int lines, cols, heading, first_detail, last_control, last_detail, footing;
+	int pl, h, fd, ld, ft;     /* PAGE LIMIT (0: no PAGE clause), HEADING ... FOOTING */
+	int ld_decl, ft_decl;      /* LAST DETAIL / FOOTING actually declared? */
+	int fd_decl;               /* FIRST DETAIL declared? */
+	int ft_clause;             /* a FOOTING n clause (not a page footing group) */
+	int width;                 /* print line width including CODE */
 	const unsigned char *code;
 	int code_len;
-	int recsz;
-	void (*src)(int id);           /* SOURCE / SUM value into the item */
-	cob_field *(*ctlf)(int i);     /* CONTROL data item i */
-	void (*sumadd)(int k);         /* add counter k's operands to it */
-	void (*decl)(int id);          /* run a USE BEFORE REPORTING procedure */
-	void (*moves)(int foot);       /* PRESENT WHEN and indexed SOURCE snapshots */
+	int ngroups;
+	const cob_rw_group *groups;
+	int ncontrols;
+	cob_field *line_counter;
+	cob_field *page_counter;
+	void (*fmt)(int group, int line, unsigned char *buf, int gi);
+	void (*sum)(int op, int arg);
+	int (*ctl)(int op);
+	void (*decl)(int group);
 	/* state */
-	unsigned char *rec;
-	int page, cur, next_value;
-	unsigned char initiated, first_gen, fdflag, in_pf, in_ph, in_rf, incr;
-	unsigned char next_line, next_plus, next_page, just_set, foot_np, terminating;
-	cob_rwline *use_line;
+	int initiated, generated, terminating;
+	int page_start, pos, open;
+	int next_page, body_on_page;
+	int ng_page;               /* the break was NEXT GROUP NEXT PAGE */
+	unsigned char *buf;
+	unsigned char *gi;
+	int *ch, *cf;
+	int rh, ph, pf, rf;
+	int final_page;            /* TERMINATE is writing the last page */
+	int pf_pos;                /* page line the page footing went on */
 } cob_report;
 
+extern int cob_rw_suppress;
+/* set by the runtime for the line being formatted: is this the first detail
+   line of a page, and which control level changed for it (0: none) */
+extern int cob_rw_new_page;
+extern int cob_rw_ctl_change;
 void cob_rw_initiate(cob_report *r, const char *loc);
-void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc);
+void cob_rw_generate(cob_report *r, int group, const char *loc);
 void cob_rw_terminate(cob_report *r, const char *loc);
-void cob_rw_suppress_printing(void);
+void cob_rw_justify(unsigned char *p, int size, int mode);
 
 #endif

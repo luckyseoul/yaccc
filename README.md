@@ -22,21 +22,22 @@ $ ./yaccc examples/mandelbrot.cbl --run
 
 - **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
   them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **0** failures in GnuCOBOL 3.1.2's own testsuite too, out of **506** that
-  run; the other 187 are skipped because they need more than compiling and
-  running a program.
+- **504** of GnuCOBOL 3.1.2's own testsuite pass. Two still fail, both Report
+  Writer page breaks; the other 187 are skipped because they need more than
+  compiling and running a program.
 - **63** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes.
-- **527** Report Writer shapes from `tests/rw_oracle.py --full`, each built by
-  both compilers and diffed byte for byte.
+- **136** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
+  `cobc` byte for byte. The rest are the open work described below.
 - **1** NIST test that cannot pass unattended. OBNC1M prints
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 224 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
 - **13,247** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
-- **0.69%** of the Report Writer's 12-token runs also occur in GnuCOBOL's
-  `libcob`. The build fails above 1.5%, so that number is a gate, not a boast.
+- **0.00%** of the Report Writer's 12-token runs occur in GnuCOBOL's `libcob`
+  — no shared run of twelve tokens at all. The build fails above 1.5%, so that
+  number is a gate, not a boast.
 
 COBOL's standards, for orientation: CODASYL started the work in 1959, COBOL-60
 was published within the year, the first ANSI standard arrived in 1968, and the
@@ -140,7 +141,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   506     0              0      187
+  693   504     2              0      187
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -155,12 +156,13 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **Failures**: none. The last three were Report Writer page breaks; the
-  Report Writer now builds its reports the way GnuCOBOL 3.1.2 does (a chain of
-  print lines walked with a line cursor; see
-  `docs/report-writer-page-model.md`) and matches `cobc` byte for byte on all
-  24 runnable Report Writer tests and on the 527 report shapes
-  `tests/rw_oracle.py --full` generates.
+- **Failures**: two, both Report Writer page breaks (*Sample Payroll Report*
+  and *Sample Inventory Report*). A third (*Next Group Next Page*) was fixed by
+  two rules measured against `cobc`: a control footing presented as part of a
+  larger break still applies its own `NEXT GROUP` when that is a relative
+  advance, except at `TERMINATE`; and a page ended by `NEXT GROUP NEXT PAGE`
+  runs its full length. The remaining two are control-break ordering and
+  page-footing placement, and are open — see *Open conformance work*.
 
 ### Performance
 
@@ -724,8 +726,9 @@ stated plainly rather than implied.
   `make provenance-deep` measures the code itself: for every file under
   `runtime/`, the fraction of its 12-token runs that also occur anywhere in
   GnuCOBOL's `libcob`, failing above 1.5%. Idiom — a linked-list walk, two
-  adjacent setters — stays under 1%; the first Report Writer port measured
-  2.1% and was restructured until it did not. It reads `third_party/gnucobol`
+  adjacent setters — stays under 1%. The Report Writer was once a renamed port
+  of GnuCOBOL's `reportio.c` at 2.06% and is now 0.00%, rebuilt from its own
+  measurements; see *Open conformance work* item 1. It reads `third_party/gnucobol`
   (fetched by `make gctest`) or whatever `GNUSRC` names, and skips when
   neither is present.
 
@@ -768,7 +771,7 @@ python3 tests/gnucobol/compare.py "Sample Payroll Report"
 make gctest          # the gate: fails if a recorded PASS stops passing
 ```
 
-### 1. Report Writer page breaks *(fixed)*
+### 1. Report Writer page breaks *(partly fixed)*
 
 `Sample Payroll Report`, `Sample Inventory Report` and `Next Group Next Page`
 were the last three failures. YACCC's Report Writer used to place page breaks
@@ -792,6 +795,19 @@ cursor:
 - a second absolute `LINE n` in one group is dropped and joins the line
   before it;
 - indexed SOURCE items are taken when the GENERATE starts, for every group.
+
+**Status.** Two of the three are fixed and one is not:
+
+- *Next Group Next Page* passes. Two rules, both measured from `cobc`'s output
+  rather than from its source: a control footing presented as part of a larger
+  break still applies its own `NEXT GROUP` when that is a relative advance,
+  except during `TERMINATE`; and a page ended by `NEXT GROUP NEXT PAGE` runs its
+  full length instead of stopping a line short.
+- *Sample Payroll Report* and *Sample Inventory Report* still fail. Payroll
+  emits its control-break footings and headings in a different order from
+  `cobc`; Inventory places a page footing one line high on pages after the
+  first. Neither is a one-line rule, and the 391 of 527 oracle shapes that
+  still differ are the same two problems in other geometries.
 
 `docs/report-writer-page-model.md` describes the model in full.
 

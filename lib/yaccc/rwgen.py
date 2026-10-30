@@ -1,59 +1,14 @@
 # SPDX-License-Identifier: MIT
-"""Report Writer: the REPORT SECTION as tables for the runtime's RWCS
-(runtime/cobrt_rw.c).
-
-The tables have the shape GnuCOBOL 3.1.2's compiler gives them, because the
-page and control-break behaviour its testsuite (and NIST) check depends on it:
-
-- a print *line* for every 01 entry and every entry with a LINE clause. The 01
-  lines form one chain (``next_line``) in source order; an 01's first LINE entry
-  hangs from it (``first_line``) and its LINE entries chain from there;
-- a list of report *items* per line: the entries under the line, in source
-  order, up to the next LINE entry; a group item stays in the list (flagged)
-  so PRESENT WHEN can drop everything under it, and an OCCURS item is listed
-  once per occurrence;
-- CONTROLs listed minor first, each with the CH / CF lines that name it;
-- one hidden counter per SUM entry, in source order.
-
-Group types, LINE, NEXT GROUP, COLUMN alignment and PRESENT are flag bits on
-the lines and items (COB_RWF_* in runtime/cobrt.h). Expressions -- SOURCE,
-SUM operands, PRESENT WHEN, CONTROL items -- become small callbacks.
-docs/report-writer-page-model.md describes the model.
-"""
-from .data import DataItem, Picture, layout, resolve_types, Occurs, T_GROUP
+"""Report Writer: analysis of the REPORT SECTION and generation of the report
+tables and callbacks driven by the runtime RWCS (runtime/cobrt_rw.c)."""
+from .data import (DataItem, Picture, layout, resolve_types, Occurs, T_NUM_BINARY,
+                  T_NUM_EDITED)
 from .errors import CompileError
-from .nodes import DataRef, NumLit, StrLit, AllLit
+from .nodes import DataRef, NumLit, StrLit
 
-# flag bits, as COB_RWF_* in runtime/cobrt.h
-F_LINE = 1 << 0
-F_LINE_PLUS = 1 << 1
-F_COL_PLUS = 1 << 2
-F_RESET_FINAL = 1 << 3
-F_RH = 1 << 4
-F_RF = 1 << 5
-F_PH = 1 << 6
-F_PF = 1 << 7
-F_CH = 1 << 8
-F_CH_FINAL = 1 << 9
-F_CF = 1 << 10
-F_CF_FINAL = 1 << 11
-F_DE = 1 << 12
-F_NG_LINE = 1 << 13
-F_NG_PLUS = 1 << 14
-F_NG_PAGE = 1 << 15
-F_LINE_NP = 1 << 16
-F_GI = 1 << 18
-F_GROUP = 1 << 19
-F_WHEN = 1 << 20
-F_LEFT = 1 << 21
-F_CENTER = 1 << 22
-F_RIGHT = 1 << 23
-F_PRESENT = 1 << 24
-F_PAGE = 1 << 26
-F_NEGATE = 1 << 28
-
-TYPE_FLAG = {'RH': F_RH, 'PH': F_PH, 'DE': F_DE, 'PF': F_PF, 'RF': F_RF}
-FOOTINGS = F_RF | F_CF | F_CF_FINAL
+RW_TYPE_C = {'RH': 'COB_RW_RH', 'PH': 'COB_RW_PH', 'CH': 'COB_RW_CH', 'DE': 'COB_RW_DE',
+             'CF': 'COB_RW_CF', 'PF': 'COB_RW_PF', 'RF': 'COB_RW_RF'}
+RW_KIND_C = {'ABS': 'COB_RW_ABS', 'REL': 'COB_RW_REL', 'ABSNP': 'COB_RW_ABSNP', 'NP': 'COB_RW_NP'}
 
 
 class RInfo:
@@ -64,52 +19,58 @@ class RInfo:
         self.name = rd.name
         self.sym = None
         self.file = None
-        self.controls = []          # (DataRef, DataItem) in CONTROLS order (major first)
+        self.controls = []          # (DataRef, DataItem), level = index + 1
+        self.levels = {}            # control name -> level (FINAL = 0)
+        self.groups = []            # GInfo
+        self.counters = []          # SumCounter
         self.code = rd.code or b''
+        self.width = 1
         self.lc = self.pc = None    # LINE-COUNTER / PAGE-COUNTER items
-        self.entries = []           # every entry, preorder
-        self.lines = []             # entries that are print lines, preorder
-        self.sums = []              # SUM entries, preorder
 
 
-class RX:
-    """Report Writer attributes of one entry."""
+class GInfo:
+    """One report group (01 entry)."""
 
-    def __init__(self):
-        self.flags = 0
-        self.line = 0
-        self.col = 0
-        self.cols = []              # COLUMN integer list
-        self.step = 0
-        self.ngl = 0
-        self.ctl = None             # CONTROL name of a CH/CF, or PRESENT AFTER's
-        self.when = None            # PRESENT / ABSENT WHEN condition
-        self.counter = None         # hidden SUM counter item
-        self.node = None            # line symbol, when the entry is a print line
-        self.fields = []            # report item symbols (occurrences of an OCCURS item)
-        self.snap = None            # snapshot field for an indexed SOURCE
-        self.decl = 0
+    def __init__(self, item, idx):
+        self.item = item
+        self.idx = idx
+        self.name = item.name
+        self.type, self.ctl = item.rw_type
+        self.level = 0
+        self.lines = []             # [(spec, [elementary entries])]
+        self.next_group = item.rw_next_group
+        self.decl_sec = None
+        self.counters = []
 
 
-def _counter_pic(it):
-    """The hidden SUM counter: two more digits than the item, 18 at most."""
-    pic = it.pic
-    digits = getattr(pic, 'digits', 0) if pic is not None else 0
-    scale = getattr(pic, 'scale', 0) if pic is not None else 0
-    if digits == 0:
-        dig = 16
-    elif digits > 17:
-        dig = 18
-    else:
-        dig = digits + 2
-    if scale > 0:
-        ip = dig - scale
-        if ip == 0:
-            return f"SV9({scale})"
-        if ip < 0:
-            return f"SP({-ip})V9({scale})"
-        return f"S9({ip})V9({scale})"
-    return f"S9({dig})"
+class SumCounter:
+    def __init__(self, entry, group):
+        self.entry = entry
+        self.group = group
+        self.item = None            # the sum counter (numeric)
+        self.image = None           # edited image addressed by the entry's name, if edited
+        self.data_ops = []          # (DataRef, [detail group indices] for UPON)
+        self.cross = []             # counters of the same group (crossfooting)
+        self.rollers = []           # counters of higher groups that SUM this one (rolling forward)
+        self.reset_level = None     # None: never reset
+
+
+def _num_pic(digits, scale):
+    if scale <= 0:
+        return f"S9({max(digits, 1)})" + (f"P({-scale})" if scale < 0 else "")
+    ip = digits - scale
+    return "S" + (f"9({ip})" if ip > 0 else "") + f"V9({scale})"
+
+
+class Spacer:
+    """Marks a report line's current position at the start of one occurrence of
+    a repeated group; it prints nothing."""
+    rw_spacer = True
+    rw_slot = 0
+
+    def __init__(self, col, loc):
+        self.rw_column = col
+        self.loc = loc
 
 
 class ReportWriterGen:
@@ -119,7 +80,7 @@ class ReportWriterGen:
     def rw_analyze(self, prog):
         ctx = self.ctx
         ctx.reports = {}
-        ctx.rw_groups = {}          # entry name -> (RInfo, entry)
+        ctx.rw_groups = {}
         ctx.rw_init = []
         ctx.rw_trees = []
         for rd in prog.reports:
@@ -132,53 +93,54 @@ class ReportWriterGen:
             if not files:
                 raise CompileError(f"report '{rd.name}' is not named in the REPORT clause of an FD", rd.loc)
             ri.file = files[0]
-            for ref in rd.controls:
+            for i, ref in enumerate(rd.controls):
                 it = self.resolve(ref, allow_cond=False)
                 if not isinstance(it, DataItem):
                     raise CompileError(f"CONTROL '{ref.name}' must be a data item", ref.loc)
                 ri.controls.append((ref, it))
+                ri.levels[ref.name] = i + 1
+            ri.levels['FINAL'] = 0
             ri.lc = self.rw_special(ri, 'LINE-COUNTER')
             ri.pc = self.rw_special(ri, 'PAGE-COUNTER')
-            for g in rd.groups:
+            self.rw_page(ri)
+            for idx, g in enumerate(rd.groups):
                 if g.level != 1:
                     raise CompileError("report group description must have level 01", g.loc)
-                self.rw_prepare(ri, g)
-            for g in rd.groups:
-                for it in g.walk():
-                    ri.entries.append(it)
-                    it.rx = RX()
-                    if it.name:
-                        ctx.rw_groups.setdefault(it.name, (ri, it))
-            for it in ri.entries:
-                self.rw_flags(ri, it)
-            for it in ri.entries:
-                # a second absolute LINE n among the entries of a group is
-                # dropped: the entry joins the line before it
-                x = it.rx
-                if x.flags & F_LINE and not x.flags & F_LINE_PLUS and it.parent is not None \
-                        and it.parent.children[0] is not it:
-                    for c in it.parent.children:
-                        if c is it:
-                            break
-                        if c.rx.flags & F_LINE and not c.rx.flags & F_LINE_PLUS and c.rx.line == x.line:
-                            x.line = 0
-                            x.flags &= ~F_LINE
-            self.rw_columns(rd.groups)
-            for it in ri.entries:
-                if it.level == 1 or it.rx.flags & F_LINE:
-                    ri.lines.append(it)
-                if it.rw_sums:
-                    ri.sums.append(it)
-                    self.rw_counter(it)
+                if g.rw_type is None:
+                    raise CompileError(f"report group '{g.name or 'FILLER'}' needs a TYPE clause", g.loc)
+                gi = GInfo(g, idx)
+                if gi.type in ('CH', 'CF'):
+                    if gi.ctl not in ri.levels:
+                        raise CompileError(f"'{gi.ctl}' is not a CONTROL of report '{rd.name}'", g.loc)
+                    gi.level = ri.levels[gi.ctl]
+                    dup = [x for x in ri.groups if x.type == gi.type and x.level == gi.level]
+                    if dup:
+                        raise CompileError(f"more than one {gi.type} group for '{gi.ctl}'", g.loc)
+                elif gi.type in ('RH', 'PH', 'PF', 'RF'):
+                    if any(x.type == gi.type for x in ri.groups):
+                        raise CompileError(f"more than one {gi.type} group in report '{rd.name}'", g.loc)
+                    if gi.type in ('PH', 'PF') and not rd.page_limit:
+                        raise CompileError(f"{gi.type} group requires a PAGE clause in the RD", g.loc)
+                ri.groups.append(gi)
+                if g.name:
+                    ctx.rw_groups[g.name] = (ri, gi)
+                self.rw_group(ri, gi)
+            self.rw_link_sums(ri)
+            ri.width = max([ri.width] + [len(ri.code) + f.rw_column - 1 + f.rw_slot
+                                         for g in ri.groups for _, fl in g.lines for f in fl])
+            if rd.line_limit:
+                for g in ri.groups:
+                    for _, fl in g.lines:
+                        for f in fl:
+                            if f.rw_column - 1 + f.rw_slot > rd.line_limit:
+                                raise CompileError(f"report item ends in column {f.rw_column - 1 + f.size}, "
+                                                   f"beyond the LINE LIMIT of {rd.line_limit}", f.loc)
 
     def rw_special(self, ri, name):
         sym = self.sym('rwc_')
         it = DataItem(1, name, ri.rd.loc)
-        from .data import T_NUM_COMP5
-        # an unsigned native 4-byte integer, as cobc declares them: DISPLAY
-        # shows all 10 digits
-        it.type = T_NUM_COMP5
-        it.digits = 10
+        it.type = T_NUM_BINARY
+        it.digits = 9
         it.flags = 0
         it.size = 4
         it.report_name = ri.name
@@ -188,8 +150,36 @@ class ReportWriterGen:
         self.ctx.names.setdefault(name, []).append(it)
         return it
 
-    def rw_prepare(self, ri, g):
-        """Types, layout and storage of one report group."""
+    def rw_page(self, ri):
+        rd = ri.rd
+        pl = rd.page_limit
+        if not pl:
+            ri.page = (0, 0, 0, 0, 0)
+            return
+        h = rd.heading or 1
+        fd = rd.first_detail or h
+        ld = rd.last_detail or rd.footing or pl
+        # where the page footing sits: an explicit FOOTING clause wins, then a
+        # PAGE FOOTING group's own LINE NUMBER (which is how reports usually
+        # say it), then LAST DETAIL
+        ft = rd.footing or self.page_footing_line(rd) or rd.last_detail or pl
+        if not (1 <= h <= fd <= ld <= ft <= pl):
+            raise CompileError("PAGE clause: HEADING <= FIRST DETAIL <= LAST DETAIL <= FOOTING <= PAGE LIMIT "
+                               "is required", rd.loc)
+        ri.page = (pl, h, fd, ld, ft)
+
+    @staticmethod
+    def page_footing_line(rd):
+        """The absolute line a PAGE FOOTING group is presented on, or 0."""
+        for g in rd.groups:
+            t = getattr(g, 'rw_type', None)
+            ln = getattr(g, 'rw_line', None)
+            if t and t[0] == 'PF' and ln and ln[0] == 'ABS':
+                return ln[1]
+        return 0
+
+    def rw_group(self, ri, gi):
+        g = gi.item
         for it in g.walk():
             if it.children:
                 continue
@@ -205,17 +195,19 @@ class ReportWriterGen:
             if isinstance(src, DataRef) and src.name in ('LINE-COUNTER', 'PAGE-COUNTER') and not src.quals:
                 src.quals = [ri.name]
             if getattr(it, 'rw_columns', None) and not it.occurs:
-                # COLUMN 1, 11, 21: one occurrence per column (an implicit OCCURS)
+                # COLUMN 1, 11, 21, 27: one occurrence per column, subscripted
+                # like a table (GnuCOBOL gives the item an implicit OCCURS)
                 oc = Occurs()
                 oc.min = oc.max = len(it.rw_columns)
                 oc.loc = it.loc
                 it.occurs = oc
         resolve_types(g, self.opts)
         layout(g, 0)
-        # report items have their own storage: a program can MOVE to them,
-        # and an item without SOURCE or VALUE prints what it holds
+        # report items live in their own storage: a program can MOVE to them or
+        # read them by name, and the presentation copies the item's current value
+        # into the print line (GnuCOBOL's reportio.c, copy_line_fields)
         sym = self.sym('rwd_')
-        self.glob.append(f"static unsigned char {sym}[{max(g.total_size(), 1)}];"
+        self.glob.append(f"static unsigned char {sym}[{g.total_size()}];"
                          f" /* report group {g.name or 'FILLER'} */")
         for it in g.walk():
             it.storage = sym
@@ -224,129 +216,141 @@ class ReportWriterGen:
             it.report_name = ri.name
         self.register_tree(g)
         self.ctx.rw_trees.append(g)
+        cur = None
 
-    def rw_flags(self, ri, it):
-        x = it.rx
-        fl = 0
-        if it.rw_type is not None:
-            kind, ctl = it.rw_type
-            if kind in TYPE_FLAG:
-                fl |= TYPE_FLAG[kind]
-            elif kind == 'CH':
-                fl |= F_CH_FINAL if ctl == 'FINAL' else F_CH
-            elif kind == 'CF':
-                fl |= F_CF_FINAL if ctl == 'FINAL' else F_CF
-            if kind in ('CH', 'CF') and ctl != 'FINAL':
-                if not any(ref.name == ctl for ref, _ in ri.controls):
-                    raise CompileError(f"'{ctl}' is not a CONTROL of report '{ri.name}'", it.loc)
-                x.ctl = ctl
-        if it.rw_line is not None:
-            kind, n = it.rw_line
-            fl |= F_LINE
-            x.line = n
-            if kind == 'REL':
-                fl |= F_LINE_PLUS
-            elif kind in ('ABSNP', 'NP'):
-                fl |= F_LINE_NP
-        if it.rw_next_group is not None:
-            kind, n = it.rw_next_group
-            fl |= {'ABS': F_NG_LINE, 'REL': F_NG_PLUS, 'NP': F_NG_PAGE}[kind]
-            x.ngl = n
-        if it.rw_just:
-            fl |= {'L': F_LEFT, 'R': F_RIGHT, 'C': F_CENTER}[it.rw_just]
-        x.step = getattr(it, 'rw_step', 0) or 0
-        col = it.rw_column
-        if isinstance(col, tuple):
-            n = col[1]
-            if n != 0:
-                first = it.parent is not None and it.parent.children and it.parent.children[0] is it
-                if first:
-                    # PLUS on the first item of a line counts from column 1
-                    if x.step == 0:
-                        x.step = n
-                else:
-                    fl |= F_COL_PLUS
-            x.col = n
-        elif isinstance(col, int):
-            x.col = col
-            x.cols = list(getattr(it, 'rw_columns', None) or [col])
-        if it.rw_group_indicate:
-            fl |= F_GI
-        p = getattr(it, 'rw_present', None)
-        if p is not None:
-            what, absent = p
-            fl |= F_PRESENT
-            if absent:
-                fl |= F_NEGATE
-            if isinstance(what, tuple) and what and what[0] == 'AFTER':
-                for name in what[1]:
-                    if name == 'PAGE':
-                        fl |= F_PAGE
-                    else:
-                        x.ctl = name
-            else:
-                x.when = what
-        x.flags = fl
+        def walk(it, shift=0, subs=()):
+            nonlocal cur
+            if it.rw_line is not None:
+                cur = (it.rw_line, [])
+                gi.lines.append(cur)
+            if not it.children:
+                place(it, shift, subs)
+                return
+            if it.occurs:
+                # OCCURS on a group repeats everything inside it, each occurrence
+                # STEP columns right of the one before (default: the group width)
+                step = it.rw_step or it.size
+                c0 = start_col(it, shift)
+                for k in range(it.occurs.max):
+                    cur[1].append(Spacer(c0 + k * step, it.loc))
+                    for c in it.children:
+                        walk(c, 0, subs + ((it, k + 1),))
+                return
+            for c in it.children:
+                walk(c, shift, subs)
 
-    def rw_columns(self, groups):
-        """Columns of the items: a COLUMN PLUS, or no COLUMN at all, counts
-        from where the item before it on the line ended."""
-        pos = 1
+        def start_col(it, shift):
+            """Column of an item's first occurrence, from the previous item of
+            the line and its own COLUMN clause."""
+            prev = cur[1][-1] if cur[1] else None
+            prev_end = prev.rw_column + prev.rw_slot if prev else 1
+            col = it.rw_column
+            if col is None:
+                # no COLUMN clause: the item follows the previous one
+                return prev_end + shift
+            if isinstance(col, tuple):
+                # COLUMN PLUS n: n positions right of the previous item of the line
+                return (prev_end - 1 if prev else 0) + col[1] + shift
+            return col + shift
 
-        def walk(items):
-            nonlocal pos
-            for p in items:
-                x = p.rx
-                if p.level == 1 or x.flags & (F_LINE | F_LINE_PLUS | F_DE | F_RH | F_RF | F_PH | F_PF):
-                    prev = pos = 1
-                else:
-                    if x.flags & F_COL_PLUS and x.col > 0:
-                        x.col = pos + x.col - 1
-                    elif x.col <= 0:
-                        x.col = pos
-                    prev = pos
-                    if p.occurs and p.occurs.max > 1:
-                        if x.step < p.size:
-                            x.step = p.size
-                        cols = x.cols
-                        if cols and len(cols) >= p.occurs.max:
-                            pos = cols[-1] + x.step
-                        elif cols and len(cols) > 1:
-                            pos = cols[-1] + x.step * (p.occurs.max - len(cols) + 1)
+        def place(it, shift, subs):
+            nonlocal cur
+            if cur is None:
+                # a group without LINE clauses: its items go on the next line
+                cur = (('REL', 1), [])
+                gi.lines.append(cur)
+            col = start_col(it, shift)
+            step = (it.rw_step or it.size) if it.occurs else 0
+            n = it.occurs.max if it.occurs else 1
+            listed = getattr(it, 'rw_columns', None)
+            if listed and len(listed) != n:
+                raise CompileError(f"'{it.name or 'FILLER'}' lists {len(listed)} COLUMN values for "
+                                   f"{n} occurrence(s)", it.loc)
+            import copy as _copy
+            for k in range(n):
+                base = (listed[k] + shift) if listed else col + k * step
+                if it.rw_just == 'R':           # COLUMN RIGHT n: the item ends in column n
+                    base = base - it.size + 1
+                elif it.rw_just == 'C':         # COLUMN CENTER n: centered on column n
+                    base = base - (it.size - 1) // 2 if it.size % 2 else base - it.size // 2 + 1
+                if base < 1:
+                    raise CompileError("report item starts before column 1", it.loc)
+                rep = _copy.copy(it)
+                rep.rw_column = base
+                rep.rw_slot = it.size if listed else (step if step else it.size)
+                rep.rw_subs = subs + ((it, k + 1),) if it.occurs else subs
+                rep.rw_columns = None
+                cur[1].append(rep)
+            if it.rw_group_indicate and gi.type != 'DE':
+                raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
+            if it.rw_sums and not getattr(it, 'rw_counted', False):
+                if gi.type not in ('CF', 'RF'):
+                    raise CompileError("SUM is only allowed in CONTROL FOOTING and REPORT FOOTING groups",
+                                       it.loc)
+                it.rw_counted = True
+                self.rw_counter(ri, gi, it)
+
+        walk(g)
+        for spec, _ in gi.lines[1:]:
+            if spec[0] in ('ABSNP', 'NP'):
+                raise CompileError("NEXT PAGE is only allowed in the first LINE clause of a group", g.loc)
+
+    def rw_counter(self, ri, gi, entry):
+        if entry.category() not in ('NUMERIC', 'NUMERIC-EDITED'):
+            raise CompileError("a SUM item must have a numeric or numeric-edited PICTURE", entry.loc)
+        sc = SumCounter(entry, gi)
+        if entry.type == T_NUM_EDITED:
+            # an edited item cannot be added to; accumulate in a numeric field
+            # and move the result through the item itself for presentation
+            ctr = DataItem(1, None, entry.loc)
+            ctr.pic = Picture(_num_pic(entry.pic.digits, entry.pic.scale), entry.loc, '$', False)
+            resolve_types(ctr, self.opts)
+            layout(ctr, 0)
+            sym = self.sym('rsum_')
+            self.glob.append(f"static unsigned char {sym}[{ctr.size}];"
+                             f" /* sum counter {entry.name or ''} */")
+            ctr.storage = sym
+            ctr.section = 'WS'
+            ctr.record = ctr
+            ctr.offset = 0
+            self.ctx.rw_init.append(ctr)
+            sc.image = entry
+        else:
+            # the item is its own accumulator: GnuCOBOL sums into the item's field
+            ctr = entry
+        sc.item = ctr
+        if gi.type == 'RF':
+            sc.reset_level = None
+        elif entry.rw_reset == 'FINAL':
+            sc.reset_level = 0
+        elif entry.rw_reset:
+            if entry.rw_reset not in ri.levels:
+                raise CompileError(f"RESET ON '{entry.rw_reset}': not a CONTROL of this report", entry.loc)
+            sc.reset_level = ri.levels[entry.rw_reset]
+        else:
+            sc.reset_level = gi.level
+        ri.counters.append(sc)
+        gi.counters.append(sc)
+
+    def rw_link_sums(self, ri):
+        by_name = {sc.entry.name: sc for sc in ri.counters if sc.entry.name}
+        for sc in ri.counters:
+            for ops, upon in sc.entry.rw_sums:
+                upon_idx = []
+                for nm in upon:
+                    tgt = self.ctx.rw_groups.get(nm)
+                    if tgt is None or tgt[0] is not ri or tgt[1].type != 'DE':
+                        raise CompileError(f"UPON '{nm}' is not a DETAIL group of this report", sc.entry.loc)
+                    upon_idx.append(tgt[1].idx)
+                for ref in ops:
+                    d = by_name.get(ref.name) if isinstance(ref, DataRef) and not ref.subs else None
+                    if d is not None:
+                        if d.group is sc.group:
+                            sc.cross.append(d)
                         else:
-                            pos = x.col + x.step * p.occurs.max
-                    elif x.flags & F_RIGHT:
-                        pos = x.col + 1
-                        x.col = pos - p.size
-                    elif x.flags & F_CENTER:
-                        if p.size & 1:
-                            x.col = x.col - (p.size - 1) // 2
-                        else:
-                            x.col = x.col - p.size // 2 + 1
-                        pos = x.col + p.size // 2 + 1
+                            d.rollers.append(sc)
                     else:
-                        pos = x.col + p.size
-                if p.children:
-                    pos = prev
-                    walk(p.children)
-        walk(groups)
-
-    def rw_counter(self, it):
-        """The hidden counter a SUM entry accumulates in."""
-        if it.category() not in ('NUMERIC', 'NUMERIC-EDITED'):
-            raise CompileError("a SUM item must have a numeric or numeric-edited PICTURE", it.loc)
-        ctr = DataItem(1, None, it.loc)
-        ctr.pic = Picture(_counter_pic(it), it.loc, '$', False)
-        resolve_types(ctr, self.opts)
-        layout(ctr, 0)
-        sym = self.sym('rsum_')
-        self.glob.append(f"static unsigned char {sym}[{ctr.size}]; /* SUM {it.name or 'FILLER'} */")
-        ctr.storage = sym
-        ctr.section = 'WS'
-        ctr.record = ctr
-        ctr.offset = 0
-        self.ctx.rw_init.append(ctr)
-        it.rx.counter = ctr
+                        sc.data_ops.append((ref, upon_idx))
 
     # ------------------------------------------------------------ generation
     def rw_item_field(self, it):
@@ -372,421 +376,260 @@ class ReportWriterGen:
 
     def rw_emit(self, prog):
         ctx = self.ctx
+        if not ctx.reports:
+            for sec in prog.declaratives:
+                if sec.use_reporting:
+                    raise CompileError(f"USE BEFORE REPORTING: '{sec.use_reporting}' is not a report group",
+                                       sec.loc)
+            return
         for sec in prog.declaratives:
             if sec.use_reporting:
-                tgt = ctx.rw_groups.get(sec.use_reporting) if ctx.reports else None
+                tgt = ctx.rw_groups.get(sec.use_reporting)
                 if tgt is None:
                     raise CompileError(f"USE BEFORE REPORTING: '{sec.use_reporting}' is not a report group",
                                        sec.loc)
-                tgt[1].rx.decl = sec.id
+                tgt[1].decl_sec = sec
         for ri in ctx.reports.values():
             self.rw_emit_report(prog, ri)
 
-    def rw_fields_of(self, ri, first, start):
-        """The report items of a print line: `first` and what follows it, in
-        source order, down to the next LINE entry."""
-        out = []
-
-        def walk(f, begin):
-            sibs = f.parent.children if f.parent is not None else ri.rd.groups
-            i = sibs.index(f)
-            for j in range(i, len(sibs)):
-                e = sibs[j]
-                if not (begin and j == i) and e.rx.flags & F_LINE:
-                    return
-                if e.occurs and e.occurs.max > 1:
-                    for k in range(1, e.occurs.max + 1):
-                        out.append((e, k))
-                    continue
-                out.append((e, 0))
-                if e.children:
-                    walk(e.children[0], False)
-        walk(first, start)
-        return out
-
     def rw_emit_report(self, prog, ri):
         n = ri.sym
-        rd = ri.rd
         cname = self.prog_syms[id(prog)]
-        ctl_names = [ref.name for ref, _ in ri.controls]
-        engine_ctl = list(reversed(ctl_names))          # minor first
-
-        def ctl_index(name):
-            return engine_ctl.index(name) if name in engine_ctl else -1
-
-        # print lines
-        for i, it in enumerate(ri.lines):
-            it.rx.node = f"{n}_l{i}"
-            self.glob.append(f"static cob_rwline {it.rx.node};")
-        # nested LINE: an 01 LINE clause is dropped when its first entry has one
-        for it in ri.lines:
-            x = it.rx
-            if x.flags & F_LINE and it.children and it.children[0].rx.flags & F_LINE:
-                x.line = 0
-                x.flags &= ~(F_LINE | F_LINE_PLUS)
-        src_cases = []              # (id, C statement)
-        snaps = []                  # (entry, snapshot symbol)
-        fid = 0
-        recsz = max(ri.file.size, 1)
-        line_rows = []
-        for it in ri.lines:
-            x = it.rx
-            # the line's items
-            items = []
-            if x.flags & F_LINE and it.children:
-                items = self.rw_fields_of(ri, it.children[0], True)
-            elif not it.children and x.flags & F_LINE:
-                items = self.rw_fields_of(ri, it, True)
-            syms = []
-            for e, k in items:
-                fid += 1
-                fs = f"{n}_r{fid}"
-                syms.append((fs, e, k, fid))
-                self.glob.append(f"static cob_rwfld {fs};")
-            for idx, (fs, e, k, fnum) in enumerate(syms):
-                ex = e.rx
-                nxt = f"&{syms[idx + 1][0]}" if idx + 1 < len(syms) else 'NULL'
-                step = max(ex.step, e.size)
-                ex.step = step
-                col = ex.col if ex.col > 0 else 1
-                if k > 1:
-                    cols = ex.cols
-                    if len(cols) >= k:
-                        col = cols[k - 1]
-                    elif len(cols) >= 2:
-                        col = cols[-1] + step * (k - len(cols))
-                    else:
-                        col = col + step * (k - 1)
-                flags = ex.flags
-                if e.children:
-                    flags |= F_GROUP
-                if ex.when is not None:
-                    flags |= F_WHEN
-                if k > 0:
-                    flags &= ~F_GROUP
-                off = e.offset + (e.size * (k - 1) if k > 1 else 0)
-                fsym = f"{n}_f{fnum}"
-                self.glob.append(f"static cob_field {fsym} = {{{e.size}, {e.storage} + {off}, "
-                                 f"&{self.item_attr(e)}}};")
-                lit, litlen = 'NULL', 0
-                src = 0
-                if ex.counter is not None:
-                    src = fnum
-                    src_cases.append((fnum, 'ctr', ex.counter, fsym))
-                elif e.rw_source is not None:
-                    src = fnum
-                    s = e.rw_source
-                    if isinstance(s, DataRef) and (s.subs or s.refmod or
-                                                   getattr(self.resolve(s), 'section', None) == 'LS'):
-                        # an indexed or reference-modified SOURCE is taken when
-                        # the GENERATE starts, not when the line prints
-                        if ex.snap is None:
-                            ex.snap = f"{n}_t{fnum}"
-                            sz = max(self.rw_source_size(s), 1)
-                            self.glob.append(f"static unsigned char {ex.snap}_d[{sz}];")
-                            self.glob.append(f"static cob_field {ex.snap} = {{0, {ex.snap}_d, NULL}};")
-                            snaps.append((e, ex.snap))
-                        src_cases.append((fnum, 'snap', ex.snap, fsym))
-                    else:
-                        src_cases.append((fnum, 'ref', s, fsym))
-                elif isinstance(e.value, (StrLit, NumLit, AllLit)):
-                    if isinstance(e.value, StrLit):
-                        b = e.value.value
-                    elif isinstance(e.value, NumLit):
-                        b = e.value.digits.encode()
-                    else:
-                        # ALL literal: its first character, the item's width
-                        b = (e.value.value or b' ')[:1] * e.size
-                    lit = self.c_bytes(b)
-                    litlen = len(b)
-                ctl = ctl_index(ex.ctl) if ex.ctl and flags & F_PRESENT else -1
-                self.glob.append(
-                    f"static cob_rwfld {fs} = {{{nxt}, &{fsym}, {src}, {ctl}, {lit}, {litlen}, "
-                    f"0x{flags:x}u, {ex.line if e.rx.flags & F_LINE else 0}, {col}, {step}, {ex.ngl}, "
-                    f"{e.level}, 0, 0, 0}};")
-                ex.fields.append(fs)
-                recsz = max(recsz, col - 1 + max(e.size, litlen))
-            # links
-            sibs = it.parent.children if it.parent is not None else rd.groups
-            si = sibs.index(it)
-            sister = 'NULL'
-            if si + 1 < len(sibs):
-                s = sibs[si + 1]
-                if not (s.level > 1 and not s.rx.flags & F_LINE) and s.rx.node:
-                    sister = f"&{s.rx.node}"
-            child = 'NULL'
-            if it.level == 1 and it.children and it.children[0].rx.flags & F_LINE and it.children[0].rx.node:
-                child = f"&{it.children[0].rx.node}"
-            fields = f"&{syms[0][0]}" if syms else 'NULL'
-            ctl = ctl_index(x.ctl) if x.ctl and x.flags & (F_CH | F_CF) else -1
-            line_rows.append(f"static cob_rwline {x.node} = {{{sister}, {child}, {fields}, {ctl}, "
-                             f"{x.decl}, 0x{x.flags:x}u, {x.line}, {x.step}, {x.ngl}, 0}};")
-        self.glob.extend(line_rows)
-
-        # controls, minor first, each with its CH / CF lines (last first)
-        ctl_rows = []
-        for ci, name in enumerate(engine_ctl):
-            refs = [it for it in ri.lines if it.rx.ctl == name and it.rx.flags & (F_CH | F_CF)]
-            refs.reverse()
-            rs = 'NULL'
-            if refs:
-                rs = f"{n}_cr{ci}"
-                self.glob.append(f"static cob_rwline *const {rs}[] = {{"
-                                 f"{', '.join('&' + r.rx.node for r in refs)}}};")
-            ctl_rows.append(f"{{{ci + 1}, {len(refs)}, {rs}, NULL, NULL, 0, 0}}")
-        if ctl_rows:
-            self.glob.append(f"static cob_rwctl {n}_c[] = {{{', '.join(ctl_rows)}}};")
-
-        # SUM counters, in source order
-        counters = ri.sums
-        by_item = {id(it): k for k, it in enumerate(counters)}
-        ops_of = []
-        for it in counters:
-            ops = []
-            sub = False
-            for ops_list, _upon in it.rw_sums:
-                for ref in ops_list:
-                    tgt = self.resolve(ref) if isinstance(ref, DataRef) else None
-                    if tgt is not None and id(tgt) in by_item:
-                        ops.append(('ctr', by_item[id(tgt)]))
-                        sub = True
-                    else:
-                        ops.append(('fld', ref))
-            ops_of.append((ops, sub))
-        sum_rows = []
-        for k, it in enumerate(counters):
-            ops, sub = ops_of[k]
-            rolls = [j for j, (oj, _) in enumerate(ops_of) if ('ctr', k) in oj]
-            rsym = 'NULL'
-            if rolls:
-                rsym = f"{n}_sr{k}"
-                self.glob.append(f"static const int {rsym}[] = {{{', '.join(map(str, rolls))}}};")
-            ctl, final = -1, 0
-            p = it
-            while p is not None:
-                if p.rx.ctl:
-                    ctl = ctl_index(p.rx.ctl)
-                    break
-                if p.rx.flags & F_CF_FINAL:
-                    final = 1
-                    break
-                p = p.parent
-            # RESET ON (which cobc 3.1.2 ignores): the counter is reset by the
-            # footing of the named control, or only at the end for FINAL
-            if it.rw_reset == 'FINAL':
-                ctl, final = -1, 1
-            elif it.rw_reset:
-                if it.rw_reset not in engine_ctl:
-                    raise CompileError(f"RESET ON '{it.rw_reset}': not a CONTROL of this report", it.loc)
-                ctl, final = ctl_index(it.rw_reset), 0
-            # SUM ... UPON (which cobc 3.1.2 ignores): only these DETAIL
-            # groups' GENERATEs add to the counter
-            upon = []
-            for _ops, names in it.rw_sums:
-                for nm in names:
-                    tgt = self.ctx.rw_groups.get(nm)
-                    if tgt is None or tgt[0] is not ri or tgt[1].rx.node is None:
-                        raise CompileError(f"UPON '{nm}' is not a DETAIL group of this report", it.loc)
-                    upon.append(tgt[1].rx.node)
-            usym = 'NULL'
-            if upon:
-                usym = f"{n}_su{k}"
-                self.glob.append(f"static cob_rwline *const {usym}[] = {{{', '.join('&' + u for u in upon)}}};")
-            sum_rows.append(f"{{{self.rw_item_field(it.rx.counter)}, {ctl}, {len(ops)}, {final}, "
-                            f"{1 if sub else 0}, {len(rolls)}, {rsym}, {len(upon)}, {usym}}}")
-        if sum_rows:
-            self.glob.append(f"static cob_rwsum {n}_s[] = {{{', '.join(sum_rows)}}};")
-
+        # tables
+        rows = []
+        for g in ri.groups:
+            lsym = 'NULL'
+            if g.lines:
+                lsym = f"{n}_l{g.idx}"
+                specs = ', '.join(f"{{{RW_KIND_C[k]}, {num}}}" for (k, num), _ in g.lines)
+                self.glob.append(f"static const cob_rw_lspec {lsym}[] = {{{specs}}};")
+            ngk, ngn = ('0', 0)
+            if g.next_group is not None:
+                ngk, ngn = RW_KIND_C[g.next_group[0]], g.next_group[1]
+            # PRESENT WHEN / ABSENT WHEN: a function returning the condition
+            pw, ab = 'NULL', 0
+            cond = getattr(g.item, 'rw_present', None)
+            if cond is not None:
+                c, invert = cond
+                fsym = f"{n}_when{g.idx}"
+                body = self.cond(c)
+                self.glob.append(f"static int {fsym}(void) {{ return {body}; }}")
+                pw, ab = fsym, 1 if invert else 0
+            rows.append(f"{{{RW_TYPE_C[g.type]}, {g.level}, {len(g.lines)}, {lsym}, {ngk}, {ngn}, "
+                        f"{1 if g.decl_sec else 0}, {pw}, {ab}}}")
+        self.glob.append(f"static const cob_rw_group {n}_g[] = {{{', '.join(rows)}}};")
         code = 'NULL'
         if ri.code:
             code = f"{n}_code"
             self.glob.append(f"static const unsigned char {code}[] = {{{', '.join(str(b) for b in ri.code)}}};")
-
-        # PAGE clause, with the defaults the reference fills in
-        lines = rd.page_limit or 0
-        h, fd, ld, ft, lctl = rd.heading or 0, rd.first_detail or 0, rd.last_detail or 0, rd.footing or 0, 0
-        if lines:
-            h = h or 1
-            fd = fd or h
-            lctl = ld or ft or lines
-            if not ld and not ft:
-                ld = ft = lines
-            elif not ld:
-                ld = ft
-            elif not ft:
-                ft = ld
-        if fd < 1:
-            fd = 1
-        cols = getattr(rd, 'line_limit', 0) or 0
-
-        self.protos.append(f"static void {n}_src(int id);")
-        self.protos.append(f"static cob_field *{n}_ctlf(int i);")
-        self.protos.append(f"static void {n}_sumadd(int k);")
-        self.protos.append(f"static void {n}_decl(int id);")
-        self.protos.append(f"static void {n}_moves(int foot);")
-        first = ri.lines[0].rx.node if ri.lines else None
+        self.protos.append(f"static void {n}_fmt(int g, int line, unsigned char *buf, int gi);")
+        self.protos.append(f"static void {n}_sum(int op, int arg);")
+        self.protos.append(f"static int {n}_ctl(int op);")
+        self.protos.append(f"static void {n}_decl(int g);")
+        pl, h, fd, ld, ft = ri.page
+        rd_footing = ri.rd.footing or self.page_footing_line(ri.rd)
         self.glob.append(
-            f"static cob_report {n} = {{\"{ri.name}\", &{ri.file.sym}, {ri.pc.special}, {ri.lc.special}, "
-            f"{'&' + first if first else 'NULL'}, {len(engine_ctl)}, {n + '_c' if ctl_rows else 'NULL'}, "
-            f"{len(counters)}, {n + '_s' if sum_rows else 'NULL'}, "
-            f"{lines}, {cols}, {h}, {fd}, {lctl}, {ld}, {ft}, {code}, {len(ri.code)}, {recsz}, "
-            f"{n}_src, {n}_ctlf, {n}_sumadd, {n}_decl, {n}_moves}};")
+            f"static cob_report {n} = {{\"{ri.name}\", &{ri.file.sym}, {pl}, {h}, {fd}, {ld}, {ft}, "
+            f"{1 if ri.rd.last_detail else 0}, {1 if rd_footing else 0}, "
+            f"{1 if ri.rd.first_detail else 0}, {1 if ri.rd.footing else 0}, {ri.width}, "
+            f"{code}, {len(ri.code)}, {len(ri.groups)}, {n}_g, {len(ri.controls)}, {ri.lc.special}, "
+            f"{ri.pc.special}, {n}_fmt, {n}_sum, {n}_ctl, {n}_decl}};")
 
-        def src(em):
-            em("switch (id) {")
-            for k, kind, v, fsym in src_cases:
-                if kind == 'ctr':
-                    s = self.rw_item_field(v)
-                elif kind == 'snap':
-                    s = '&' + v
-                else:
-                    s = self.field(v)
-                em(f"case {k}: cob_move({s}, &{fsym}); break;")
-            em("}")
-            em("(void)id;")
-        self.rw_function(f"static void {n}_src(int id)", src)
-
-        def ctlf(em):
-            em("switch (i) {")
-            for ci, name in enumerate(engine_ctl):
-                ref = next(r for r, _ in ri.controls if r.name == name)
-                # a CF() is a temporary: hand back a copy that outlives the call
-                em(f"case {ci}: {{ static cob_field f; f = *{self.field(ref)}; return &f; }}")
-            em("}")
-            em("(void)i;")
-            em("return NULL;")
-        self.rw_function(f"static cob_field *{n}_ctlf(int i)", ctlf)
-
-        def sumadd(em):
-            em("switch (k) {")
-            for k, it in enumerate(counters):
-                ops, _ = ops_of[k]
-                c = self.rw_item_field(it.rx.counter)
-                em(f"case {k}:")
+        # format callback
+        def fmt(em):
+            em("switch (g) {")
+            for g in ri.groups:
+                if not g.lines:
+                    continue
+                em(f"case {g.idx}:")
                 em.ind += 1
-                for kind, v in ops:
-                    if kind == 'ctr':
-                        o = self.rw_item_field(counters[v].rx.counter)
-                    else:
-                        o = self.field(v)
-                    em(f"cob_d_set({c}, cob_d_add(cob_d_get({c}), cob_d_get({o})), 0);")
+                em("switch (line) {")
+                for li, (_, fields) in enumerate(g.lines):
+                    em(f"case {li}:")
+                    em.ind += 1
+                    for f in fields:
+                        if getattr(f, 'rw_spacer', False):
+                            continue
+                        src = self.rw_source(ri, f)
+                        if src is None:
+                            continue
+                        off = len(ri.code) + f.rw_column - 1
+                        dst = f"CF(buf + {off}, {f.size}, &{self.item_attr(f)})"
+                        stmt = f"cob_move({src}, {dst});"
+                        if f.rw_just and (f.rw_source is not None or f.rw_sums):
+                            # GnuCOBOL aligns SOURCE and SUM data within the item, not VALUEs
+                            stmt = f"{{ {stmt} cob_rw_justify(buf + {off}, {f.size}, '{f.rw_just}'); }}"
+                        if f.rw_group_indicate:
+                            stmt = f"if (gi) {stmt}"
+                        cond = self.present_after(ri, f)
+                        if cond is not None:
+                            stmt = f"if ({cond}) {stmt}"
+                        em(stmt)
+                    em("break;")
+                    em.ind -= 1
+                em("}")
                 em("break;")
                 em.ind -= 1
             em("}")
-            em("(void)k;")
-        self.rw_function(f"static void {n}_sumadd(int k)", sumadd)
+            em("(void)buf; (void)gi; (void)line;")
+        self.rw_function(f"static void {n}_fmt(int g, int line, unsigned char *buf, int gi)", fmt)
 
-        def decl(em):
-            ids = sorted({it.rx.decl for it in ri.lines if it.rx.decl})
-            em("switch (id) {")
-            for d in ids:
-                em(f"case {d}: cob_decl_which = {d}; {cname}(COB_DECL_ENTRY, NULL); break;")
-            em("}")
-            em("(void)id;")
-        self.rw_function(f"static void {n}_decl(int id)", decl)
+        # sum counter callback
+        def add(em, dst, src, cond=None):
+            c = self.rw_item_field(dst.item)
+            s = f"cob_d_set({c}, cob_d_add(cob_d_get({c}), cob_d_get({src})), 0);"
+            em(f"if ({cond}) {s}" if cond else s)
 
-        # what each GENERATE (and TERMINATE, for the footing groups) does
-        # before it starts: snapshot indexed SOURCEs, evaluate PRESENT WHEN
-        state = {'foot': False}
-
-        def moves_pass(em, footing):
-            def walk(items):
-                for p in items:
-                    x = p.rx
-                    if x.flags & FOOTINGS:
-                        state['foot'] = True
-                    mine = state['foot'] == footing
-                    if x.snap is not None and mine:
-                        # every GENERATE takes the snapshots of all groups,
-                        # printed or not, so an index past its table here is
-                        # not the program's error: no bounds check (nor does cobc)
-                        self.rw_unchecked = True
-                        try:
-                            s = self.field(p.rw_source)
-                        finally:
-                            self.rw_unchecked = False
-                        em(f"{{ const cob_field *s = {s}; {x.snap}.size = s->size; {x.snap}.attr = s->attr; "
-                           f"memcpy({x.snap}_d, s->data, s->size); }}")
-                    if x.when is not None and mine:
-                        if x.flags & F_LINE or not x.fields:
-                            tgt = f"{x.node}.sup" if x.node else None
-                        else:
-                            tgt = f"{x.fields[0]}.sup"
-                        if tgt:
-                            em(f"{tgt} = ({self.cond(x.when)}) ? 0 : 1;")
-                    if p.children:
-                        walk(p.children)
-                        if x.flags & FOOTINGS:
-                            state['foot'] = False
-            walk(rd.groups)
-
-        def moves(em):
-            em("if (!foot) {")
+        def sums(em):
+            em("switch (op) {")
+            em("case 0: /* subtotaling */")
             em.ind += 1
-            moves_pass(em, False)
+            for sc in ri.counters:
+                for ref, upon in sc.data_ops:
+                    cond = ' || '.join(f"arg == {u}" for u in upon) if upon else None
+                    add(em, sc, self.field(ref), cond)
+            em("break;")
+            em.ind -= 1
+            for op, what in ((1, 'cross'), (2, 'rollers')):
+                em(f"case {op}: /* {'crossfooting' if op == 1 else 'rolling forward'} */")
+                em.ind += 1
+                em("switch (arg) {")
+                for g in ri.groups:
+                    body = []
+                    for sc in g.counters:
+                        if op == 1:
+                            body += [(sc, d) for d in sc.cross]
+                        else:
+                            body += [(t, sc) for t in sc.rollers]
+                    if body:
+                        em(f"case {g.idx}:")
+                        em.ind += 1
+                        for dst, srcc in body:
+                            add(em, dst, self.rw_item_field(srcc.item))
+                        em("break;")
+                        em.ind -= 1
+                em("}")
+                em("break;")
+                em.ind -= 1
+            em("case 3: /* INITIATE */")
+            em.ind += 1
+            for sc in ri.counters:
+                em(f"cob_move(&cob_fig_zero, {self.rw_item_field(sc.item)});")
+            em("break;")
+            em.ind -= 1
+            em("case 4: /* reset at a control level */")
+            em.ind += 1
+            em("switch (arg) {")
+            for lev in sorted(set(sc.reset_level for sc in ri.counters if sc.reset_level is not None)):
+                em(f"case {lev}:")
+                em.ind += 1
+                for sc in ri.counters:
+                    if sc.reset_level == lev:
+                        em(f"cob_move(&cob_fig_zero, {self.rw_item_field(sc.item)});")
+                em("break;")
+                em.ind -= 1
+            em("}")
+            em("break;")
             em.ind -= 1
             em("}")
-            moves_pass(em, True)
-            em("(void)foot;")
-        self.rw_function(f"static void {n}_moves(int foot)", moves)
+            for sc in ri.counters:
+                if sc.image is not None:
+                    em(f"cob_move({self.rw_item_field(sc.item)}, {self.rw_item_field(sc.image)});")
+            em("(void)arg;")
+        self.rw_function(f"static void {n}_sum(int op, int arg)", sums)
 
-    def rw_counter_refs(self, s):
-        """A report item with SUM stands for its sum counter where a statement
-        takes its numeric value: the operands of COMPUTE, ADD, SUBTRACT,
-        MULTIPLY and DIVIDE and the sending item of a MOVE (as cobc compiles
-        them). DISPLAY, conditions and SOURCE see the item itself."""
-        from .nodes import BinOp, Neg, Move, Arith, Compute
+        # control data items
+        saves = []
+        for ref, it in ri.controls:
+            s = self.sym('rctl_')
+            self.glob.append(f"static unsigned char {s}[{it.size}];")
+            saves.append((s, ref, it))
 
-        def fix(e):
-            if isinstance(e, DataRef):
-                if e.item is None:
-                    try:
-                        it = self.resolve(e)
-                    except CompileError:
-                        return
-                else:
-                    it = e.item
-                rx = getattr(it, 'rx', None)
-                if rx is not None and rx.counter is not None:
-                    e.item = rx.counter
-            elif isinstance(e, BinOp):
-                fix(e.left)
-                fix(e.right)
-            elif isinstance(e, Neg):
-                fix(e.e)
-        if isinstance(s, Move):
-            fix(s.src)
-        elif isinstance(s, Arith):
-            for e in s.operands:
-                fix(e)
-            if s.by_or_into is not None:
-                fix(s.by_or_into)
-        elif isinstance(s, Compute):
-            fix(s.expr)
+        def ctl(em):
+            em("switch (op) {")
+            em("case 0:")
+            em.ind += 1
+            for s, ref, it in saves:
+                em(f"memcpy({s}, ({self.field(ref)})->data, {it.size});")
+            em("return 0;")
+            em.ind -= 1
+            em("case 1:")
+            em.ind += 1
+            for lev, (s, ref, it) in enumerate(saves, 1):
+                em(f"if (cob_cmp({self.field(ref)}, CF({s}, {it.size}, &{self.item_attr(it)})) != 0) return {lev};")
+            em("return 0;")
+            em.ind -= 1
+            em("case 2: {")
+            em.ind += 1
+            if saves:
+                em(f"unsigned char t[{max(it.size for _, _, it in saves)}];")
+                for s, ref, it in saves:
+                    em(f"memcpy(t, ({self.field(ref)})->data, {it.size});")
+                    em(f"memcpy(({self.field(ref)})->data, {s}, {it.size});")
+                    em(f"memcpy({s}, t, {it.size});")
+            em("return 0;")
+            em.ind -= 1
+            em("}")
+            em("}")
+            em("return 0;")
+        self.rw_function(f"static int {n}_ctl(int op)", ctl)
 
-    def rw_source_size(self, ref):
-        it = self.resolve(ref)
-        size = getattr(it, 'size', 0) or 0
-        if ref.refmod is not None and it is not None:
-            size = it.total_size() if hasattr(it, 'total_size') else size
-        return size
+        # USE BEFORE REPORTING
+        def decl(em):
+            em("switch (g) {")
+            for g in ri.groups:
+                if g.decl_sec is not None:
+                    em(f"case {g.idx}: cob_decl_which = {g.decl_sec.id}; {cname}(COB_DECL_ENTRY, NULL); break;")
+            em("}")
+            em("(void)g;")
+        self.rw_function(f"static void {n}_decl(int g)", decl)
 
-    def c_bytes(self, b):
-        out = ['"']
-        for ch in b:
-            c = chr(ch)
-            if c == '"':
-                out.append('\\"')
-            elif c == '\\':
-                out.append('\\\\')
-            elif c == '?':
-                out.append('\\?')
-            elif 32 <= ch < 127:
-                out.append(c)
+    def present_after(self, ri, f):
+        """C condition for PRESENT AFTER PAGE OR <control> (negated for
+        ABSENT AFTER): the item is shown on the first detail line of a page or
+        after one of the named controls changes."""
+        p = getattr(f, 'rw_present', None)
+        if p is None:
+            return None
+        what, absent = p
+        if not (isinstance(what, tuple) and what[0] == 'AFTER'):
+            return None
+        parts = []
+        for name in what[1]:
+            if name == 'PAGE':
+                parts.append("cob_rw_new_page")
+                continue
+            lev = ri.levels.get(name)
+            if lev is None:
+                raise CompileError(f"PRESENT AFTER '{name}': not a CONTROL of "
+                                   f"this report", f.loc)
+            if lev == 0:
+                parts.append("cob_rw_ctl_change == 0")   # FINAL: the first detail
             else:
-                out.append('\\%03o' % ch)
-        out.append('"')
-        return ''.join(out)
+                # controls nest: a change at a major level changes the minor ones too
+                parts.append(f"(cob_rw_ctl_change > 0 && cob_rw_ctl_change <= {lev})")
+        cond = ' || '.join(parts) or '1'
+        return f"!({cond})" if absent else cond
+
+    def rw_source(self, ri, f):
+        if f.rw_sums:
+            for sc in ri.counters:
+                if sc.entry is f:
+                    return self.rw_item_field(sc.item)
+        if f.rw_source is not None:
+            return self.field(f.rw_source)
+        if f.value is not None:
+            # a VALUE clause is refreshed at every presentation, so a MOVE to the
+            # item does not show (reportio.c, copy_line_fields: rf->litval)
+            return self.field(f.value)
+        return self.rw_item_ref(f)
+
+    def rw_item_ref(self, it):
+        """C field for a report item's own storage, at one occurrence."""
+        terms = [str(it.offset)]
+        for occ, k in getattr(it, 'rw_subs', ()) or ():
+            terms.append(f"({k} - 1) * {occ.size}")
+        return f"CF({it.storage} + {' + '.join(terms)}, {it.size}, &{self.item_attr(it)})"
 
     # ------------------------------------------------------------ statements
     def rw_report(self, name, loc):
@@ -808,13 +651,12 @@ class ReportWriterGen:
         name = ref.name if isinstance(ref, DataRef) else None
         ri = self.ctx.reports.get(name)
         if ri is not None:
-            self.em(f"cob_rw_generate(&{ri.sym}, NULL, {self.locstr()});")
+            self.em(f"cob_rw_generate(&{ri.sym}, -1, {self.locstr()});")
             return
         tgt = self.ctx.rw_groups.get(name)
-        if tgt is None or tgt[1].rx.node is None or not (tgt[1].rx.flags & F_DE or
-                                                          any(a.rx.flags & F_DE for a in tgt[1].ancestors())):
+        if tgt is None or tgt[1].type != 'DE':
             raise CompileError(f"GENERATE: '{name}' is not a report or a DETAIL report group", s.loc)
-        self.em(f"cob_rw_generate(&{tgt[0].sym}, &{tgt[1].rx.node}, {self.locstr()});")
+        self.em(f"cob_rw_generate(&{tgt[0].sym}, {tgt[1].idx}, {self.locstr()});")
 
     def g_Suppress(self, s):
-        self.em("cob_rw_suppress_printing();")
+        self.em("cob_rw_suppress = 1;")

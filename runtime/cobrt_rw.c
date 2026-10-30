@@ -1,587 +1,397 @@
 /* SPDX-License-Identifier: MIT */
 /* cobrt_rw.c - Report Writer Control System (RWCS)
  *
- * The page model follows GnuCOBOL 3.1.2's observable behaviour, which is what
- * its testsuite and the NIST RW programs check: a report is a chain of print
- * lines (one per 01 group and per LINE entry), walked by group type, with a
- * line cursor that each GENERATE advances on entry and steps back on exit.
- * The tables come from the compiler (lib/yaccc/rwgen.py), which builds them the
- * same way cobc does; docs/report-writer-page-model.md describes the rules.
+ * The compiler describes each report with static tables (groups, print line
+ * positions) and four callbacks generated from the REPORT SECTION:
+ *   fmt   formats one print line of a group into the line buffer
+ *   sum   subtotals, crossfoots, rolls forward and resets sum counters
+ *   ctl   saves, compares and swaps the CONTROL data items
+ *   decl  runs a USE BEFORE REPORTING procedure
+ * This file implements page and line positioning, control breaks and the
+ * INITIATE / GENERATE / TERMINATE statements.
  *
- * Each print line is one record of the report file, written "before
- * advancing n lines": its text without trailing spaces, then n newlines. A
- * skip of n blank lines is a blank record written before advancing n.
+ * Physical layout: every page of a report with a PAGE clause occupies
+ * exactly PAGE LIMIT lines of the (line sequential) report file; lines are
+ * positioned with newlines, never form feeds.
  */
 #include "cobrt.h"
 
-#define NOT_DETAIL (COB_RWF_RH | COB_RWF_RF | COB_RWF_PH | COB_RWF_PF | \
-                    COB_RWF_CH | COB_RWF_CH_FINAL | COB_RWF_CF | COB_RWF_CF_FINAL)
+int cob_rw_suppress;
+int cob_rw_new_page;            /* the line being formatted starts a page */
+int cob_rw_ctl_change;          /* control level that changed for that line */
 
-static cob_report *suppress_rep;        /* report whose USE procedure is running */
+/* How many lines a page occupies in the file.
+ *
+ * Measured, not derived: GnuCOBOL's own pagination (reportio.c) reaches a page
+ * break through several different branches and does not place the break
+ * consistently. What fits the shapes its testsuite exercises -- and the shapes
+ * probed against a live 3.1.2 -- is that a page ended by an overflow (and by
+ * NEXT GROUP NEXT PAGE) is PAGE LIMIT - 1 lines, while the last page, written
+ * by TERMINATE, is PAGE LIMIT lines, with its page footing one line below its
+ * declared line and the report footing below that. */
+static int page_stride(const cob_report *r)
+{
+	if (r->pl <= 1)
+		return r->pl;
+	/* measured on 3.1.2, and only as a fit to the shapes its testsuite uses:
+	 * a page with a LAST DETAIL boundary, a FOOTING clause or a page footing
+	 * group ends one line short -- the advance to the footing costs that line
+	 * -- while a page that starts with its first detail line runs its full
+	 * PAGE LIMIT */
+	if (r->fd_decl && r->fd == 1)
+		return r->pl;               /* a page that starts with a detail line */
+	/* a report that declares FOOTING n runs its first page to the full
+	 * PAGE LIMIT; later pages end one line short (measured: Sample Control
+	 * Break's page headings are at 1, 26, 50 with PAGE LIMIT 25) */
+	if (r->ft_clause && cob_get_int(r->page_counter) <= 1)
+		return r->pl;
+	return (r->ld_decl || r->ft_decl || r->pf >= 0) ? r->pl - 1 : r->pl;
+}
 
-static void print_line(cob_report *r, cob_rwline *l);
-static int print_kind(cob_report *r, cob_rwline *l, unsigned kind);
+static int lc_get(cob_report *r)
+{
+	return (int)cob_get_int(r->line_counter);
+}
+
+static void lc_set(cob_report *r, int v)
+{
+	cob_set_int(r->line_counter, v);
+}
+
+static int group_of(cob_report *r, int type, int level)
+{
+	for (int i = 0; i < r->ngroups; i++)
+		if (r->groups[i].type == type && (level < 0 || r->groups[i].level == level))
+			return i;
+	return -1;
+}
 
 /* ---------------------------------------------------------------- output */
 
-static void blank_rec(cob_report *r)
-{
-	memset(r->rec, ' ', (size_t)r->recsz);
-}
-
-/* one record, then `n` line advances */
-static void put_rec(cob_report *r, int n)
+static void put_line(cob_report *r, int line, const unsigned char *buf)
 {
 	FILE *fp = r->file->fp;
 	if (!fp)
 		cob_fatal("report %s: file %s is not open for output", r->name, r->file->select_name);
-	size_t size = (size_t)r->recsz;
-	if (size > (size_t)r->cols)
-		size = (size_t)r->cols;
-	if (r->code_len > 0) {
-		/* CODE: every physical line starts with the code, blank ones too */
-		int k = n > 1 ? n : 1;
-		for (int i = 0; i < k; i++) {
-			fwrite(r->code, 1, (size_t)r->code_len, fp);
-			size_t m = size;
-			while (m && r->rec[m - 1] == ' ')
-				m--;
-			fwrite(r->rec, 1, m, fp);
-			int nl = n > 1 ? 1 : n;
-			for (int j = 0; j < nl; j++)
-				fputc('\n', fp);
-			if (n > 1)
-				memset(r->rec, ' ', size);
-		}
-	} else {
-		size_t m = size;
-		while (m && r->rec[m - 1] == ' ')
-			m--;
-		fwrite(r->rec, 1, m, fp);
-		for (int j = 0; j < n; j++)
-			fputc('\n', fp);
+	int target = r->page_start + line - 1;
+	if (target < r->pos || (target == r->pos && r->open))
+		target = r->pos + (r->open ? 1 : 0);   /* never overprint */
+	while (r->pos < target) {
+		fputc('\n', fp);
+		r->pos++;
 	}
+	size_t n = (size_t)r->width;
+	while (n && buf[n - 1] == ' ')
+		n--;
+	fwrite(buf, 1, n, fp);
+	r->open = 1;
+	r->file->linage_lines = 1;     /* CLOSE terminates the open line */
+}
+
+/* pad the current page out to its full PAGE LIMIT length, so that what follows
+ * starts on the line after it */
+static void pad_page(cob_report *r)
+{
+	FILE *fp = r->file->fp;
+	if (!fp || !r->pl)
+		return;
+	int end = r->page_start + r->pl;
+	while (r->pos < end) {
+		fputc('\n', fp);
+		r->pos++;
+	}
+	r->open = 0;                /* the padding closed the open line */
+}
+
+/* close the last page: it holds exactly PAGE LIMIT lines, so anything not yet
+ * written is blank filler */
+static void finish_page(cob_report *r)
+{
+	FILE *fp = r->file->fp;
+	if (!fp)
+		return;
+	if (r->pl) {
+		int end = r->page_start + r->pl;
+		while (r->pos < end) {
+			fputc('\n', fp);
+			r->pos++;
+		}
+		/* a report footing may sit below the last page line: close its line
+		   too, so the file ends with a newline as GnuCOBOL's does */
+		if (r->open) {
+			fputc('\n', fp);
+			r->pos++;
+		}
+		r->open = 0;
+	} else if (r->open) {
+		fputc('\n', fp);
+		r->pos++;
+		r->open = 0;
+	}
+	r->file->linage_lines = 0;
 	if (fp == stdout)
 		fflush(stdout);
 }
 
-/* LINE-COUNTER and PAGE-COUNTER as the program sees them */
-static void show_counters(cob_report *r)
+/* positions of every print line of group g, the first one at `first` */
+static int line_positions(const cob_rw_group *g, int first, int *pos)
 {
-	int ln = r->cur;
-	if (ln > r->lines || ln < 0)
-		ln = 0;
-	cob_set_int(r->page_counter, r->page);
-	cob_set_int(r->line_counter, ln);
+	int cur = first;
+	for (int i = 0; i < g->nlines; i++) {
+		const cob_rw_lspec *l = &g->lines[i];
+		if (i > 0) {
+			if (l->kind == COB_RW_ABS || l->kind == COB_RW_ABSNP)
+				cur = l->num > cur ? l->num : cur + 1;
+			else
+				cur = cur + l->num;
+		}
+		pos[i] = cur;
+	}
+	return cur;
 }
 
-/* ---------------------------------------------------------------- tables */
-
-/* the line whose item list actually prints: a group line that has none of
- * its own leaves them on the line below it */
-static cob_rwline *with_fields(cob_rwline *l)
+static void print_group(cob_report *r, int gi, int first)
 {
-	if (l == NULL || l->fields != NULL || l->first_line == NULL)
-		return l;
-	return with_fields(l->first_line);
+	const cob_rw_group *g = &r->groups[gi];
+	int pos[COB_RW_MAX_LINES];
+	if (g->nlines > COB_RW_MAX_LINES)
+		cob_fatal("report %s: too many lines in one report group", r->name);
+	line_positions(g, first, pos);
+	for (int i = 0; i < g->nlines; i++) {
+		lc_set(r, pos[i]);
+		memset(r->buf, ' ', (size_t)r->width);
+		if (r->code_len)
+			memcpy(r->buf, r->code, (size_t)r->code_len);
+		r->fmt(gi, i, r->buf, r->gi[gi]);
+		put_line(r, pos[i], r->buf);
+	}
+	if (g->type == COB_RW_DE)
+		r->gi[gi] = 0;
 }
 
-static void each_line(cob_rwline *l, void (*fn)(cob_rwline *))
+/* USE BEFORE REPORTING; returns 1 if the group is to be suppressed */
+static int before_reporting(cob_report *r, int gi)
 {
-	for (; l; l = l->next_line) {
-		fn(l);
-		if (l->first_line)
-			each_line(l->first_line, fn);
+	if (!r->groups[gi].has_decl)
+		return 0;
+	cob_rw_suppress = 0;
+	r->decl(gi);
+	int s = cob_rw_suppress;
+	cob_rw_suppress = 0;
+	return s;
+}
+
+static void present(cob_report *r, int gi, int apply_ng);
+
+/* NEXT GROUP after a group has been presented */
+static void next_group(cob_report *r, const cob_rw_group *g)
+{
+	int lc = lc_get(r);
+	switch (g->ng_kind) {
+	case COB_RW_ABS:
+		if (g->ng_num > lc)
+			lc_set(r, g->ng_num);
+		else if (r->pl)
+			r->next_page = 1;
+		break;
+	case COB_RW_REL:
+		lc_set(r, lc + g->ng_num);
+		break;
+	case COB_RW_NP:
+		if (r->pl) {
+			r->next_page = 1;
+			r->ng_page = 1;
+		}
+		break;
 	}
 }
 
-static void reset_gi(cob_rwline *l)
+/* start a new page without page footing / heading (report heading or footing alone).
+ * `stride` overrides page_stride() when the page footing itself decides where
+ * the page ends; 0 means "use the measured rule". */
+static void bare_advance(cob_report *r, int stride)
 {
-	for (cob_rwfld *f = l->fields; f; f = f->next)
-		f->gi = 0;
+	r->page_start += stride > 0 ? stride : page_stride(r);
+	cob_set_int(r->page_counter, cob_get_int(r->page_counter) + 1);
+	lc_set(r, 0);
+	r->body_on_page = 0;
+	r->next_page = 0;
 }
 
-static void reset_sup(cob_rwline *l)
+static void page_advance(cob_report *r)
 {
-	l->sup = 0;
-	for (cob_rwfld *f = l->fields; f; f = f->next)
-		if (!(f->flags & COB_RWF_GROUP))
-			f->sup = 0;
+	int stride = 0;
+	if (r->ng_page && r->pf < 0)
+		stride = r->pl;         /* measured: a NEXT PAGE break fills the page */
+	r->ng_page = 0;
+	if (r->pf >= 0) {
+		present(r, r->pf, 0);
+		/* A page that declares a page footing ends where the footing leaves it.
+		 * cobc's page-footing code writes the footing first, then pads to the last
+		 * line of the page only while there is one left to pad (`if (curr_line <
+		 * def_lines) write (def_lines - curr_line) lines`, which fills up to
+		 * def_lines - 1); a footing whose line has already reached the limit
+		 * ends the page at that line instead. Measured on 3.1.2: PAGE LIMIT 12
+		 * with a footing at 10 ends the page at 11, and PAGE LIMIT 25 with a
+		 * footing at 24 ends it at 24. */
+		int lc = lc_get(r);            /* the footing's own last line */
+		if (r->pl > 1 && lc > 0)
+			stride = (lc + 1 < r->pl) ? r->pl - 1 : lc;
+	}
+	bare_advance(r, stride);
+	for (int i = 0; i < r->ngroups; i++)
+		if (r->groups[i].type == COB_RW_DE)
+			r->gi[i] = 1;
+	if (r->ph >= 0)
+		present(r, r->ph, 0);
 }
 
-static cob_rwline *find_kind(cob_rwline *l, unsigned kind)
+static int first_body_line(cob_report *r, const cob_rw_group *g, int lc)
 {
-	for (; l; l = l->next_line) {
-		if (l->flags & kind)
-			return l;
-		if (l->first_line) {
-			cob_rwline *t = find_kind(l->first_line, kind);
-			if (t)
-				return t;
+	const cob_rw_lspec *l = &g->lines[0];
+	switch (l->kind) {
+	case COB_RW_ABS:
+	case COB_RW_ABSNP:
+		return lc < l->num ? l->num : -1;
+	case COB_RW_NP:
+		return r->pl ? (lc < r->fd ? r->fd : lc + 1) : lc + 1;
+	default:
+		if (r->pl && lc < r->fd)
+			return r->fd;
+		return lc + l->num;
+	}
+}
+
+static void present_body(cob_report *r, int gi, int apply_ng)
+{
+	const cob_rw_group *g = &r->groups[gi];
+	if (g->present_when) {
+		/* PRESENT WHEN cond / ABSENT WHEN cond on the group */
+		int on = g->present_when() != 0;
+		if (g->absent)
+			on = !on;
+		if (!on) {
+			if (apply_ng)
+				next_group(r, g);
+			return;
 		}
 	}
-	return NULL;
-}
-
-/* the order (1 = minor) of the control a line belongs to, -1 for none */
-static int control_order(cob_report *r, cob_rwline *l)
-{
-	for (int i = 0; i < r->ncontrols; i++) {
-		cob_rwctl *c = &r->controls[i];
-		for (int k = 0; k < c->nrefs; k++)
-			if (c->refs[k] == l)
-				return c->seq;
-	}
-	return -1;
-}
-
-/* NEXT GROUP of a line takes effect at the next group */
-static void note_next_group(cob_report *r, cob_rwline *l)
-{
-	if (l->flags & COB_RWF_NG_LINE) {
-		r->next_value = l->ngl;
-		r->next_line = 1;
-		r->just_set = 1;
-		r->next_plus = 0;
-	}
-	if (l->flags & COB_RWF_NG_PLUS) {
-		r->next_value = l->ngl;
-		r->next_line = 0;
-		r->next_plus = 1;
-		r->just_set = 1;
-	}
-	if (l->flags & COB_RWF_NG_PAGE) {
-		r->next_value = l->ngl;
-		r->next_line = 0;
-		r->next_page = 1;
-		r->just_set = 1;
-	}
-}
-
-/* PRESENT / ABSENT AFTER: a new page (ctl < 0) or a control break */
-static void present_after(cob_report *r, cob_rwline *l, int ctl)
-{
-	for (; l; l = l->next_line) {
-		for (cob_rwfld *f = l->fields; f; f = f->next) {
-			if (!(f->flags & COB_RWF_PRESENT))
-				continue;
-			int hit = ctl < 0 ? (f->flags & COB_RWF_PAGE) != 0 : f->ctl == ctl;
-			if (!(f->flags & COB_RWF_NEGATE)) {
-				if (!f->now && hit)
-					f->now = 1;
-			} else if (f->now && hit) {
-				f->now = 0;
-			}
-		}
-		if (l->first_line)
-			present_after(r, l->first_line, ctl);
-	}
-	(void)r;
-}
-
-/* ---------------------------------------------------------------- sums */
-
-static void zero_counter(cob_rwsum *s)
-{
-	cob_move(&cob_fig_zero, s->counter);
-}
-
-/* a counter is about to be reset: the counters that SUM it take its value */
-static void roll_forward(cob_report *r, int k)
-{
-	const cob_rwsum *s = &r->sums[k];
-	for (int i = 0; i < s->nroll; i++)
-		r->sumadd(s->roll[i]);
-}
-
-static void reset_counters(cob_report *r, unsigned kind, cob_rwline *l)
-{
-	l = with_fields(l);
-	for (int k = 0; k < r->nsums; k++) {
-		cob_rwsum *s = &r->sums[k];
-		/* once per operand of the counter, as the reference does */
-		for (int op = 0; op < s->nops; op++) {
-			if (kind & COB_RWF_CF_FINAL) {
-				if (s->final)
-					zero_counter(s);
-			} else if (s->ctl >= 0) {
-				cob_rwctl *c = &r->controls[s->ctl];
-				for (int i = 0; i < c->nrefs; i++) {
-					cob_rwline *rl = c->refs[i];
-					if (rl->flags & (COB_RWF_CH | COB_RWF_CH_FINAL))
-						continue;
-					if (l != NULL && l != with_fields(rl))
-						continue;
-					if (rl->flags & kind) {
-						roll_forward(r, k);
-						zero_counter(s);
-					}
-				}
-			}
-		}
-	}
-}
-
-static void add_detail_sums(cob_report *r, cob_rwline *l)
-{
-	for (int k = 0; k < r->nsums; k++) {
-		cob_rwsum *s = &r->sums[k];
-		if (s->subtotal || s->nops <= 0)
-			continue;
-		if (s->nupon > 0) {
-			/* SUM ... UPON: only a GENERATE of one of those DETAIL groups */
-			int hit = 0;
-			for (int i = 0; i < s->nupon; i++)
-				if (s->upon[i] == l)
-					hit = 1;
-			if (!hit)
-				continue;
-		}
-		r->sumadd(k);
-	}
-}
-
-/* ---------------------------------------------------------------- pages */
-
-static void page_end(cob_report *r)
-{
-	if (r->in_pf)
+	if (g->nlines == 0) {
+		if (apply_ng)
+			next_group(r, g);
 		return;
-	r->in_pf = 1;
-	print_kind(r, r->first, COB_RWF_PF);
-	blank_rec(r);
-	if (r->cur < r->lines) {
-		put_rec(r, r->lines - r->cur);
-		r->cur = r->lines;
-		r->incr = 0;
+	}
+	int lc = lc_get(r);
+	int first;
+	if (r->pl) {
+		int limit = g->type == COB_RW_CF ? r->ft : r->ld;
+		int adv = r->next_page;
+		int k = g->lines[0].kind;
+		if ((k == COB_RW_ABSNP || k == COB_RW_NP) && r->body_on_page)
+			adv = 1;
+		if (!adv) {
+			first = first_body_line(r, g, lc);
+			if (first < 0)
+				adv = 1;
+			else {
+				int pos[COB_RW_MAX_LINES];
+				int last = line_positions(g, first, pos);
+				if (last > limit && !(lc < r->fd && first == r->fd))
+					adv = 1;
+			}
+		}
+		if (adv) {
+			page_advance(r);
+			lc = lc_get(r);
+		}
+		first = first_body_line(r, g, lc);
+		if (first < 0)
+			first = lc + 1;
 	} else {
-		r->cur = 1;
+		first = first_body_line(r, g, lc);
+		if (first < 0)
+			first = lc + 1;
 	}
-	show_counters(r);
-	r->fdflag = 1;
-	r->in_pf = 0;
+	cob_rw_new_page = !r->body_on_page;
+	print_group(r, gi, first);
+	cob_rw_new_page = 0;
+	r->body_on_page = 1;
+	if (apply_ng)
+		next_group(r, g);
 }
 
-static void page_start(cob_report *r)
+static void present(cob_report *r, int gi, int apply_ng)
 {
-	if (r->in_ph)
+	const cob_rw_group *g = &r->groups[gi];
+	if (before_reporting(r, gi))
 		return;
-	blank_rec(r);
-	if (!r->first_gen && r->lines > 0 && r->heading > 0 &&
-	    r->cur <= r->lines && r->cur > r->heading) {
-		/* the rest of the page is blank */
-		while (r->cur <= r->lines) {
-			put_rec(r, 1);
-			r->cur++;
-		}
-		if (r->cur > r->lines)
-			r->cur = 1;
-		show_counters(r);
-	}
-	r->in_ph = 1;
-	if (!r->first_gen)
-		r->page++;
-	r->fdflag = 0;
-	while (r->cur < r->heading) {
-		put_rec(r, 1);
-		r->cur++;
-		show_counters(r);
-	}
-	print_kind(r, r->first, COB_RWF_PH);
-	blank_rec(r);
-	while (r->cur < r->first_detail) {
-		put_rec(r, 1);
-		r->cur++;
-		show_counters(r);
-	}
-	each_line(r->first, reset_gi);
-	r->in_ph = 0;
-	present_after(r, r->first, -1);
-}
-
-/* ---------------------------------------------------------------- one line */
-
-/* the text of an item, without trailing spaces, aligned as COLUMN
- * LEFT / RIGHT / CENTER ask, into the record */
-static void place_field(cob_report *r, cob_rwfld *rf)
-{
-	const cob_field *f = rf->f;
-	size_t n = f->size;
-	while (n && (f->data[n - 1] == ' ' || f->data[n - 1] == 0))
-		n--;
-	const unsigned char *t = f->data;
-	/* the text ends at a NUL, as a C string would */
-	for (size_t i = 0; i < n; i++)
-		if (t[i] == 0) {
-			n = i;
+	int lc = lc_get(r);
+	int first;
+	const cob_rw_lspec *l0 = g->nlines ? &g->lines[0] : NULL;
+	switch (g->type) {
+	case COB_RW_PH:
+	case COB_RW_RH:
+		if (!l0)
 			break;
+		if (l0->kind == COB_RW_ABS || l0->kind == COB_RW_ABSNP)
+			first = l0->num;
+		else {
+			int base = r->pl && lc < r->h - 1 ? r->h - 1 : lc;
+			first = base + (l0->kind == COB_RW_NP ? 1 : l0->num);
 		}
-	size_t dest = (size_t)(rf->column - 1);
-	if (rf->flags & COB_RWF_RIGHT) {
-		if (n < f->size)
-			dest += f->size - n;
-	} else if (rf->flags & COB_RWF_CENTER) {
-		while (n > 0 && t[0] == ' ') {
-			t++;
-			n--;
+		print_group(r, gi, first);
+		if (g->type == COB_RW_RH && apply_ng) {
+			if (g->ng_kind == COB_RW_NP && r->pl)
+				bare_advance(r, 0);
+			else
+				next_group(r, g);
 		}
-		size_t odd = (n & 1) ? 0 : 1;
-		if (n < f->size)
-			dest += (f->size - n - odd) / 2;
-	} else if (rf->flags & COB_RWF_LEFT) {
-		while (n > 0 && t[0] == ' ') {
-			t++;
-			n--;
-		}
-	}
-	if (dest + n > (size_t)r->recsz)
-		n = dest < (size_t)r->recsz ? (size_t)r->recsz - dest : 0;
-	memcpy(r->rec + dest, t, n);
-}
-
-/* the last item that belongs to the group starting at g */
-static cob_rwfld *last_of_group(cob_rwfld *g)
-{
-	cob_rwfld *it = g;
-
-	while (it->next != NULL && it->next->level > g->level)
-		it = it->next;
-	return it;
-}
-
-static void print_line(cob_report *r, cob_rwline *l)
-{
-	int plus_ok = 0;
-	blank_rec(r);
-	if (r->cur > r->last_detail && !r->in_rf && !r->in_pf) {
-		page_end(r);
-		page_start(r);
-	}
-	if (!r->just_set && r->next_plus) {
-		put_rec(r, r->next_value);
-		r->cur += r->next_value;
-		r->next_plus = 0;
-		plus_ok = 1;
-	} else if (!r->just_set && r->next_line) {
-		r->next_line = 0;
-		if (r->cur > r->next_value) {
-			page_end(r);
-			page_start(r);
-		}
-		while (r->cur < r->next_value) {
-			put_rec(r, 1);
-			r->cur++;
-		}
-		plus_ok = 1;
-	} else if (!r->just_set && r->next_page) {
-		r->next_page = 0;
-		page_end(r);
-		page_start(r);
-	} else if (!(l->flags & COB_RWF_LINE_PLUS) && (l->flags & COB_RWF_LINE)) {
-		if (r->cur > l->line) {
-			page_end(r);
-			if (r->in_rf) {
-				r->page++;
-				r->cur = 1;
-			} else {
-				page_start(r);
-			}
-			r->fdflag = 0;
-		}
-		while (r->cur < l->line) {
-			put_rec(r, 1);
-			r->cur++;
-		}
-	} else {
-		plus_ok = 1;
-	}
-	if (plus_ok && (l->flags & COB_RWF_LINE_PLUS) && l->line > 1) {
-		if (r->cur != r->first_detail || r->first_detail == 0) {
-			put_rec(r, l->line - 1);
-			r->cur += l->line - 1;
-		}
-	}
-	if (r->cur > r->last_detail && !r->in_rf && !r->in_ph && !r->in_pf) {
-		page_end(r);
-		page_start(r);
-	}
-	show_counters(r);
-	if (l->fields == NULL || l->sup) {
-		note_next_group(r, l);
 		return;
-	}
-	for (cob_rwfld *rf = l->fields; rf; rf = rf->next) {
-		if (rf->flags & COB_RWF_GROUP) {
-			if (rf->sup) {
-				/* a suppressed group: none of its items print */
-				rf->sup = 0;
-				rf = last_of_group(rf);
-			}
-			continue;
-		}
-		if ((rf->flags & COB_RWF_PRESENT) && !rf->now)
-			continue;
-		if (rf->sup || rf->gi)
-			continue;
-		if (rf->src) {
-			r->src(rf->src);
-			place_field(r, rf);
-		} else if (rf->lit) {
-			cob_field lf = { (size_t)rf->litlen, (unsigned char *)rf->lit, &cob_attr_alnum };
-			cob_move(&lf, rf->f);
-			size_t n = (size_t)rf->litlen;
-			size_t dest = (size_t)(rf->column - 1);
-			if (dest + n > (size_t)r->recsz)
-				n = dest < (size_t)r->recsz ? (size_t)r->recsz - dest : 0;
-			memcpy(r->rec + dest, rf->lit, n);
+	case COB_RW_PF:
+		if (!l0)
+			return;
+		if (l0->kind == COB_RW_ABS || l0->kind == COB_RW_ABSNP)
+			first = l0->num;
+		else
+			first = (r->pl ? r->ft : lc) + (l0->kind == COB_RW_NP ? 1 : l0->num);
+		if (r->final_page)
+			first += 1;     /* on the last page the footing follows its line */
+		r->pf_pos = first;
+		print_group(r, gi, first);
+		return;
+	case COB_RW_RF:
+		if (!l0)
+			return;
+		if (l0->kind == COB_RW_ABSNP || l0->kind == COB_RW_NP) {
+			if (r->pl)
+				bare_advance(r, 0);
+			first = l0->kind == COB_RW_ABSNP ? l0->num : (r->pl ? r->h : lc + 1);
+		} else if (l0->kind == COB_RW_ABS) {
+			if (r->pl && lc >= l0->num)
+				bare_advance(r, 0);
+			first = l0->num;
+		} else if (r->final_page && r->pl) {
+			/* the report footing follows the page footing, and the page
+			   itself has already been padded to its full length */
+			int base = r->pf_pos > r->pl ? r->pf_pos : r->pl;
+			first = base + l0->num;
 		} else {
-			place_field(r, rf);
-		}
-		if (rf->flags & COB_RWF_GI)
-			rf->gi = 1;
-	}
-	for (cob_rwfld *rf = l->fields; rf; rf = rf->next)
-		rf->now = (rf->flags & COB_RWF_NEGATE) ? 1 : 0;
-	put_rec(r, 1);
-	r->cur++;
-	show_counters(r);
-	note_next_group(r, l);
-}
-
-/* a control heading or footing group: its own line first when the group's
- * items hang below it, then the ordinary line walk */
-static void print_group(cob_report *r, cob_rwline *l, unsigned kind)
-{
-	if (l == NULL)
-		return;
-	if (l->fields != NULL || l->first_line == NULL) {
-		print_kind(r, l, kind);
-		return;
-	}
-	if (!(l->flags & kind)) {
-		print_kind(r, l->first_line, kind);
-		return;
-	}
-	print_line(r, l);
-	print_kind(r, l->first_line, COB_RWF_LINE);
-}
-
-/* the first line of `kind` in the chain from l, with its own lines and the
- * lines of that kind that follow it */
-static int print_kind(cob_report *r, cob_rwline *l, unsigned kind)
-{
-	for (; l; l = l->next_line) {
-		if (l->flags & kind) {
-			print_line(r, l);
-			if (l->first_line)
-				print_kind(r, l->first_line, COB_RWF_LINE);
-			for (cob_rwline *s = l->next_line; s; s = s->next_line) {
-				/* a control footing chain stops at a more major control */
-				if (kind == COB_RWF_CF && (s->flags & COB_RWF_CF)) {
-					int a = control_order(r, l), b = control_order(r, s);
-					if (a > 0 && b > 0 && b > a)
-						return 1;
-				}
-				print_kind(r, s, kind);
-				break;
-			}
-			return 1;
-		}
-		if (l->first_line && print_kind(r, l->first_line, kind))
-			return 1;
-	}
-	return 0;
-}
-
-/* ---------------------------------------------------------------- declaratives */
-
-static void run_use(cob_report *r, cob_rwline *l, int id)
-{
-	cob_report *saved = suppress_rep;
-	cob_rwline *saved_line = r->use_line;
-	suppress_rep = r;
-	r->use_line = l;
-	r->decl(id);
-	r->use_line = saved_line;
-	suppress_rep = saved;
-	/* the statement continues as if re-entered after the procedure */
-	if (!r->terminating)
-		r->foot_np = 0;
-	r->moves(r->terminating);
-}
-
-/* the USE procedure for a control line, if it has one */
-static void use_for(cob_report *r, cob_rwline *l)
-{
-	if (l->decl) {
-		run_use(r, l, l->decl);
-		return;
-	}
-	cob_rwline *pl = with_fields(l);
-	if (pl != l && pl->decl)
-		run_use(r, pl, pl->decl);
-}
-
-/* SUPPRESS PRINTING in a USE BEFORE REPORTING procedure */
-void cob_rw_suppress_printing(void)
-{
-	cob_report *r = suppress_rep;
-	if (r == NULL || r->use_line == NULL)
-		return;
-	cob_rwline *l = r->use_line;
-	l->sup = 1;
-	for (int i = 0; i < r->ncontrols; i++) {
-		cob_rwctl *c = &r->controls[i];
-		for (int k = 0; k < c->nrefs; k++) {
-			if (c->refs[k] == l || with_fields(c->refs[k]) == l) {
-				c->sup = 1;
-				return;
+			int pos[COB_RW_MAX_LINES];
+			first = lc + l0->num;
+			if (r->pl && line_positions(g, first, pos) > r->pl) {
+				bare_advance(r, 0);
+				first = r->h - 1 + l0->num;
 			}
 		}
+		print_group(r, gi, first);
+		return;
+	default:
+		present_body(r, gi, apply_ng);
+		return;
 	}
-}
-
-/* ---------------------------------------------------------------- controls */
-
-static cob_field ctl_copy(cob_report *r, int i, unsigned char *buf)
-{
-	cob_field *f = r->ctlf(i);
-	cob_field c = { f->size, buf, f->attr };
-	return c;
-}
-
-static void ctl_store(cob_report *r, int i, unsigned char *buf)
-{
-	cob_field *f = r->ctlf(i);
-	memcpy(buf, f->data, f->size);
-}
-
-static void ctl_load(cob_report *r, int i, const unsigned char *buf)
-{
-	cob_field *f = r->ctlf(i);
-	memcpy(f->data, buf, f->size);
 }
 
 /* ---------------------------------------------------------------- statements */
-
-static int limits_ok(cob_report *r, cob_rwline *l)
-{
-	for (; l; l = l->next_line) {
-		if (l->line > 0 && r->lines > 0 && l->line > r->lines)
-			return 0;
-		if (l->ngl > 0 && r->lines > 0 && l->ngl > r->lines)
-			return 0;
-		for (cob_rwfld *f = l->fields; f; f = f->next) {
-			if (f->line && f->line > r->lines)
-				return 0;
-			if (f->ngl && f->ngl > r->lines)
-				return 0;
-		}
-		if (l->first_line && !limits_ok(r, l->first_line))
-			return 0;
-	}
-	return 1;
-}
 
 void cob_rw_initiate(cob_report *r, const char *loc)
 {
@@ -591,316 +401,162 @@ void cob_rw_initiate(cob_report *r, const char *loc)
 		cob_warning("%s: INITIATE for report %s that is already initiated", loc, r->name);
 		return;
 	}
-	if (r->lines > 9999)
-		r->lines = 9999;
-	if (r->cols > 999 || r->cols < 1)
-		r->cols = 999;
-	if ((r->first_detail > 0 && !(r->first_detail >= r->heading)) ||
-	    (r->last_detail > 0 && !(r->last_detail >= r->first_detail)) ||
-	    (r->footing > 0 && !(r->footing >= r->heading)) ||
-	    (r->footing > 0 && !(r->footing >= r->last_detail)) ||
-	    (r->lines > 0 && !(r->lines >= r->heading)) ||
-	    (r->lines > 0 && !(r->lines >= r->footing))) {
-		cob_set_exception("EC-REPORT-PAGE-LIMIT");
-		cob_warning("%s: INITIATE %s: PAGE LIMIT problem", loc, r->name);
-		return;
-	}
-	if (!r->rec)
-		r->rec = cob_malloc((size_t)r->recsz + 1);
-	r->page = 1;
-	r->cur = 0;
-	r->incr = 1;
-	show_counters(r);
-	if (!limits_ok(r, r->first)) {
-		cob_set_exception("EC-REPORT-PAGE-LIMIT");
-		cob_warning("%s: INITIATE %s: a LINE exceeds the PAGE LIMIT", loc, r->name);
-		return;
-	}
-	r->initiated = 1;
-	r->fdflag = 1;
-	r->first_gen = 1;
-	r->next_value = 0;
-	r->next_line = 0;
-	r->next_plus = 0;
-	r->next_page = 0;
-	for (int i = 0; i < r->ncontrols; i++) {
-		cob_rwctl *c = &r->controls[i];
-		cob_field *f = r->ctlf(i);
-		free(c->val);
-		free(c->save);
-		c->val = cob_malloc(f->size + 1);
-		c->save = cob_malloc(f->size + 1);
-		memcpy(c->val, f->data, f->size);
-		memcpy(c->save, f->data, f->size);
-	}
-	for (int k = 0; k < r->nsums; k++)
-		zero_counter(&r->sums[k]);
-}
-
-/* A detail group that starts on its 01 line and continues on LINE entries
- * below it arrives at GENERATE pointing at the 01, whose item list is empty.
- * The run then starts at that first LINE entry and covers its whole chain. */
-static cob_rwline *detail_run_start(cob_rwline *l, int *chained)
-{
-	cob_rwline *below = l->first_line;
-
-	*chained = l->fields == NULL && below != NULL && below->next_line != NULL;
-	return *chained ? below : l;
-}
-
-/* How many print lines one GENERATE of a detail group emits, and the extra
- * line steps its LINE PLUS clauses add. A group that is not chained is a
- * single line and takes no steps. */
-static int detail_run_size(cob_rwline *run, int chained, int *steps)
-{
-	int lines;
-
-	*steps = 0;
-	if (!chained)
-		return 1;
-	lines = 0;
-	for (cob_rwline *pl = run; pl != NULL; pl = pl->next_line) {
-		if (pl->flags & NOT_DETAIL)
-			break;
-		lines++;
-		if ((pl->flags & COB_RWF_LINE_PLUS) && pl->line > 1)
-			*steps += pl->line;
-	}
-	return lines;
-}
-
-static void print_detail_run(cob_report *r, cob_rwline *run, int lines)
-{
-	cob_rwline *pl = run;
-
-	while (lines-- > 0) {
-		cob_rwline *body;
-
-		if (pl == NULL || (pl->flags & NOT_DETAIL))
-			break;
-		body = with_fields(pl);
-		if (!body->sup) {
-			r->just_set = 0;
-			print_line(r, body);
+	/* GnuCOBOL's INITIATE does not look at the file, and neither does this
+	 * one: a program may INITIATE a report before it OPENs the file and
+	 * GENERATE into it afterwards (run_reportwriter.at's "Report PRESENT
+	 * AFTER" does exactly that). The write path reports a closed file if the
+	 * report is still unopened when a line is due. */
+	if (!r->buf) {
+		r->buf = cob_malloc((size_t)r->width + 1);
+		r->gi = cob_malloc((size_t)r->ngroups + 1);
+		r->ch = cob_malloc(sizeof(int) * (size_t)(r->ncontrols + 1));
+		r->cf = cob_malloc(sizeof(int) * (size_t)(r->ncontrols + 1));
+		for (int lev = 0; lev <= r->ncontrols; lev++) {
+			r->ch[lev] = group_of(r, COB_RW_CH, lev);
+			r->cf[lev] = group_of(r, COB_RW_CF, lev);
 		}
-		body->sup = 0;
-		pl = pl->next_line;
+		r->rh = group_of(r, COB_RW_RH, -1);
+		r->ph = group_of(r, COB_RW_PH, -1);
+		r->pf = group_of(r, COB_RW_PF, -1);
+		r->rf = group_of(r, COB_RW_RF, -1);
 	}
+	for (int i = 0; i < r->ngroups; i++)
+		r->gi[i] = 1;
+	cob_set_int(r->page_counter, 1);
+	lc_set(r, 0);
+	/* the report starts on a fresh page of the file */
+	if (r->file->fp && r->file->fp != stdout && ftell(r->file->fp) == 0) {
+		r->pos = 0;
+		r->open = 0;
+	}
+	if (r->open) {
+		fputc('\n', r->file->fp);
+		r->pos++;
+		r->open = 0;
+	}
+	r->page_start = r->pos;
+	r->body_on_page = 0;
+	r->next_page = 0;
+	r->terminating = 0;
+	r->generated = 0;
+	r->initiated = 1;
+	r->sum(3, -1);     /* all sum counters to zero */
 }
 
-/* GENERATE of a detail group: sum it, then print it. A group whose print was
- * SUPPRESSed consumes that and prints nothing; a GENERATE that names only the
- * report (l == NULL) just sums. A chained group takes a fresh page first when
- * its run would not fit above LAST DETAIL. */
-static void generate_detail(cob_report *r, cob_rwline *l)
+/* control footing processing for level `lev` */
+static void footing(cob_report *r, int lev, int apply_ng)
 {
-	int chained = 0;
-	int steps = 0;
-	int lines;
-
-	add_detail_sums(r, l);
-	if (l == NULL)
-		return;
-	if (l->sup) {
-		l->sup = 0;
-		return;
+	int gi = r->cf[lev];
+	if (gi >= 0) {
+		r->sum(1, gi);             /* crossfoot */
+		present(r, gi, apply_ng);
+		if (!apply_ng && !r->terminating) {
+			/* A footing presented as part of a larger break still moves
+			 * the line cursor by its own NEXT GROUP when that is a
+			 * relative advance; only the page break belongs to the level
+			 * that actually changed. Measured: an invoice footing at 12
+			 * with NEXT GROUP PLUS 1 puts the branch footing at 15, not
+			 * 14. */
+			const cob_rw_group *g = &r->groups[gi];
+			if (g->ng_kind == COB_RW_REL)
+				lc_set(r, lc_get(r) + g->ng_num);
+		}
+		r->sum(2, gi);             /* roll forward */
 	}
-	l = detail_run_start(l, &chained);
-	lines = detail_run_size(l, chained, &steps);
-	if (lines > 1 && r->cur + steps > r->last_detail) {
-		page_end(r);
-		r->cur = 1;
-		page_start(r);
-		r->fdflag = 0;
-		show_counters(r);
-	}
-	print_detail_run(r, l, lines);
+	if (!r->terminating)
+		r->sum(4, lev);            /* reset counters of this level */
 }
 
-void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc)
+void cob_rw_generate(cob_report *r, int gi, const char *loc)
 {
 	if (!r->initiated)
 		cob_fatal("%s: GENERATE for report %s that is not initiated", loc, r->name);
-	r->terminating = 0;
-	r->moves(0);
-	r->foot_np = 0;
-	if (r->incr) {
-		r->incr = 0;
-		r->cur++;
-		show_counters(r);
-	}
-	if (r->first_gen) {
-		print_kind(r, r->first, COB_RWF_RH);
-		page_start(r);
-		/* CONTROL HEADING FINAL (which cobc 3.1.2 never prints): the most
-		 * major heading, before those of the CONTROL data items */
-		cob_rwline *chf = find_kind(r->first, COB_RWF_CH_FINAL);
-		if (chf) {
-			if (chf->decl)
-				run_use(r, chf, chf->decl);
-			if (!chf->sup)
-				print_kind(r, r->first, COB_RWF_CH_FINAL);
-			chf->sup = 0;
-		}
-		for (int i = 0; i < r->ncontrols; i++) {
-			cob_rwctl *c = &r->controls[i];
-			for (int k = 0; k < c->nrefs; k++) {
-				cob_rwline *rl = c->refs[k];
-				if (rl->flags & COB_RWF_CH) {
-					use_for(r, rl);
-					print_group(r, rl, COB_RWF_CH);
-				}
-			}
-			ctl_store(r, i, c->val);
-			c->changed = 0;
-		}
-	} else {
-		if (r->cur > r->last_detail) {
-			page_end(r);
-			r->cur = 1;
-			page_start(r);
-			r->fdflag = 0;
-		} else if (r->cur <= 1 || r->fdflag) {
-			if (r->fdflag)
-				r->cur = 1;
-			page_start(r);
-			r->fdflag = 0;
-		}
-		int top = 0;
-		for (int i = 0; i < r->ncontrols; i++) {
-			cob_rwctl *c = &r->controls[i];
-			unsigned char *v = c->val;
-			cob_field old = ctl_copy(r, i, v);
-			c->changed = cob_cmp(r->ctlf(i), &old) != 0;
-			if (c->changed) {
-				ctl_store(r, i, c->save);     /* the new value, for later */
-				ctl_load(r, i, c->val);       /* the old one, for the footing */
-				if (c->seq > top)
-					top = c->seq;
-			}
-		}
-		if (top > 0) {
-			for (int i = 0; i < r->ncontrols; i++) {
-				cob_rwctl *c = &r->controls[i];
-				if (c->seq < top && !c->changed) {
-					c->changed = 1;
-					ctl_store(r, i, c->save);
-					ctl_load(r, i, c->val);
-				}
-			}
-		}
-		for (int i = 0; i < r->ncontrols; i++)
-			if (r->controls[i].changed)
-				present_after(r, r->first, i);
-		for (int i = 0; i < r->ncontrols; i++) {
-			cob_rwctl *c = &r->controls[i];
-			if (!c->changed)
-				continue;
-			for (int k = 0; k < c->nrefs; k++) {
-				cob_rwline *rl = c->refs[k];
-				if (!(rl->flags & COB_RWF_CF))
-					continue;
-				use_for(r, rl);
-				if (!c->sup && !rl->sup)
-					print_group(r, rl, COB_RWF_CF);
-				c->sup = 0;
-				rl->sup = 0;
-				reset_counters(r, COB_RWF_CF, with_fields(rl));
-				each_line(r->first, reset_gi);
-				r->just_set = 0;
-				if (r->next_page) {
-					r->foot_np = 1;
-					r->next_page = 0;
-				}
-			}
-			ctl_load(r, i, c->save);          /* the new value back */
-		}
-		if (r->foot_np) {
-			r->next_page = 0;
-			r->foot_np = 0;
-			page_end(r);
-			page_start(r);
-		}
-		for (int i = 0; i < r->ncontrols; i++) {
-			cob_rwctl *c = &r->controls[i];
-			if (c->changed) {
-				for (int k = 0; k < c->nrefs; k++) {
-					cob_rwline *rl = c->refs[k];
-					if (!(rl->flags & COB_RWF_CH))
-						continue;
-					use_for(r, rl);
-					if (!rl->sup)
-						print_group(r, rl, COB_RWF_CH);
-					rl->sup = 0;
-				}
-				ctl_store(r, i, c->val);
-			}
-			c->changed = 0;
+	int n = r->ncontrols;
+	int changed = 0;                   /* control level that changed, for PRESENT AFTER */
+	if (!r->generated) {
+		r->generated = 1;
+		if (r->rh >= 0)
+			present(r, r->rh, 1);
+		if (r->ph >= 0)
+			present(r, r->ph, 0);
+		for (int lev = 0; lev <= n; lev++)
+			if (r->ch[lev] >= 0)
+				present(r, r->ch[lev], 1);
+		r->ctl(0);
+		/* the first detail of a report follows every control heading */
+		changed = n > 0 ? 1 : 0;
+	} else if (n > 0) {
+		int lev = r->ctl(1);
+		changed = lev;
+		if (lev > 0) {
+			r->ctl(2);             /* prior control values for the footings */
+			for (int l = n; l >= lev; l--)
+				footing(r, l, l == lev);
+			r->ctl(2);
+			for (int i = 0; i < r->ngroups; i++)
+				if (r->groups[i].type == COB_RW_DE)
+					r->gi[i] = 1;
+			for (int l = lev; l <= n; l++)
+				if (r->ch[l] >= 0)
+					present(r, r->ch[l], 1);
+			r->ctl(0);
 		}
 	}
-	generate_detail(r, l);
-	reset_counters(r, COB_RWF_DE, NULL);
-	each_line(r->first, reset_sup);
-	r->first_gen = 0;
-	r->just_set = 0;
-	r->cur--;
-	r->incr = 1;
-	show_counters(r);
+	r->sum(0, gi);                     /* subtotaling */
+	if (gi >= 0) {
+		cob_rw_ctl_change = changed;
+		present(r, gi, 1);
+		cob_rw_ctl_change = 0;
+	}
 }
 
 void cob_rw_terminate(cob_report *r, const char *loc)
 {
 	if (!r->initiated)
 		cob_fatal("%s: TERMINATE for report %s that is not initiated", loc, r->name);
-	r->terminating = 1;
-	r->moves(1);
-	if (r->first_gen) {
-		/* no GENERATE: nothing is printed, and the report stays initiated */
+	if (r->generated) {
+		r->terminating = 1;
+		if (r->ncontrols)
+			r->ctl(2);             /* values as of the last GENERATE */
+		for (int l = r->ncontrols; l >= 0; l--)
+			footing(r, l, 0);
+		if (r->ncontrols)
+			r->ctl(2);
+		r->final_page = 1;
+		r->pf_pos = 0;
+		if (r->pf >= 0)
+			present(r, r->pf, 0);
+		pad_page(r);
+		if (r->rf >= 0)
+			present(r, r->rf, 0);
+		r->final_page = 0;
+		finish_page(r);
 		r->terminating = 0;
-		return;
-	}
-	/* the footings see the CONTROL values of the last GENERATE, as the
-	 * standard requires (cobc 3.1.2 uses whatever the fields hold now, which
-	 * defeats the usual MOVE HIGH-VALUES at end of file) */
-	for (int i = 0; i < r->ncontrols; i++) {
-		ctl_store(r, i, r->controls[i].save);
-		ctl_load(r, i, r->controls[i].val);
-	}
-	for (int i = 0; i < r->ncontrols; i++) {
-		cob_rwctl *c = &r->controls[i];
-		for (int k = 0; k < c->nrefs; k++) {
-			cob_rwline *rl = c->refs[k];
-			if (!(rl->flags & COB_RWF_CF))
-				continue;
-			use_for(r, rl);
-			if (!c->sup)
-				print_group(r, rl, COB_RWF_CF);
-			c->sup = 0;
-			reset_counters(r, COB_RWF_CF, with_fields(rl));
-		}
-	}
-	cob_rwline *pl = find_kind(r->first, COB_RWF_CF_FINAL);
-	if (pl) {
-		if (pl->decl)
-			run_use(r, pl, pl->decl);
-		print_kind(r, r->first, COB_RWF_CF_FINAL);
-	}
-	reset_counters(r, COB_RWF_CF_FINAL, NULL);
-	page_end(r);
-	pl = find_kind(r->first, COB_RWF_RF);
-	if (pl) {
-		if (pl->decl)
-			run_use(r, pl, pl->decl);
-		r->in_rf = 1;
-		print_kind(r, r->first, COB_RWF_RF);
-		r->in_rf = 0;
-	}
-	for (int i = 0; i < r->ncontrols; i++) {
-		ctl_load(r, i, r->controls[i].save);  /* the program's own values back */
-		free(r->controls[i].val);
-		free(r->controls[i].save);
-		r->controls[i].val = r->controls[i].save = NULL;
 	}
 	r->initiated = 0;
-	r->terminating = 0;
+	r->generated = 0;
+}
+
+/* COLUMN LEFT / RIGHT / CENTER: the printable part of a report item (without
+   leading and trailing spaces) aligned within the item's columns, with
+   GnuCOBOL's rounding for CENTER. */
+void cob_rw_justify(unsigned char *p, int size, int mode)
+{
+    int b = 0, e = size;
+    while (b < e && p[b] == ' ')
+        b++;
+    while (e > b && (p[e - 1] == ' ' || p[e - 1] == 0))
+        e--;
+    int n = e - b, at = 0;
+    if (mode == 'R')
+        at = size - n;
+    else if (mode == 'C')
+        at = n < size ? (size - n - (1 - (n & 1))) / 2 : 0;
+    if (at < 0)
+        at = 0;
+    if (b == at && e == size)
+        return;
+    memmove(p + at, p + b, (size_t)n);
+    memset(p, ' ', (size_t)at);
+    memset(p + at + n, ' ', (size_t)(size - at - n));
 }

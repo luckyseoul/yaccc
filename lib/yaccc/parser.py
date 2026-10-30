@@ -940,10 +940,40 @@ class Parser:
         self.expect_period()
         self.in_report = True
         try:
-            rd.groups = self.parse_entries()
+            rd.groups = self._rw_split_groups(self.parse_entries())
         finally:
             self.in_report = False
         return rd
+
+    @staticmethod
+    def _rw_split_groups(groups):
+        """GnuCOBOL extension: an 01 entry without TYPE whose subordinate entries
+        have TYPE clauses describes several report groups. Consecutive entries
+        with the same TYPE (other than DETAIL) form one group of several lines."""
+        out = []
+        for g in groups:
+            if g.rw_type is not None or not g.children or any(c.rw_type is None for c in g.children):
+                out.append(g)
+                continue
+            runs = []
+            for c in g.children:
+                if runs and runs[-1][-1].rw_type == c.rw_type and c.rw_type[0] != 'DE':
+                    runs[-1].append(c)
+                else:
+                    runs.append([c])
+            for run in runs:
+                if len(run) == 1:
+                    grp = run[0]
+                    grp.level = 1
+                    grp.parent = None
+                else:
+                    grp = DataItem(1, None, run[0].loc)
+                    grp.rw_type = run[0].rw_type
+                    grp.children = run
+                    for c in run:
+                        c.parent = grp
+                out.append(grp)
+        return out
 
     def _rw_clause(self, item, w):
         """Report Writer clauses of a REPORT SECTION entry; returns False if w is not one."""

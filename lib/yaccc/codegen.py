@@ -1466,8 +1466,6 @@ class CodeGen(ReportWriterGen, DebugGen):
     def checks_on(self, loc):
         """Bounds checks at this source position: a >>TURN or $SET SSRANGE in
         the source overrides the compile-wide flag."""
-        if getattr(self, 'rw_unchecked', False):
-            return False            # a Report Writer snapshot (see rwgen.moves)
         d = getattr(self.opts, 'directives', None)
         if d is not None and loc is not None:
             state = d.check_at(getattr(loc, 'file', None), getattr(loc, 'line', 0))
@@ -2579,8 +2577,6 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.em.line_map(s.loc.file, s.loc.line)
         start = len(self.em.lines)
         ind = self.em.ind
-        if getattr(self.ctx, 'reports', None) and isinstance(s, (Move, Arith, Compute)):
-            self.rw_counter_refs(s)
         if self.dbg is not None and self.dbg_watching():
             saved = self.dbg_pending
             self.dbg_pending = self.dbg_plan(s)
