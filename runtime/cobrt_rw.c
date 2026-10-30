@@ -204,10 +204,12 @@ static void next_group(cob_report *r, const cob_rw_group *g)
 	}
 }
 
-/* start a new page without page footing / heading (report heading or footing alone) */
-static void bare_advance(cob_report *r)
+/* start a new page without page footing / heading (report heading or footing alone).
+ * `stride` overrides page_stride() when the page footing itself decides where
+ * the page ends; 0 means "use the measured rule". */
+static void bare_advance(cob_report *r, int stride)
 {
-	r->page_start += page_stride(r);
+	r->page_start += stride > 0 ? stride : page_stride(r);
 	cob_set_int(r->page_counter, cob_get_int(r->page_counter) + 1);
 	lc_set(r, 0);
 	r->body_on_page = 0;
@@ -216,9 +218,22 @@ static void bare_advance(cob_report *r)
 
 static void page_advance(cob_report *r)
 {
-	if (r->pf >= 0)
+	int stride = 0;
+	if (r->pf >= 0) {
 		present(r, r->pf, 0);
-	bare_advance(r);
+		/* A page that declares a page footing ends where the footing leaves it.
+		 * cobc's page-footing code writes the footing first, then pads to the last
+		 * line of the page only while there is one left to pad (`if (curr_line <
+		 * def_lines) write (def_lines - curr_line) lines`, which fills up to
+		 * def_lines - 1); a footing whose line has already reached the limit
+		 * ends the page at that line instead. Measured on 3.1.2: PAGE LIMIT 12
+		 * with a footing at 10 ends the page at 11, and PAGE LIMIT 25 with a
+		 * footing at 24 ends it at 24. */
+		int lc = lc_get(r);            /* the footing's own last line */
+		if (r->pl > 1 && lc > 0)
+			stride = (lc + 1 < r->pl) ? r->pl - 1 : lc;
+	}
+	bare_advance(r, stride);
 	for (int i = 0; i < r->ngroups; i++)
 		if (r->groups[i].type == COB_RW_DE)
 			r->gi[i] = 1;
@@ -322,7 +337,7 @@ static void present(cob_report *r, int gi, int apply_ng)
 		print_group(r, gi, first);
 		if (g->type == COB_RW_RH && apply_ng) {
 			if (g->ng_kind == COB_RW_NP && r->pl)
-				bare_advance(r);
+				bare_advance(r, 0);
 			else
 				next_group(r, g);
 		}
@@ -344,11 +359,11 @@ static void present(cob_report *r, int gi, int apply_ng)
 			return;
 		if (l0->kind == COB_RW_ABSNP || l0->kind == COB_RW_NP) {
 			if (r->pl)
-				bare_advance(r);
+				bare_advance(r, 0);
 			first = l0->kind == COB_RW_ABSNP ? l0->num : (r->pl ? r->h : lc + 1);
 		} else if (l0->kind == COB_RW_ABS) {
 			if (r->pl && lc >= l0->num)
-				bare_advance(r);
+				bare_advance(r, 0);
 			first = l0->num;
 		} else if (r->final_page && r->pl) {
 			/* the report footing follows the page footing, and the page
@@ -359,7 +374,7 @@ static void present(cob_report *r, int gi, int apply_ng)
 			int pos[COB_RW_MAX_LINES];
 			first = lc + l0->num;
 			if (r->pl && line_positions(g, first, pos) > r->pl) {
-				bare_advance(r);
+				bare_advance(r, 0);
 				first = r->h - 1 + l0->num;
 			}
 		}

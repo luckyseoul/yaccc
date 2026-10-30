@@ -752,6 +752,13 @@ The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
 
 - a page is `PAGE LIMIT` lines, or `PAGE LIMIT - 1` when the report declares a
   LAST DETAIL, a FOOTING or a page footing group (except when FIRST DETAIL is 1);
+- when the report declares a page footing *group*, the page instead ends where
+  `cobc`'s `do_page_footing()` leaves it: it pads to the last line of the page
+  only while there is one to pad (`if (curr_line < def_lines) write (def_lines
+  - curr_line) lines`, which fills up to `def_lines - 1`), so a footing whose
+  line has already reached the limit ends the page at that line. Measured:
+  `PAGE LIMIT 12` with a footing at 10 ends the page at 11, `PAGE LIMIT 25`
+  with a footing at 24 ends it at 24;
 - the last page, written by TERMINATE, is always `PAGE LIMIT` lines, its page
   footing goes one line below its declared line, and the report footing follows
   the page footing;
@@ -800,8 +807,10 @@ TERMINATE. Coming back to this means fixing those two first: the cursor itself
   its last page (3,919 bytes, ending at "COMPANY TOTALS ... 100%"). Neither is
   reproduced yet.
 - **`Sample Inventory Report`** — 74 lines from both compilers, differing in
-  17: from line 29 the detail rows sit one line lower in `cobc` and stay
-  offset. It has a PAGE FOOTING group at LINE 24 and `FOOTING 20` together.
+  6: the first page now ends where `cobc`'s does (see `do_page_footing` below),
+  but from page 2 on `cobc` ends each page one line later than page 1 in the
+  same report, so the page footing sits at 49 against 48. It has a PAGE
+  FOOTING group at LINE 24 and `FOOTING 20` together.
 - **`Next Group Next Page`** — 4021 lines against 3955, offset from line 14.
 
 The fix is not another rule. `reportio.c` is a cursor machine: `write_to_line()`
