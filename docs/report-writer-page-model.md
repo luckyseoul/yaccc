@@ -366,3 +366,34 @@ set -- report heading, page heading, control heading/footing, detail, page
 footing, report footing, plus `NEXT GROUP` in all three forms and `PRESENT WHEN`
 -- and score on both axes after each one, starting from the 85-shape engine
 rather than from the heuristic.
+
+### Step 2, second attempt: surgical swap of the geometry core
+
+Rather than rewriting the engine, the page-geometry core (`page_stride`,
+`bare_advance`, `pad_page`, `finish_page`) was replaced with the cursor model
+while keeping the existing group handling (`present`, `print_group`). Scored
+21 -> 3 -> 6 of 25 and reverted.
+
+What it pinned down, in the order the scores moved:
+
+- **`curr_line` is incremented at the start of a GENERATE and decremented at the
+  end** -- without the pair, `first_body_line` computes `lc + num - 1` from `lc`
+  pointing at the last line written instead of the next free one, every group
+  lands one line early, and `PAGE LIMIT REPORT` loses its trailing blank line.
+  Adding the pair moved 3 -> 6.
+- **The final page is padded while `curr_line < PAGE LIMIT`**, not `<=`: `<=`
+  adds one record too many at TERMINATE.
+- **`PAGE LIMIT REPORT` then matches cobc byte for byte** (`hello`, `goodbye`,
+  blank), and `Report Line Order` matches in length but not in content --
+  fifteen lines offset by one.
+
+The remaining gap is not geometry. `Sample Charge Report 3` writes 46 lines
+where cobc writes 67, and the offset in `Report Line Order` starts at the first
+detail line after a page heading. That points at `present()`'s per-group
+positioning still computing absolute page lines (`base = lc < h - 1 ? h - 1 :
+lc`) while `put_line` now works in cursor lines -- the two only agree while a
+page and its cursor are in step, which is exactly what is not true any more.
+
+So the next attempt must convert `present()` for all seven group types to the
+cursor model in the same change; swapping the writer alone leaves two
+coordinate systems in one file.
