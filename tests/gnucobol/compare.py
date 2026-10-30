@@ -72,6 +72,9 @@ def run(block, compiler, cobc):
         p = os.path.join(d, block['output'])
         if os.path.exists(p):
             text = open(p, encoding='latin-1').read()
+    else:
+        # a test that checks stdout itself (no DD_ output file)
+        text = r.stdout.decode('latin-1')
     shutil.rmtree(d, ignore_errors=True)
     note = None
     if r.returncode != block['status']:
@@ -94,6 +97,20 @@ def main():
     bad = 0
     for title in a.titles:
         block = parse_block(src, title)
+        if block is None:
+            # the title may be in another .at file (the default --file is only
+            # the Report Writer suite): search the rest of the suite
+            for name in sorted(os.listdir(a.suite)):
+                if not name.endswith('.at'):
+                    continue
+                try:
+                    other = open(os.path.join(a.suite, name), encoding='latin-1').read()
+                except OSError:
+                    continue
+                found = parse_block(other, title)
+                if found is not None:
+                    block, src = found, other
+                    break
         if block is None:
             print(f"{title}: not found in {a.file}")
             bad += 1

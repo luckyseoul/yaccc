@@ -17,6 +17,9 @@ T_NUM_EDITED = 11
 T_INDEX = 12
 T_ALL = 13
 T_POINTER = 14
+# appended after the original codes so their values (and the generated C that
+# uses them) do not change
+T_NUM_DEC_FLOAT = 15
 
 TYPE_NAMES = {
     T_GROUP: 'COB_GROUP', T_ALNUM: 'COB_ALNUM', T_ALPHA: 'COB_ALPHA',
@@ -25,10 +28,11 @@ TYPE_NAMES = {
     T_NUM_COMP5: 'COB_NUM_COMP5', T_NUM_FLOAT: 'COB_NUM_FLOAT',
     T_NUM_DOUBLE: 'COB_NUM_DOUBLE', T_NUM_EDITED: 'COB_NUM_EDITED',
     T_INDEX: 'COB_INDEX', T_ALL: 'COB_ALL', T_POINTER: 'COB_POINTER',
+    T_NUM_DEC_FLOAT: 'COB_NUM_DEC_FLOAT',
 }
 
 NUMERIC_TYPES = {T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5,
-                 T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX}
+                 T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX, T_NUM_DEC_FLOAT}
 
 # attribute flags (must match cobrt.h)
 F_SIGNED = 0x01
@@ -390,15 +394,21 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.scale = 0
         item.flags = F_SIGNED | F_BINARY_TRUNC
         return
-    if usage in ('FLOAT', 'DOUBLE', 'FLOAT-DECIMAL-16', 'FLOAT-DECIMAL-34'):
-        # FLOAT-DECIMAL-16/34 are IEEE 754 decimal floating point. yaccc has no
-        # decimal-float type; the values the testsuite uses are small exact
-        # integers, which a double holds exactly, so it stands in. Sizes are
-        # the standard's: 8 bytes for -16, 16 for -34.
-        big = usage in ('DOUBLE', 'FLOAT-DECIMAL-34')
+    if usage in ('FLOAT-DECIMAL-16', 'FLOAT-DECIMAL-34'):
+        # IEEE 754-2008 decimal floating point: decimal64 holds 16 significant
+        # digits in 8 bytes, decimal128 holds 34 in 16. The runtime stores the
+        # standard's BID-like encoding (GnuCOBOL's layout) and does arithmetic
+        # through the scaled-decimal path at the item's own exponent range.
+        item.type = T_NUM_DEC_FLOAT
+        item.size = 8 if usage == 'FLOAT-DECIMAL-16' else 16
+        item.digits = 16 if usage == 'FLOAT-DECIMAL-16' else 34
+        item.scale = 0
+        item.flags = F_SIGNED
+        return
+    if usage in ('FLOAT', 'DOUBLE'):
+        big = usage == 'DOUBLE'
         item.type = T_NUM_DOUBLE if big else T_NUM_FLOAT
-        item.size = {'DOUBLE': 8, 'FLOAT': 4,
-                     'FLOAT-DECIMAL-16': 8, 'FLOAT-DECIMAL-34': 16}[usage]
+        item.size = 8 if big else 4
         item.digits = 17 if big else 9
         item.scale = 0
         item.flags = F_SIGNED
@@ -582,6 +592,9 @@ def align_of(it):
         return 4
     if t == T_NUM_DOUBLE:
         return 8
+    if t == T_NUM_DEC_FLOAT:
+        # GnuCOBOL aligns decimal64 to 8 and decimal128 to 16
+        return 16 if it.size == 16 else 8
     return 1
 
 

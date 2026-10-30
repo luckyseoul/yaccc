@@ -153,6 +153,13 @@ void cob_json_str(jsonw *w, cob_field *f, int justified)
  * scale decides how many digits follow the point */
 void cob_json_num(jsonw *w, cob_field *f, int dpc)
 {
+	if (f->attr->type == COB_NUM_DEC_FLOAT) {
+		char t[160];
+		int n = cob_dec_float_str(f, t, sizeof t);
+		for (int i = 0; i < n; i++)
+			jput(w, t[i]);
+		return;
+	}
 	cob_dec d = cob_d_get(f);
 	const cob_attr *a = f->attr;
 	int scale = a->scale;

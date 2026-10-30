@@ -5,7 +5,7 @@ import datetime
 from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve_types,
                    T_GROUP, T_ALNUM, T_ALPHA, T_ALNUM_EDITED, T_NUM_DISPLAY, T_NUM_PACKED,
                    T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_NUM_EDITED,
-                   T_INDEX, T_ALL, T_POINTER, TYPE_NAMES, NUMERIC_TYPES,
+                   T_INDEX, T_ALL, T_POINTER, T_NUM_DEC_FLOAT, TYPE_NAMES, NUMERIC_TYPES,
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
                    F_BINARY_TRUNC, F_UNSIGNED_PACKED, F_NO_SCALE)
 from .errors import CompileError, DIAG
@@ -1874,10 +1874,16 @@ class CodeGen(ReportWriterGen, DebugGen):
             return self.size_expr(it)
         return f"({self.field(r)})->size"
 
-    def dec(self, e):
+    def dec(self, e, wide=False):
+        """A C cob_dec expression. `wide` keeps the decimal-float exponent
+        range in / and *: a FLOAT-DECIMAL item can carry a value far below
+        1e-38, which the ordinary 38-digit path would truncate to zero."""
         if isinstance(e, PosOf):
             e.check()
         if isinstance(e, NumLit) and getattr(e, 'float_text', None):
+            if wide:
+                sign = '-' if e.neg else ''
+                return f"cob_d_exp_str({c_string(sign + e.float_text)})"
             return f"cob_d_from_double({self.float_lit(e)})"
         if isinstance(e, FuncCall) and e.name in self.udf_names:
             return f"cob_d_get({self.udf_field(e)})"
@@ -1902,9 +1908,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             return f"cob_d_get({self.field(e)})"
         if isinstance(e, BinOp):
             fn = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '**': 'pow'}[e.op]
-            return f"cob_d_{fn}({self.dec(e.left)}, {self.dec(e.right)})"
+            if wide and e.op in ('*', '/'):
+                fn += '_wide'
+            return f"cob_d_{fn}({self.dec(e.left, wide)}, {self.dec(e.right, wide)})"
         if isinstance(e, Neg):
-            return f"cob_d_neg({self.dec(e.e)})"
+            return f"cob_d_neg({self.dec(e.e, wide)})"
         if isinstance(e, LengthOf):
             return f"cob_d_int((cob_s64)({self.length_of(e)}))"
         if isinstance(e, FuncCall):
@@ -1915,6 +1923,26 @@ class CodeGen(ReportWriterGen, DebugGen):
         if isinstance(e, CField):
             return f"cob_d_get({e.text})"
         return f"cob_d_get({self.field(e)})"
+
+    def is_dec_float_ref(self, ref):
+        """True when a reference names a FLOAT-DECIMAL-16/34 data item."""
+        try:
+            it = self.resolve(ref)
+        except Exception:
+            return False
+        return isinstance(it, DataItem) and it.type == T_NUM_DEC_FLOAT
+
+    def uses_dec_float(self, e):
+        """True when an expression reads a FLOAT-DECIMAL item (anywhere)."""
+        if isinstance(e, DataRef):
+            return self.is_dec_float_ref(e)
+        if isinstance(e, BinOp):
+            return self.uses_dec_float(e.left) or self.uses_dec_float(e.right)
+        if isinstance(e, Neg):
+            return self.uses_dec_float(e.e)
+        if isinstance(e, FuncCall):
+            return any(self.uses_dec_float(a) for a in e.args)
+        return False
 
     # ================================================================ intrinsic functions
     def has_all_sub(self, e):
@@ -2326,7 +2354,8 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def rel(self, l, op, r):
         cop = CMP_OP[op]
-        if self.float_item(l) is not None or self.float_item(r) is not None:
+        dec_float = self.uses_dec_float(l) or self.uses_dec_float(r)
+        if not dec_float and (self.float_item(l) is not None or self.float_item(r) is not None):
             # a floating-point item compares with a relative tolerance, which
             # is why a COMP-1 and the literal it came from are equal
             dl = self.dbl(l)
@@ -2334,7 +2363,7 @@ class CodeGen(ReportWriterGen, DebugGen):
             if dl is not None and dr is not None:
                 return f"(cob_cmp_dbl({dl}, {dr}) {cop} 0)"
             return f"(cob_cmp_float({self.field(l)}, {self.field(r)}) {cop} 0)"
-        if self.is_float_operand(l) or self.is_float_operand(r):
+        if not dec_float and (self.is_float_operand(l) or self.is_float_operand(r)):
             return f"(cob_operand_double({self.field(l)}) {cop} cob_operand_double({self.field(r)}))"
 
         if isinstance(l, AddressOf) or isinstance(r, AddressOf) or \
@@ -2364,8 +2393,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return f"(memcmp({al[0]}, {ar[0]}, {al[1]}) {cop} 0)"
         if self.is_numeric(l) and self.is_numeric(r):
             if isinstance(r, Figurative) and r.kind == 'ZERO':
-                return f"(cob_d_sign({self.dec(l)}) {cop} 0)"
-            return f"(cob_d_cmp({self.dec(l)}, {self.dec(r)}) {cop} 0)"
+                return f"(cob_d_sign({self.dec(l, dec_float)}) {cop} 0)"
+            return f"(cob_d_cmp({self.dec(l, dec_float)}, {self.dec(r, dec_float)}) {cop} 0)"
         return f"(cob_cmp({self.field(l)}, {self.field(r)}) {cop} 0)"
 
     def _is_pointer(self, e):
@@ -2561,10 +2590,30 @@ class CodeGen(ReportWriterGen, DebugGen):
             it = self.resolve(dst)
         except Exception:
             return None
+        if isinstance(it, DataItem) and it.type == T_NUM_DEC_FLOAT:
+            sign = '-' if src.neg else ''
+            return (f"cob_d_set({self.ref_field(dst, True)}, "
+                    f"cob_d_exp_str({c_string(sign + src.float_text)}), 0);")
         if not isinstance(it, DataItem) or it.type not in (T_NUM_FLOAT, T_NUM_DOUBLE):
             return None
         return (f"cob_put_float({self.ref_field(dst, True)}, "
                 f"{self.float_lit(src)});")
+
+    def big_num_move(self, src, dst):
+        """MOVE of a numeric literal whose fixed spelling does not fit the
+        8-bit fields of a cob_attr (a scale past 127, as in 1.0E-398): go
+        straight through the decimal, where it is a coefficient and a scale."""
+        if not isinstance(src, NumLit):
+            return None
+        if len(src.digits) <= 255 and -128 <= src.scale <= 127:
+            return None
+        try:
+            it = self.resolve(dst)
+        except Exception:
+            return None
+        if not isinstance(it, DataItem) or it.type not in NUMERIC_TYPES:
+            return None
+        return f"cob_d_set({self.ref_field(dst, True)}, {self.dec(src)}, 0);"
 
     def g_Move(self, s):
         em = self.em
@@ -2579,7 +2628,7 @@ class CodeGen(ReportWriterGen, DebugGen):
             if isinstance(it, IndexName):
                 raise CompileError(f"index '{d.name}' cannot be a MOVE target; use SET", d.loc)
         if len(s.dsts) == 1:
-            big = self.big_float_move(s.src, s.dsts[0])
+            big = self.big_num_move(s.src, s.dsts[0]) or self.big_float_move(s.src, s.dsts[0])
             if big is not None:
                 em(big)
                 return
@@ -2588,9 +2637,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             return
         em("{")
         em.ind += 1
-        em(f"const cob_field *cob_s = {self.field(s.src)};")
-        for d in s.dsts:
-            em(f"cob_move(cob_s, {self.ref_field(d, True)});")
+        special = [self.big_num_move(s.src, d) or self.big_float_move(s.src, d) for d in s.dsts]
+        if not all(special):
+            em(f"const cob_field *cob_s = {self.field(s.src)};")
+        for d, line in zip(s.dsts, special):
+            em(line if line is not None else f"cob_move(cob_s, {self.ref_field(d, True)});")
         em.ind -= 1
         em("}")
 
@@ -2832,6 +2883,12 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.check_numeric_operand(s.by_or_into)
         for t in ([] if s.corr else s.to + s.giving):
             self.check_numeric_target(t.ref)
+        # FLOAT-DECIMAL operands carry exponents far outside the ordinary
+        # 38-digit range, so their * and / must keep the wider scale
+        wide = any(self.uses_dec_float(o) for o in ([] if s.corr else s.operands))
+        if s.by_or_into is not None:
+            wide = wide or self.uses_dec_float(s.by_or_into)
+        wide = wide or any(self.is_dec_float_ref(t.ref) for t in s.to + s.giving)
         em("{")
         em.ind += 1
         em("int cob_err = 0;")
@@ -2843,9 +2900,9 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.gen_corr(s.operands[0], s.to[0].ref, s.verb, self.target_opt(s.to[0], chk), 'cob_err')
         elif s.verb in ('ADD', 'SUBTRACT'):
             ops = s.operands
-            acc = self.dec(ops[0])
+            acc = self.dec(ops[0], wide)
             for o in ops[1:]:
-                acc = f"cob_d_add({acc}, {self.dec(o)})"
+                acc = f"cob_d_add({acc}, {self.dec(o, wide)})"
             em(f"cob_dec cob_t = {acc};")
             if s.verb == 'ADD':
                 for t in s.to:
@@ -2858,37 +2915,40 @@ class CodeGen(ReportWriterGen, DebugGen):
                     f = self.field(t.ref)
                     em(f"cob_err |= cob_d_set({f}, cob_d_sub(cob_d_get({f}), cob_t), {self.target_opt(t, chk)});")
                 if s.giving:
-                    em(f"cob_dec cob_r = cob_d_sub({self.dec(s.by_or_into)}, cob_t);")
+                    em(f"cob_dec cob_r = cob_d_sub({self.dec(s.by_or_into, wide)}, cob_t);")
                     for t in s.giving:
                         em(f"cob_err |= cob_d_set({self.field(t.ref)}, cob_r, {self.target_opt(t, chk)});")
         elif s.verb == 'MULTIPLY':
-            em(f"cob_dec cob_t = {self.dec(s.operands[0])};")
+            mul = 'cob_d_mul_wide' if wide else 'cob_d_mul'
+            em(f"cob_dec cob_t = {self.dec(s.operands[0], wide)};")
             for t in s.to:
                 f = self.field(t.ref)
-                em(f"cob_err |= cob_d_set({f}, cob_d_mul(cob_t, cob_d_get({f})), {self.target_opt(t, chk)});")
+                em(f"cob_err |= cob_d_set({f}, {mul}(cob_t, cob_d_get({f})), {self.target_opt(t, chk)});")
             if s.giving:
-                em(f"cob_dec cob_r = cob_d_mul(cob_t, {self.dec(s.by_or_into)});")
+                em(f"cob_dec cob_r = {mul}(cob_t, {self.dec(s.by_or_into, wide)});")
                 for t in s.giving:
                     em(f"cob_err |= cob_d_set({self.field(t.ref)}, cob_r, {self.target_opt(t, chk)});")
         elif s.verb == 'DIVIDE':
-            em(f"cob_dec cob_t = {self.dec(s.operands[0])};")
+            div = 'cob_d_div_wide' if wide else 'cob_d_div'
+            em(f"cob_dec cob_t = {self.dec(s.operands[0], wide)};")
             for t in s.to:
                 f = self.field(t.ref)
-                em(f"cob_err |= cob_d_set({f}, cob_d_div(cob_d_get({f}), cob_t), {self.target_opt(t, chk)});")
+                em(f"cob_err |= cob_d_set({f}, {div}(cob_d_get({f}), cob_t), {self.target_opt(t, chk)});")
             if s.giving:
                 if s.form == 'INTO':
-                    em(f"cob_dec cob_dd = {self.dec(s.by_or_into)}, cob_dv = cob_t;")
+                    em(f"cob_dec cob_dd = {self.dec(s.by_or_into, wide)}, cob_dv = cob_t;")
                 else:
-                    em(f"cob_dec cob_dd = cob_t, cob_dv = {self.dec(s.by_or_into)};")
-                em("cob_dec cob_q = cob_d_div(cob_dd, cob_dv);")
+                    em(f"cob_dec cob_dd = cob_t, cob_dv = {self.dec(s.by_or_into, wide)};")
+                em(f"cob_dec cob_q = {div}(cob_dd, cob_dv);")
                 for t in s.giving:
                     em(f"cob_err |= cob_d_set({self.field(t.ref)}, cob_q, {self.target_opt(t, chk)});")
                 if s.remainder is not None:
                     self.check_numeric_target(s.remainder)
                     g = self.resolve(s.giving[0].ref)
                     sc = g.scale if isinstance(g, DataItem) else 0
+                    mul = 'cob_d_mul_wide' if wide else 'cob_d_mul'
                     em(f"cob_dec cob_qt = cob_d_trunc(cob_q, {sc});")
-                    em(f"cob_err |= cob_d_set({self.field(s.remainder)}, cob_d_sub(cob_dd, cob_d_mul(cob_qt, cob_dv)), {'COB_SIZE_CHECK' if chk else '0'});")
+                    em(f"cob_err |= cob_d_set({self.field(s.remainder)}, cob_d_sub(cob_dd, {mul}(cob_qt, cob_dv)), {'COB_SIZE_CHECK' if chk else '0'});")
         self.handlers('cob_err', s.on_error, s.not_on_error)
         self.raise_size_exceptions('cob_err', s.on_error, s.not_on_error)
         em("(void)cob_err;")
@@ -2978,7 +3038,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("{")
         em.ind += 1
         em("int cob_err = 0;")
-        em(f"cob_dec cob_t = {self.dec(s.expr)};")
+        wide = self.uses_dec_float(s.expr) or any(self.is_dec_float_ref(t.ref) for t in s.targets)
+        em(f"cob_dec cob_t = {self.dec(s.expr, wide)};")
         for t in s.targets:
             em(f"cob_err |= cob_d_set({self.field(t.ref)}, cob_t, {self.target_opt(t, chk)});")
         self.handlers('cob_err', s.on_error, s.not_on_error)
@@ -3246,7 +3307,7 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     # ---------------------------------------------------------------- JSON
     JSON_NUMERIC = (T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5,
-                    T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX)
+                    T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX, T_NUM_DEC_FLOAT)
 
     def g_JsonGenerate(self, s):
         em = self.em
@@ -4008,12 +4069,16 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def value_move(self, v, f, it):
         """VALUE clause: literals are placed without editing/justification."""
+        if isinstance(v, NumLit) and (len(v.digits) > 255 or not -128 <= v.scale <= 127):
+            # the fixed spelling does not fit a cob_attr; use the decimal value
+            return f"cob_d_set({f}, {self.dec(v)}, 0);"
         if isinstance(v, NumLit) or (isinstance(v, Figurative) and v.kind == 'ZERO' and
                                      (it.type in NUMERIC_TYPES or it.type == T_NUM_EDITED)):
             return f"cob_move({self.field(v)}, {f});"
         if isinstance(v, AllLit) and v.is_zero and (it.type in NUMERIC_TYPES or it.type == T_NUM_EDITED):
             return f"cob_move({self.field(v)}, {f});"
-        if it.type in (T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX):
+        if it.type in (T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE,
+                       T_INDEX, T_NUM_DEC_FLOAT):
             return f"cob_move({self.field(v)}, {f});"
         return f"cob_move_raw({self.field(v)}, {f});"
 

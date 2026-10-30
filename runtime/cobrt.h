@@ -17,7 +17,7 @@ typedef unsigned long long cob_u64;
 enum cob_type {
 	COB_GROUP = 1, COB_ALNUM, COB_ALPHA, COB_ALNUM_EDITED, COB_NUM_DISPLAY,
 	COB_NUM_PACKED, COB_NUM_BINARY, COB_NUM_COMP5, COB_NUM_FLOAT, COB_NUM_DOUBLE,
-	COB_NUM_EDITED, COB_INDEX, COB_ALL, COB_POINTER
+	COB_NUM_EDITED, COB_INDEX, COB_ALL, COB_POINTER, COB_NUM_DEC_FLOAT
 };
 
 #define COB_F_SIGNED       0x01
@@ -58,7 +58,8 @@ typedef struct {
 
 static inline int cob_is_num_type(int t)
 {
-	return (t >= COB_NUM_DISPLAY && t <= COB_NUM_DOUBLE) || t == COB_INDEX;
+	return (t >= COB_NUM_DISPLAY && t <= COB_NUM_DOUBLE) || t == COB_INDEX
+		|| t == COB_NUM_DEC_FLOAT;
 }
 
 /* PERFORM stack */
@@ -302,6 +303,9 @@ static inline cob_dec cob_d_lit(cob_s64 v, int scale) { cob_dec d; d.v = v; d.sc
 static inline cob_dec cob_d_int(cob_s64 v) { cob_dec d; d.v = v; d.scale = 0; return d; }
 static inline cob_dec cob_d_err(void) { cob_dec d; d.v = 0; d.scale = COB_DEC_ERR; return d; }
 cob_dec cob_d_str(const char *s);
+/* a literal in exponent form ("1.0E+369"): kept as coefficient and scale,
+ * never expanded, so its digits and exponent range survive */
+cob_dec cob_d_exp_str(const char *s);
 cob_dec cob_d_get(const cob_field *f);
 cob_dec cob_d_add_slow(cob_dec a, cob_dec b);
 static inline cob_dec cob_d_add(cob_dec a, cob_dec b)
@@ -331,6 +335,10 @@ static inline cob_dec cob_d_sub(cob_dec a, cob_dec b)
 }
 cob_dec cob_d_mul(cob_dec a, cob_dec b);
 cob_dec cob_d_div(cob_dec a, cob_dec b);
+/* the same at the decimal-float exponent range (scale well past 38): used by
+ * expressions whose operands or receiver are FLOAT-DECIMAL-16/34 */
+cob_dec cob_d_mul_wide(cob_dec a, cob_dec b);
+cob_dec cob_d_div_wide(cob_dec a, cob_dec b);
 cob_dec cob_d_pow(cob_dec a, cob_dec b);
 cob_dec cob_d_neg(cob_dec a);
 cob_dec cob_d_trunc(cob_dec a, int scale);
@@ -450,6 +458,9 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz);
 void cob_display(int dev, const cob_field *f);
 void cob_display_lit(int dev, const char *s, size_t n);
 void cob_display_dec(int dev, cob_dec d);
+/* DISPLAY's text for a FLOAT-DECIMAL-16/34 item (GnuCOBOL's decimal format:
+ * all significant digits, or a mantissa and E exponent) */
+int cob_dec_float_str(const cob_field *f, char *buf, size_t bufsz);
 void cob_display_signed(int dev, cob_s64 v, int digits);
 void cob_display_end(int dev, int newline);
 int cob_accept(cob_field *f);

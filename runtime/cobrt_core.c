@@ -287,14 +287,21 @@ static void dnorm(cob_dec *d)
 	}
 }
 
-/* limit scale to 38 */
+/* limit the fractional scale of a decimal; ordinary COBOL decimals keep 38
+ * digits, decimal floating point needs its whole exponent range */
+#define COB_DEC_WIDE_SCALE 6200
+static void dclamp_lim(cob_dec *d, int lim)
+{
+	if (d->scale > lim) {
+		int k = d->scale - lim;
+		d->v = k > 38 ? 0 : d->v / P10[k];
+		d->scale = lim;
+	}
+}
+
 static void dclamp(cob_dec *d)
 {
-	if (d->scale > 38) {
-		int k = d->scale - 38;
-		d->v = k > 38 ? 0 : d->v / P10[k];
-		d->scale = 38;
-	}
+	dclamp_lim(d, 38);
 }
 
 /* bring a and b to the same scale, losing low-order digits if needed */
@@ -356,7 +363,7 @@ cob_dec cob_d_neg(cob_dec a)
 	return a;
 }
 
-cob_dec cob_d_mul(cob_dec a, cob_dec b)
+static cob_dec d_mul(cob_dec a, cob_dec b, int lim)
 {
 	cob_dec r;
 	if (a.scale == COB_DEC_ERR || b.scale == COB_DEC_ERR)
@@ -377,13 +384,23 @@ cob_dec cob_d_mul(cob_dec a, cob_dec b)
 			return cob_d_int(0);
 	}
 	r.scale = a.scale + b.scale;
-	dclamp(&r);
+	dclamp_lim(&r, lim);
 	return r;
+}
+
+cob_dec cob_d_mul(cob_dec a, cob_dec b)
+{
+	return d_mul(a, b, 38);
+}
+
+cob_dec cob_d_mul_wide(cob_dec a, cob_dec b)
+{
+	return d_mul(a, b, COB_DEC_WIDE_SCALE);
 }
 
 int cob_zero_div_seen;        /* set by cob_d_div, cleared per statement */
 
-cob_dec cob_d_div(cob_dec a, cob_dec b)
+static cob_dec d_div(cob_dec a, cob_dec b, int lim)
 {
 	cob_dec r;
 	if (a.scale != COB_DEC_ERR && b.scale != COB_DEC_ERR && b.v == 0)
@@ -407,9 +424,19 @@ cob_dec cob_d_div(cob_dec a, cob_dec b)
 		r.v *= P10[k];
 		r.scale = 0;
 	}
-	dclamp(&r);
+	dclamp_lim(&r, lim);
 	dnorm(&r);
 	return r;
+}
+
+cob_dec cob_d_div(cob_dec a, cob_dec b)
+{
+	return d_div(a, b, 38);
+}
+
+cob_dec cob_d_div_wide(cob_dec a, cob_dec b)
+{
+	return d_div(a, b, COB_DEC_WIDE_SCALE);
 }
 
 cob_dec cob_d_trunc(cob_dec a, int scale)
@@ -573,6 +600,46 @@ cob_dec cob_d_str(const char *s)
 	}
 	if (neg)
 		r.v = -r.v;
+	return r;
+}
+
+/* A numeric literal written with an exponent. Its value is
+ * coefficient * 10^(exponent - fractional digits); nothing is expanded, so a
+ * literal like 1.0E-6176 stays a small coefficient with a large scale. */
+cob_dec cob_d_exp_str(const char *s)
+{
+	int neg = 0, after = 0, frac = 0, expo = 0, eneg = 0;
+	cob_s128 v = 0;
+	int nd = 0;
+	const char *p = s;
+	if (*p == '-' || *p == '+') {
+		neg = *p == '-';
+		p++;
+	}
+	for (; *p && *p != 'E' && *p != 'e'; p++) {
+		if (*p == '.') {
+			after = 1;
+		} else if (isdigit((unsigned char)*p)) {
+			if (nd < 38) {
+				v = v * 10 + (*p - '0');
+				nd++;
+			}
+			if (after)
+				frac++;
+		}
+	}
+	if (*p) {
+		p++;
+		if (*p == '-' || *p == '+') {
+			eneg = *p == '-';
+			p++;
+		}
+		while (isdigit((unsigned char)*p))
+			expo = expo * 10 + (*p++ - '0');
+	}
+	cob_dec r;
+	r.v = neg ? -v : v;
+	r.scale = frac - (eneg ? -expo : expo);
 	return r;
 }
 
@@ -755,6 +822,182 @@ static void put_binary_raw(cob_field *f, cob_s128 v, int bigendian)
 	}
 }
 
+/* ============================================ IEEE 754 decimal floating point */
+/* decimal64 (FLOAT-DECIMAL-16) and decimal128 (FLOAT-DECIMAL-34) use the
+ * binary-integer-decimal interchange encoding: a sign bit, a biased quantum
+ * exponent and a binary coefficient. The layout is GnuCOBOL 3.1.2's, so the
+ * bytes a program redefines or writes out are the ones cobc produces:
+ *   decimal64  : 1 sign, 10 exponent bits, 53 coefficient bits (51 plus an
+ *                implicit 2^53 when the coefficient needs 54 bits)
+ *   decimal128 : 1 sign, 14 exponent bits, 113 coefficient bits
+ * The quantum exponent of decimal64 ranges from -398 to 369, of decimal128
+ * from -6176 to 6111; the coefficient has at most 16 (34) digits. */
+
+static int dec_float_decode(const cob_field *f, int *neg, cob_u128 *coef, int *exp)
+{
+	if (f->size == 8) {
+		uint64_t data;
+		memcpy(&data, f->data, 8);
+		if ((data & 0x7800000000000000ULL) == 0x7800000000000000ULL)
+			return 0;               /* infinity or NaN */
+		*neg = (int)(data >> 63);
+		if ((data & 0x6000000000000000ULL) == 0x6000000000000000ULL) {
+			*exp = (int)((data & 0x1FF8000000000000ULL) >> 51);
+			*coef = (cob_u128)(data & 0x0007FFFFFFFFFFFFULL)
+				| ((cob_u128)1 << 53);
+		} else {
+			*exp = (int)((data & 0x7FE0000000000000ULL) >> 53);
+			*coef = (cob_u128)(data & 0x001FFFFFFFFFFFFFULL);
+		}
+		*exp -= 398;
+		return 1;
+	}
+	{
+		uint64_t lo, hi;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		memcpy(&hi, f->data, 8);
+		memcpy(&lo, f->data + 8, 8);
+#else
+		memcpy(&lo, f->data, 8);
+		memcpy(&hi, f->data + 8, 8);
+#endif
+		if ((hi & 0x7800000000000000ULL) == 0x7800000000000000ULL)
+			return 0;
+		*neg = (int)(hi >> 63);
+		if ((hi & 0x6000000000000000ULL) == 0x6000000000000000ULL) {
+			*exp = (int)((hi & 0x1FFF800000000000ULL) >> 47);
+			*coef = ((cob_u128)((hi & 0x00007FFFFFFFFFFFULL)
+				| 0x0002000000000000ULL) << 64) | lo;
+		} else {
+			*exp = (int)((hi & 0x7FFE000000000000ULL) >> 49);
+			*coef = ((cob_u128)(hi & 0x0001FFFFFFFFFFFFULL) << 64) | lo;
+		}
+		*exp -= 6176;
+		return 1;
+	}
+}
+
+/* Bring a scaled decimal to the item's precision and exponent range the way
+ * GnuCOBOL's cob_decimal_adjust does: remove trailing zeros, cut the
+ * coefficient down to 16/34 digits (truncating), then check the range. */
+static int dec_float_set(cob_field *f, cob_dec d)
+{
+	int is64 = f->size == 8;
+	int min_scale = is64 ? -369 : -6111;
+	int max_scale = is64 ? 398 : 6176;
+	cob_s128 maxv = is64 ? P10[16] - 1 : P10[34] - 1;
+	if (d.scale == COB_DEC_ERR)
+		return 1;
+	int neg = d.v < 0;
+	cob_u128 u = cob_uabs(d.v);
+	int scale = d.scale;
+	if (u == 0) {
+		memset(f->data, 0, f->size);
+		return 0;
+	}
+	if (u > (cob_u128)maxv) {
+		while (u > (cob_u128)maxv && u % 100000000 == 0) {
+			if (scale - 8 < min_scale)
+				break;
+			u /= 100000000;
+			scale -= 8;
+		}
+		while (u > (cob_u128)maxv && u % 1000 == 0) {
+			if (scale - 3 < min_scale)
+				break;
+			u /= 1000;
+			scale -= 3;
+		}
+	}
+	while ((u % 10 == 0) || u > (cob_u128)maxv) {
+		if (scale < min_scale)
+			break;
+		u /= 10;
+		scale--;
+	}
+	if (u > (cob_u128)maxv || scale < min_scale || scale > max_scale)
+		return 1;
+	int expo = (is64 ? 398 : 6176) - scale;
+	if (is64) {
+		uint64_t data;
+		if (u < ((cob_u128)1 << 53))
+			data = (uint64_t)u | ((uint64_t)expo << 53);
+		else
+			data = ((uint64_t)u & 0x0007FFFFFFFFFFFFULL)
+				| 0x6000000000000000ULL | ((uint64_t)expo << 51);
+		if (neg)
+			data |= 0x8000000000000000ULL;
+		memcpy(f->data, &data, 8);
+	} else {
+		uint64_t lo = (uint64_t)u;
+		uint64_t hi = ((uint64_t)(u >> 64) & 0x0001FFFFFFFFFFFFULL)
+			| ((uint64_t)expo << 49);
+		if (neg)
+			hi |= 0x8000000000000000ULL;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		memcpy(f->data, &hi, 8);
+		memcpy(f->data + 8, &lo, 8);
+#else
+		memcpy(f->data, &lo, 8);
+		memcpy(f->data + 8, &hi, 8);
+#endif
+	}
+	return 0;
+}
+
+/* GnuCOBOL's DISPLAY text for a decimal float: all the digits the value has,
+ * with no exponent when it can be written as a fixed number, otherwise the
+ * coefficient and the exponent of the last digit ("99E369", "1E-398"). */
+int cob_dec_float_str(const cob_field *f, char *buf, size_t bufsz)
+{
+	int neg;
+	cob_u128 u;
+	int e;
+	if (!dec_float_decode(f, &neg, &u, &e)) {
+		snprintf(buf, bufsz, "(Nan)");
+		return (int)strlen(buf);
+	}
+	if (u == 0) {
+		snprintf(buf, bufsz, "0E0");
+		return (int)strlen(buf);
+	}
+	while (u % 10 == 0) {
+		u /= 10;
+		e++;
+	}
+	char digits[40];
+	int n = 0;
+	while (u) {
+		digits[n++] = (char)('0' + (int)(u % 10));
+		u /= 10;
+	}
+	char tmp[160];
+	int o = 0;
+	if (neg)
+		tmp[o++] = '-';
+	if (e == 0) {
+		for (int i = n - 1; i >= 0; i--)
+			tmp[o++] = digits[i];
+	} else if (e > 0 || -e >= n) {
+		for (int i = n - 1; i >= 0; i--)
+			tmp[o++] = digits[i];
+		tmp[o++] = 'E';
+		o += snprintf(tmp + o, sizeof tmp - (size_t)o, "%d", e);
+	} else {
+		int ip = n + e;          /* digits before the decimal point */
+		for (int i = 0; i < ip; i++)
+			tmp[o++] = digits[n - 1 - i];
+		tmp[o++] = '.';
+		for (int i = ip; i < n; i++)
+			tmp[o++] = digits[n - 1 - i];
+	}
+	if (o >= (int)bufsz)
+		o = (int)bufsz - 1;
+	memcpy(buf, tmp, (size_t)o);
+	buf[o] = 0;
+	return o;
+}
+
 static cob_dec deedit(const cob_field *f);
 static cob_dec parse_alnum(const unsigned char *s, size_t n, int dec_comma);
 
@@ -802,6 +1045,18 @@ cob_dec cob_d_get(const cob_field *f)
 		memcpy(&x, f->data, 8);
 		return d_from_ld(x, 15);
 	}
+	case COB_NUM_DEC_FLOAT: {
+		int neg;
+		cob_u128 u;
+		int e;
+		if (!dec_float_decode(f, &neg, &u, &e))
+			return cob_d_err();
+		r.v = (cob_s128)u;
+		if (neg)
+			r.v = -r.v;
+		r.scale = -e;            /* value = coefficient * 10^-scale */
+		return r;
+	}
 	case COB_NUM_EDITED:
 		return deedit(f);
 	case COB_ALL:
@@ -848,8 +1103,11 @@ cob_s64 cob_d_to_int(cob_dec d)
 		return 0;
 	if (d.scale > 0)
 		d.v = d.scale > 38 ? 0 : d.v / P10[d.scale];
-	else if (d.scale < 0)
+	else if (d.scale < 0) {
+		if (d.scale < -38)
+			return 0;           /* too large for a 64-bit integer */
 		d.v *= P10[-d.scale];
+	}
 	return (cob_s64)d.v;
 }
 
@@ -1017,6 +1275,8 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		memcpy(f->data, &x, 8);
 		return 0;
 	}
+	case COB_NUM_DEC_FLOAT:
+		return dec_float_set(f, d);
 	case COB_NUM_EDITED: {
 		if (opt & (COB_ROUNDED | COB_SIZE_CHECK)) {
 			/* rounding / size check against the edited digits */
@@ -1066,8 +1326,12 @@ cob_field *cob_dec_field(cob_dec d)
 	if (d.scale == COB_DEC_ERR)
 		d = cob_d_int(0);
 	if (d.scale < 0) {
-		d.v *= P10[-d.scale];
-		d.scale = 0;
+		if (d.scale < -38)
+			d = cob_d_int(0);   /* beyond 38 digits: not representable here */
+		else {
+			d.v *= P10[-d.scale];
+			d.scale = 0;
+		}
 	}
 	int nd = ndigits(d.v);
 	if (nd < d.scale + 1)
@@ -1092,8 +1356,12 @@ static cob_field *fn_field(cob_dec d, int flags, int digits, int force_sign)
 	if (d.scale == COB_DEC_ERR)
 		d = cob_d_int(0);
 	if (d.scale < 0) {
-		d.v *= P10[-d.scale];
-		d.scale = 0;
+		if (d.scale < -38)
+			d = cob_d_int(0);   /* beyond 38 digits: not representable here */
+		else {
+			d.v *= P10[-d.scale];
+			d.scale = 0;
+		}
 	}
 	dnorm(&d);
 	int neg = d.v < 0;
@@ -1203,6 +1471,10 @@ int cob_d_to_str(cob_dec d, char *buf, size_t bufsz)
 		return 1;
 	}
 	if (d.scale < 0) {
+		if (d.scale < -38) {
+			snprintf(buf, bufsz, "0");
+			return 1;
+		}
 		d.v *= P10[-d.scale];
 		d.scale = 0;
 	}
@@ -1564,6 +1836,8 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz)
 		}
 		return n;
 	}
+	case COB_NUM_DEC_FLOAT:
+		return (size_t)cob_dec_float_str(f, (char *)buf, bufsz);
 	case COB_NUM_PACKED:
 	case COB_NUM_BINARY:
 	case COB_NUM_COMP5:
@@ -1942,6 +2216,7 @@ int cob_is_numeric(const cob_field *f)
 	case COB_NUM_COMP5:
 	case COB_NUM_FLOAT:
 	case COB_NUM_DOUBLE:
+	case COB_NUM_DEC_FLOAT:
 	case COB_INDEX:
 		return 1;
 	case COB_NUM_PACKED: {
@@ -2116,6 +2391,12 @@ void cob_display(int dev, const cob_field *f)
 		double x;
 		memcpy(&x, f->data, 8);
 		fprintf(fp, "%.16G", x);
+		return;
+	}
+	case COB_NUM_DEC_FLOAT: {
+		char t[160];
+		int n = cob_dec_float_str(f, t, sizeof t);
+		fwrite(t, 1, (size_t)n, fp);
 		return;
 	}
 	case COB_POINTER: {
