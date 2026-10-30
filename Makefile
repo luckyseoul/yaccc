@@ -55,7 +55,7 @@ nist-all: runtime $(SUITE)
 $(GCSUITE):
 	git clone --depth 1 --filter=blob:none --sparse --branch $(GCTAG) \
 	    https://github.com/OCamlPro/gnucobol.git third_party/gnucobol
-	git -C third_party/gnucobol sparse-checkout set tests/testsuite.src libcob
+	git -C third_party/gnucobol sparse-checkout set tests/testsuite.src libcob cobc
 
 # GnuCOBOL's own runtime tests; fails if a test recorded as passing no longer passes
 gctest: runtime $(GCSUITE)

@@ -723,16 +723,20 @@ stated plainly rather than implied.
 - **That claim is checked, not asserted.** `make provenance` fails the build on
   a vendored file, a GPL notice, a missing SPDX tag, or a distinctive GnuCOBOL
   function name. A grep cannot see a translation that renamed everything, so
-  `make provenance-deep` measures the code itself: for every file under
-  `runtime/`, the fraction of its 12-token runs that also occur anywhere in
-  GnuCOBOL's `libcob`, failing above 1.5%. Idiom — a linked-list walk, two
-  adjacent setters — stays under 1%. The Report Writer was once a renamed port
-  of GnuCOBOL's `reportio.c` at 2.06% and is now 0.00%, rebuilt from its own
-  measurements; see *Open conformance work* item 1. It reads `third_party/gnucobol`
-  (fetched by `make gctest`) or whatever `GNUSRC` names, and skips when
-  neither is present.
+  `make provenance-deep` measures the code itself: for every tracked source
+  file, the fraction of its 12-token runs that also occur anywhere in
+  GnuCOBOL's `libcob` and `cobc`, failing above 1.5%. Idiom — a linked-list
+  walk, two adjacent setters — stays under 1%. The Report Writer was once a
+  renamed port of GnuCOBOL's `reportio.c` at 2.48% and is now 0.00%, rebuilt
+  from its own measurements; see *Open conformance work* item 1. It reads
+  `third_party/gnucobol` (fetched by `make gctest`) or whatever `GNUSRC`
+  names, and fails rather than skipping when the sources are not there.
 
-![Token overlap of each runtime file with GnuCOBOL: all files under 0.8%, the gate at 1.5%, and the Report Writer's former 2.06% shown as a whisker](docs/img/provenance.svg)
+  The measure is a regression net, not a proof: it catches a file translated
+  whole, and a careful paraphrase can stay under it. What it does guarantee is
+  that nobody can land another wholesale port the way the last one landed.
+
+![Token overlap of each runtime file with GnuCOBOL's libcob and cobc: all files under 0.9%, the gate at 1.5%, and the Report Writer's former 2.48% shown as a whisker](docs/img/provenance.svg)
 - **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
   the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
   zero tracked files (checked: `git ls-files third_party` is empty). That suite

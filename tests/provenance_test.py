@@ -82,11 +82,13 @@ def shingles(tokens, n):
 
 
 def check_overlap(src):
-    """No runtime file may be a renamed copy of a GnuCOBOL C file.
+    """No tracked source file may be a renamed copy of a GnuCOBOL C file.
 
     The marker grep above only catches kept names. This measures the code
     itself: the fraction of a file's 12-token runs that also occur anywhere in
-    libcob. Renaming identifiers does not move it; restructuring does.
+    GnuCOBOL's libcob and cobc. Renaming identifiers does not move it;
+    restructuring does. The corpus covers cobc as well as libcob, since a
+    front-end translation is no more acceptable than a runtime one.
     """
     lib = os.path.join(src, 'libcob')
     # not a skip: --gnucobol was asked for, and a gate that cannot run must not
@@ -96,24 +98,28 @@ def check_overlap(src):
               'no such directory; run make gctest or set GNUSRC')
         return
     corpus = set()
-    for f in sorted(os.listdir(lib)):
-        if f.endswith(('.c', '.h')):
-            try:
-                corpus |= shingles(c_tokens(
-                    open(os.path.join(lib, f), encoding='latin-1').read()),
-                    OVERLAP_RUN)
-            except OSError:
-                continue
+    dirs = [lib] + [os.path.join(src, d) for d in ('cobc',)]
+    for d in dirs:
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            if f.endswith(('.c', '.h')):
+                try:
+                    corpus |= shingles(c_tokens(
+                        open(os.path.join(d, f), encoding='latin-1').read()),
+                        OVERLAP_RUN)
+                except OSError:
+                    continue
     if verbose:
-        print(f"       corpus: {len(corpus)} runs from {lib}")
+        print(f"       corpus: {len(corpus)} runs from {' and '.join(dirs)}")
     if len(corpus) < OVERLAP_MIN_CORPUS:
         check(f'GnuCOBOL corpus is large enough to measure against '
               f'({OVERLAP_MIN_CORPUS} runs)', False,
               f"only {len(corpus)} runs in {lib}")
         return
     rows = []
-    for f in git('ls-files', 'runtime').stdout.split():
-        if not f.endswith(('.c', '.h')):
+    for f in git('ls-files').stdout.split():
+        if not f.endswith(('.c', '.h', '.py')):
             continue
         try:
             text = open(os.path.join(ROOT, f), encoding='latin-1').read()
@@ -124,12 +130,12 @@ def check_overlap(src):
             rows.append((100.0 * len(runs & corpus) / len(runs), f))
     rows.sort(reverse=True)
     if not rows:
-        check('runtime/ has files to measure', False, 'no tracked runtime C file')
+        check('the tree has source files to measure', False, 'none tracked')
         return
     over = [f"{f} {p:.2f}%" for p, f in rows if p > OVERLAP_LIMIT]
-    check(f'no runtime file is a renamed GnuCOBOL C file (> {OVERLAP_LIMIT}% '
+    check(f'no source file is a renamed GnuCOBOL C file (> {OVERLAP_LIMIT}% '
           f'shared {OVERLAP_RUN}-token runs)', not over, '; '.join(over))
-    for p, f in rows if verbose else ():
+    for p, f in rows[:12] if verbose else ():
         print(f"       {p:5.2f}%  {f}")
 
 
