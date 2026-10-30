@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   489     5              0      199
+  693   490     4              0      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,7 +127,7 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 5 failures** are:
+- **The 4 failures** are:
   - 4 Report Writer tests whose output differs in where a page break lands.
     `cobc` reaches a page break through several branches of `reportio.c` and
     does not place it consistently: measuring a dozen PAGE clause shapes
@@ -142,9 +142,6 @@ longer passes. `make gctest-update` records a new baseline.
     output difference: its first step expects `cobc` to reject the program in
     its default dialect, and YACCC compiles it, as GnuCOBOL itself does with
     `-std=mf`.
-  - `FLOAT-DECIMAL` (decimal64/decimal128, 16 and 34 digits): YACCC maps
-    FLOAT-DECIMAL to a double, so it prints double precision where GnuCOBOL
-    prints the decimal's.
   - `CALL BY VALUE ... WITH SIZE` (GnuCOBOL's own documentation calls its
     parameter passing there unfinished), and `CBL_GC_GETOPT` and
     `CBL_ERROR_PROC (1)`, library routines YACCC does not provide (the second
