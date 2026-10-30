@@ -708,8 +708,25 @@ The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
   the page footing;
 - every other group keeps its declared line on every page.
 
-That fits 14 of the 19 runnable Report Writer tests. The four that fail show the
-rule is not enough:
+That fits 14 of the 19 runnable Report Writer tests. **It is known to be the
+wrong shape of answer**, and this is the decisive measurement: two reports with
+the same PAGE clause shape need *different* strides.
+
+- `Sample Customer Report` (`PAGE LIMIT 66`, `HEADING 1`, `FIRST DETAIL 5`,
+  `LAST DETAIL 58`, no page footing, no `FOOTING`) — `cobc` puts the page 2
+  heading on output line 66, so a page is **65** lines: `PAGE LIMIT - 1`.
+- A synthetic report of the same shape (`PAGE LIMIT 20`, `HEADING 1`,
+  `FIRST DETAIL 3`, `LAST DETAIL 14`, control footings, no page footing) —
+  `cobc` puts the page 2 heading on output line 21, so a page is **20** lines:
+  `PAGE LIMIT`.
+
+Same declared geometry, different stride, because the stride falls out of where
+the cursor happens to be when the break is taken. Switching `page_stride()` to
+the page-footing-only rule fixes the synthetic case and drops the testsuite from
+14 passing to 10, which is the same fact from the other side. That is why the
+next attempt has to be the cursor port below and not another rule.
+
+The four failures:
 
 - **`Sample Payroll Report`** — 96 input records; `cobc` writes 88 lines with
   17 employee rows, YACCC 133 lines with 23. Two things are going on, and the
