@@ -708,9 +708,10 @@ The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
   the page footing;
 - every other group keeps its declared line on every page.
 
-That fits 14 of the 19 runnable Report Writer tests. **It is known to be the
-wrong shape of answer**, and this is the decisive measurement: two reports with
-the same PAGE clause shape need *different* strides.
+That fits 18 of the 25 Report Writer tests in the file (2 are skipped, 5 fail).
+**It is known to be the wrong shape of answer**, and these are the decisive
+measurements: two reports with the same PAGE clause shape need *different*
+strides, and one report needs two different strides on its own two pages.
 
 - `Sample Customer Report` (`PAGE LIMIT 66`, `HEADING 1`, `FIRST DETAIL 5`,
   `LAST DETAIL 58`, no page footing, no `FOOTING`) — `cobc` puts the page 2
@@ -720,11 +721,27 @@ the same PAGE clause shape need *different* strides.
   `cobc` puts the page 2 heading on output line 21, so a page is **20** lines:
   `PAGE LIMIT`.
 
-Same declared geometry, different stride, because the stride falls out of where
-the cursor happens to be when the break is taken. Switching `page_stride()` to
-the page-footing-only rule fixes the synthetic case and drops the testsuite from
-14 passing to 10, which is the same fact from the other side. That is why the
-next attempt has to be the cursor port below and not another rule.
+- `Sample Control Break` (`PAGE LIMIT 25`, `HEADING 1`, `FIRST DETAIL 5`,
+  `FOOTING 23`) — one report, **two different strides**: its page-2 heading is
+  at output line 26 and its page-3 heading at line 50, so page 1 is 25 lines
+  and page 2 is 24.
+
+Same declared geometry, different stride; same report, different stride. The
+stride falls out of where the cursor happens to be when the break is taken, so
+no predicate on the RD can produce it. Switching `page_stride()` to the
+page-footing-only rule fixes the synthetic case and drops the 17 tests whose
+titles contain "report" from 14 passing to 10 -- the same fact from the other
+side. (Measuring that subset is how the wrong "14 of 19" figure in earlier
+versions of this note arose: the filter silently omits `Sample Control Break`,
+`Duplicate Detail Line` and `STUDENT REPORT`.)
+
+A page-cursor port exists on the branch `rw-cursor-port` (commit at the head of
+that branch): `curr_line`/`curr_page` advance on every write, `write_at()`
+drops lines the cursor has passed, and the break path follows
+`do_page_footing`/`do_page_heading`. It is **not** an improvement yet — 7 of 17
+pass against 14 for the heuristic on the same filter — so it is parked rather
+than merged. The pieces it still gets wrong are the pad endpoints inside
+`do_page_footing` and the report-footing placement at TERMINATE.
 
 The four failures:
 
