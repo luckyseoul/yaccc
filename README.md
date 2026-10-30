@@ -817,11 +817,31 @@ cursor:
   break still applies its own `NEXT GROUP` when that is a relative advance,
   except during `TERMINATE`; and a page ended by `NEXT GROUP NEXT PAGE` runs its
   full length instead of stopping a line short.
-- *Sample Payroll Report* and *Sample Inventory Report* still fail. Payroll
-  emits its control-break footings and headings in a different order from
-  `cobc`; Inventory places a page footing one line high on pages after the
-  first. Neither is a one-line rule, and the 391 of 527 oracle shapes that
-  still differ are the same two problems in other geometries.
+- *Sample Payroll Report* and *Sample Inventory Report* still fail. Neither is
+  a one-line rule, and the 391 of 527 oracle shapes that still differ are the
+  same two problems in other geometries. What was measured on 3.1.2 rather
+  than guessed, so a further attempt starts from facts:
+
+  *Inventory*, `PAGE LIMIT 25, HEADING 2, FIRST DETAIL 5, LAST DETAIL 18,
+  FOOTING 20`, page footing at `LINE 24`. `cobc` runs pages of 24, 25, 24
+  lines; YACCC runs 24, 24, 25 — the middle and last pages are the wrong way
+  round. Two separate causes: on page 2 YACCC's first detail lands one line
+  lower than `cobc`'s (relative 6 against 5), and YACCC pins the page footing
+  to its declared `LINE 24` while `cobc` lets it fall below the cursor when
+  the page's own footings have already carried the cursor past that line.
+
+  A geometry harness that rewrites every generated report so each printed
+  line carries `PAGE-COUNTER` and `LINE-COUNTER` in fixed columns shows that
+  **521 of the 527 oracle shapes have identical page geometry** to `cobc`.
+  The 391 that differ in output are therefore content and ordering, not page
+  breaks — control-break footing and heading order within a page, which is
+  also what *Sample Payroll Report* shows. That is worth knowing before
+  touching `page_stride()`: fitting that function cannot move most of them.
+
+  Two rules that look like fixes and are not, both measured and reverted:
+  making a page-footing report fill its pages scores 391 -> 411 worse on the
+  oracle, and treating a full first page as the rule for any report with
+  control breaks scores 391 -> 392 and drops the testsuite to 500.
 
 `docs/report-writer-page-model.md` describes the model in full.
 
