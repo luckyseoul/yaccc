@@ -18,3 +18,7 @@ __pycache__/
 /*.idx
 /*.dat
 /*.txt
+
+# generated C from "yaccc -C" in the repo root (never source)
+/*.c
+!/runtime/*.c

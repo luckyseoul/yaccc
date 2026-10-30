@@ -664,8 +664,51 @@ tests/difftest.py    differential test runner
 tests/nist/          NIST CCVS85 runner and the result logs of the runs above
 tests/gnucobol/      GnuCOBOL testsuite runner, comparison tool and recorded results
 tests/cli_test.py    compiler command-line tests
-Makefile             make test | cli-test | test-ref | nist | nist-all | gctest | examples | clean
+tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
+                     file carries SPDX, README credits GnuCOBOL (make provenance)
+Makefile             make test | cli-test | provenance | test-ref | nist | nist-all | gctest | examples | clean
 ```
+
+## Acknowledgements
+
+YACCC's compatibility target is **GnuCOBOL**, and that debt deserves to be
+stated plainly rather than implied.
+
+- **No GnuCOBOL code is in this repository.** The compiler, the C runtime and
+  every test program here were written for YACCC. GnuCOBOL is GPL-3.0 and
+  YACCC is MIT; the two never mix in one tree, and that is deliberate.
+- **Behaviour was learned by measuring GnuCOBOL, and in one place by reading
+  it.** Most of the compatibility work here was empirical: build GnuCOBOL 3.1.2
+  from source, run the same program through `cobc` and through YACCC, and diff
+  the results (that is what `tests/gnucobol/compare.py` does). For the Report
+  Writer's page geometry, `reportio.c` -- specifically `write_to_line`,
+  `do_page_footing` and `do_page_heading` -- was also read, because cobc's
+  output alone did not explain *why* a page break lands where it does.
+  Reading a program to understand its behaviour, then writing your own
+  implementation of that behaviour, is how every compatible reimplementation is
+  built. Understanding is not copying: no GnuCOBOL source text, function body
+  or comment was translated into this tree, and the one attempt at a close port
+  of that page cursor was discarded rather than shipped (see "Open conformance
+  work").
+- **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
+  the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
+  zero tracked files (checked: `git ls-files third_party` is empty). That suite
+  is GnuCOBOL's copyrighted work under GPL-3.0; if you run it, GPL-3.0 code
+  lands on your disk and GnuCOBOL's licence governs it, not this one. The
+  recorded results in `tests/gnucobol/results.txt` are YACCC's own run log,
+  keyed by that suite's test titles.
+- **The oracle.** `docs/gnucobol-oracle.md` explains how to build GnuCOBOL
+  locally so `make test-ref` and `tests/gnucobol/compare.py` can diff YACCC
+  against the real thing. GnuCOBOL's authors built the reference against which
+  every claim in this README was measured.
+- **NIST CCVS85** likewise supplies the conformance suite under
+  `third_party/opensourcecobol4j`; it is fetched for the same reason, with the
+  same distinction between running it and distributing it.
+
+If you redistribute a build of YACCC, nothing here obliges you to credit
+GnuCOBOL -- it is not a derivative work of GnuCOBOL and its licence does not
+reach this code. Crediting it is still the honest thing to do, because without
+GnuCOBOL there would have been nothing to be compatible *with*.
 
 ## License
 
