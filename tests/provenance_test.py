@@ -9,9 +9,15 @@ for CI", a header pasted from a reference implementation. These checks fail the
 build if that happens, so the acknowledgement in README.md is backed by
 something that runs rather than by good intentions.
 
-usage: provenance_test.py [-v]
+usage: provenance_test.py [-v] [--gnucobol PATH]
+
+The default checks catch kept names, vendored files and licence text. They
+cannot catch a translation that renamed everything, so `--gnucobol` adds the
+measurement that can: token overlap against a GnuCOBOL source checkout. The
+Make target `provenance-deep` runs it against `third_party/gnucobol`.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -19,6 +25,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 # this file necessarily contains the marker strings it looks for
 SELF = 'tests/provenance_test.py'
+
+# --gnucobol PATH: measure token overlap against a real GnuCOBOL source tree.
+# A reimplementation necessarily reuses idioms -- a linked-list walk, a clamp,
+# two adjacent setters -- so the ceiling sits above the idiom floor this tree
+# already shows elsewhere (0.8%) and well below what a port of a file scores
+# (the 2026-10-30 Report Writer port scored 2.1%).
+OVERLAP_LIMIT = 1.5     # per cent of a file's 12-token runs
+OVERLAP_RUN = 12
 
 passed = failed = 0
 verbose = '-v' in sys.argv
@@ -38,6 +52,68 @@ def check(name, ok, detail=''):
 def git(*args):
     return subprocess.run(['git'] + list(args), cwd=ROOT,
                           capture_output=True, text=True)
+
+
+def gnucobol_path():
+    for i, a in enumerate(sys.argv):
+        if a == '--gnucobol' and i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        if a.startswith('--gnucobol='):
+            return a.split('=', 1)[1]
+    return None
+
+
+def c_tokens(text):
+    """C tokens with comments and literals blanked, so only code is compared."""
+    text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
+    text = re.sub(r'//[^\n]*', ' ', text)
+    text = re.sub(r'"(?:\\.|[^"\\])*"', ' STR ', text)
+    text = re.sub(r"'(?:\\.|[^'\\])*'", ' CHR ', text)
+    return re.findall(r'[A-Za-z_]\w*|\d+(?:\.\d+)?|>>=|<<=|->|\+\+|--|&&|\|\||[^\sA-Za-z0-9_]',
+                      text)
+
+
+def shingles(tokens, n):
+    return {tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)}
+
+
+def check_overlap(src):
+    """No runtime file may be a renamed copy of a GnuCOBOL C file.
+
+    The marker grep above only catches kept names. This measures the code
+    itself: the fraction of a file's 12-token runs that also occur anywhere in
+    libcob. Renaming identifiers does not move it; restructuring does.
+    """
+    lib = os.path.join(src, 'libcob')
+    if not os.path.isdir(lib):
+        print(f"  skip no GnuCOBOL source tree at {lib} (--gnucobol PATH)")
+        return
+    corpus = set()
+    for f in sorted(os.listdir(lib)):
+        if f.endswith(('.c', '.h')):
+            try:
+                corpus |= shingles(c_tokens(
+                    open(os.path.join(lib, f), encoding='latin-1').read()),
+                    OVERLAP_RUN)
+            except OSError:
+                continue
+    rows = []
+    for f in git('ls-files', 'runtime').stdout.split():
+        if not f.endswith(('.c', '.h')):
+            continue
+        try:
+            text = open(os.path.join(ROOT, f), encoding='latin-1').read()
+        except OSError:
+            continue
+        runs = shingles(c_tokens(text), OVERLAP_RUN)
+        if runs:
+            rows.append((100.0 * len(runs & corpus) / len(runs), f))
+    rows.sort(reverse=True)
+    over = [f"{f} {p:.2f}%" for p, f in rows if p > OVERLAP_LIMIT]
+    check(f'no runtime file is a renamed GnuCOBOL C file (> {OVERLAP_LIMIT}% '
+          f'shared {OVERLAP_RUN}-token runs)', not over, '; '.join(over))
+    for p, f in rows if verbose else ():
+        print(f"       {p:5.2f}%  {f}")
 
 
 def main():
@@ -115,6 +191,12 @@ def main():
         readme = ''
     check('README has an Acknowledgements section naming GnuCOBOL',
           '## Acknowledgements' in readme and 'GnuCOBOL' in readme)
+
+    # 7. optional and much stronger: with a GnuCOBOL source tree to compare
+    #    against, measure how much of each runtime file reappears in libcob
+    gnu = gnucobol_path()
+    if gnu:
+        check_overlap(gnu)
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0

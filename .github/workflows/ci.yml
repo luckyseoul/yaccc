@@ -54,3 +54,5 @@ jobs:
           python-version: '3.12'
       - name: Run the runtime tests (fails if a test recorded as passing no longer passes)
         run: make gctest
+      - name: Token overlap against the GnuCOBOL sources (no transliterated code)
+        run: make provenance-deep

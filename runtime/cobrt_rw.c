@@ -77,19 +77,21 @@ static void show_counters(cob_report *r)
 
 /* ---------------------------------------------------------------- tables */
 
+/* the line whose item list actually prints: a group line that has none of
+ * its own leaves them on the line below it */
 static cob_rwline *with_fields(cob_rwline *l)
 {
-	while (l && l->fields == NULL && l->child != NULL)
-		l = l->child;
-	return l;
+	if (l == NULL || l->fields != NULL || l->first_line == NULL)
+		return l;
+	return with_fields(l->first_line);
 }
 
 static void each_line(cob_rwline *l, void (*fn)(cob_rwline *))
 {
-	for (; l; l = l->sister) {
+	for (; l; l = l->next_line) {
 		fn(l);
-		if (l->child)
-			each_line(l->child, fn);
+		if (l->first_line)
+			each_line(l->first_line, fn);
 	}
 }
 
@@ -109,11 +111,11 @@ static void reset_sup(cob_rwline *l)
 
 static cob_rwline *find_kind(cob_rwline *l, unsigned kind)
 {
-	for (; l; l = l->sister) {
+	for (; l; l = l->next_line) {
 		if (l->flags & kind)
 			return l;
-		if (l->child) {
-			cob_rwline *t = find_kind(l->child, kind);
+		if (l->first_line) {
+			cob_rwline *t = find_kind(l->first_line, kind);
 			if (t)
 				return t;
 		}
@@ -159,7 +161,7 @@ static void note_next_group(cob_report *r, cob_rwline *l)
 /* PRESENT / ABSENT AFTER: a new page (ctl < 0) or a control break */
 static void present_after(cob_report *r, cob_rwline *l, int ctl)
 {
-	for (; l; l = l->sister) {
+	for (; l; l = l->next_line) {
 		for (cob_rwfld *f = l->fields; f; f = f->next) {
 			if (!(f->flags & COB_RWF_PRESENT))
 				continue;
@@ -171,8 +173,8 @@ static void present_after(cob_report *r, cob_rwline *l, int ctl)
 				f->now = 0;
 			}
 		}
-		if (l->child)
-			present_after(r, l->child, ctl);
+		if (l->first_line)
+			present_after(r, l->first_line, ctl);
 	}
 	(void)r;
 }
@@ -337,6 +339,16 @@ static void place_field(cob_report *r, cob_rwfld *rf)
 	memcpy(r->rec + dest, t, n);
 }
 
+/* the last item that belongs to the group starting at g */
+static cob_rwfld *last_of_group(cob_rwfld *g)
+{
+	cob_rwfld *it = g;
+
+	while (it->next != NULL && it->next->level > g->level)
+		it = it->next;
+	return it;
+}
+
 static void print_line(cob_report *r, cob_rwline *l)
 {
 	int plus_ok = 0;
@@ -403,10 +415,7 @@ static void print_line(cob_report *r, cob_rwline *l)
 			if (rf->sup) {
 				/* a suppressed group: none of its items print */
 				rf->sup = 0;
-				cob_rwfld *last = rf;
-				for (cob_rwfld *n = rf->next; n && n->level > rf->level; n = n->next)
-					last = n;
-				rf = last;
+				rf = last_of_group(rf);
 			}
 			continue;
 		}
@@ -439,33 +448,34 @@ static void print_line(cob_report *r, cob_rwline *l)
 	note_next_group(r, l);
 }
 
-/* a group line and the lines under it */
-static void print_with_lines(cob_report *r, cob_rwline *l, unsigned kind)
+/* a control heading or footing group: its own line first when the group's
+ * items hang below it, then the ordinary line walk */
+static void print_group(cob_report *r, cob_rwline *l, unsigned kind)
 {
 	if (l == NULL)
 		return;
-	if (l->fields == NULL && l->child != NULL) {
-		if (l->flags & kind) {
-			print_line(r, l);
-			if (l->child)
-				print_kind(r, l->child, COB_RWF_LINE);
-			return;
-		}
-		l = l->child;
+	if (l->fields != NULL || l->first_line == NULL) {
+		print_kind(r, l, kind);
+		return;
 	}
-	print_kind(r, l, kind);
+	if (!(l->flags & kind)) {
+		print_kind(r, l->first_line, kind);
+		return;
+	}
+	print_line(r, l);
+	print_kind(r, l->first_line, COB_RWF_LINE);
 }
 
 /* the first line of `kind` in the chain from l, with its own lines and the
  * lines of that kind that follow it */
 static int print_kind(cob_report *r, cob_rwline *l, unsigned kind)
 {
-	for (; l; l = l->sister) {
+	for (; l; l = l->next_line) {
 		if (l->flags & kind) {
 			print_line(r, l);
-			if (l->child)
-				print_kind(r, l->child, COB_RWF_LINE);
-			for (cob_rwline *s = l->sister; s; s = s->sister) {
+			if (l->first_line)
+				print_kind(r, l->first_line, COB_RWF_LINE);
+			for (cob_rwline *s = l->next_line; s; s = s->next_line) {
 				/* a control footing chain stops at a more major control */
 				if (kind == COB_RWF_CF && (s->flags & COB_RWF_CF)) {
 					int a = control_order(r, l), b = control_order(r, s);
@@ -477,7 +487,7 @@ static int print_kind(cob_report *r, cob_rwline *l, unsigned kind)
 			}
 			return 1;
 		}
-		if (l->child && print_kind(r, l->child, kind))
+		if (l->first_line && print_kind(r, l->first_line, kind))
 			return 1;
 	}
 	return 0;
@@ -556,7 +566,7 @@ static void ctl_load(cob_report *r, int i, const unsigned char *buf)
 
 static int limits_ok(cob_report *r, cob_rwline *l)
 {
-	for (; l; l = l->sister) {
+	for (; l; l = l->next_line) {
 		if (l->line > 0 && r->lines > 0 && l->line > r->lines)
 			return 0;
 		if (l->ngl > 0 && r->lines > 0 && l->ngl > r->lines)
@@ -567,7 +577,7 @@ static int limits_ok(cob_report *r, cob_rwline *l)
 			if (f->ngl && f->ngl > r->lines)
 				return 0;
 		}
-		if (l->child && !limits_ok(r, l->child))
+		if (l->first_line && !limits_ok(r, l->first_line))
 			return 0;
 	}
 	return 1;
@@ -627,6 +637,86 @@ void cob_rw_initiate(cob_report *r, const char *loc)
 		zero_counter(&r->sums[k]);
 }
 
+/* A detail group that starts on its 01 line and continues on LINE entries
+ * below it arrives at GENERATE pointing at the 01, whose item list is empty.
+ * The run then starts at that first LINE entry and covers its whole chain. */
+static cob_rwline *detail_run_start(cob_rwline *l, int *chained)
+{
+	cob_rwline *below = l->first_line;
+
+	*chained = l->fields == NULL && below != NULL && below->next_line != NULL;
+	return *chained ? below : l;
+}
+
+/* How many print lines one GENERATE of a detail group emits, and the extra
+ * line steps its LINE PLUS clauses add. A group that is not chained is a
+ * single line and takes no steps. */
+static int detail_run_size(cob_rwline *run, int chained, int *steps)
+{
+	int lines;
+
+	*steps = 0;
+	if (!chained)
+		return 1;
+	lines = 0;
+	for (cob_rwline *pl = run; pl != NULL; pl = pl->next_line) {
+		if (pl->flags & NOT_DETAIL)
+			break;
+		lines++;
+		if ((pl->flags & COB_RWF_LINE_PLUS) && pl->line > 1)
+			*steps += pl->line;
+	}
+	return lines;
+}
+
+static void print_detail_run(cob_report *r, cob_rwline *run, int lines)
+{
+	cob_rwline *pl = run;
+
+	while (lines-- > 0) {
+		cob_rwline *body;
+
+		if (pl == NULL || (pl->flags & NOT_DETAIL))
+			break;
+		body = with_fields(pl);
+		if (!body->sup) {
+			r->just_set = 0;
+			print_line(r, body);
+		}
+		body->sup = 0;
+		pl = pl->next_line;
+	}
+}
+
+/* GENERATE of a detail group: sum it, then print it. A group whose print was
+ * SUPPRESSed consumes that and prints nothing; a GENERATE that names only the
+ * report (l == NULL) just sums. A chained group takes a fresh page first when
+ * its run would not fit above LAST DETAIL. */
+static void generate_detail(cob_report *r, cob_rwline *l)
+{
+	int chained = 0;
+	int steps = 0;
+	int lines;
+
+	add_detail_sums(r, l);
+	if (l == NULL)
+		return;
+	if (l->sup) {
+		l->sup = 0;
+		return;
+	}
+	l = detail_run_start(l, &chained);
+	lines = detail_run_size(l, chained, &steps);
+	if (lines > 1 && r->cur + steps > r->last_detail) {
+		page_end(r);
+		r->cur = 1;
+		page_start(r);
+		r->fdflag = 0;
+		show_counters(r);
+	}
+	print_detail_run(r, l, lines);
+}
+
 void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc)
 {
 	if (!r->initiated)
@@ -658,7 +748,7 @@ void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc)
 				cob_rwline *rl = c->refs[k];
 				if (rl->flags & COB_RWF_CH) {
 					use_for(r, rl);
-					print_with_lines(r, rl, COB_RWF_CH);
+					print_group(r, rl, COB_RWF_CH);
 				}
 			}
 			ctl_store(r, i, c->val);
@@ -712,7 +802,7 @@ void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc)
 					continue;
 				use_for(r, rl);
 				if (!c->sup && !rl->sup)
-					print_with_lines(r, rl, COB_RWF_CF);
+					print_group(r, rl, COB_RWF_CF);
 				c->sup = 0;
 				rl->sup = 0;
 				reset_counters(r, COB_RWF_CF, with_fields(rl));
@@ -740,7 +830,7 @@ void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc)
 						continue;
 					use_for(r, rl);
 					if (!rl->sup)
-						print_with_lines(r, rl, COB_RWF_CH);
+						print_group(r, rl, COB_RWF_CH);
 					rl->sup = 0;
 				}
 				ctl_store(r, i, c->val);
@@ -748,47 +838,7 @@ void cob_rw_generate(cob_report *r, cob_rwline *l, const char *loc)
 			c->changed = 0;
 		}
 	}
-	add_detail_sums(r, l);
-	if (l == NULL) {
-		/* GENERATE report-name: summary reporting */
-	} else if (l->sup) {
-		l->sup = 0;
-	} else {
-		int grp = 0;
-		if (l->fields == NULL && l->child != NULL && l->child->sister != NULL) {
-			l = l->child;           /* a detail group of several lines */
-			grp = 1;
-		}
-		int num = 0, ln = 0;
-		for (cob_rwline *pl = l; pl; pl = pl->sister) {
-			if (pl->flags & NOT_DETAIL)
-				break;
-			if ((pl->flags & COB_RWF_LINE_PLUS) && pl->line > 1)
-				ln += pl->line;
-			num++;
-			if (!grp)
-				break;
-		}
-		if (num > 1 && r->cur + ln > r->last_detail) {
-			page_end(r);
-			r->cur = 1;
-			page_start(r);
-			r->fdflag = 0;
-			show_counters(r);
-		}
-		for (cob_rwline *pl = l; pl; pl = pl->sister) {
-			if (pl->flags & NOT_DETAIL)
-				break;
-			cob_rwline *p = with_fields(pl);
-			if (!p->sup) {
-				r->just_set = 0;
-				print_line(r, p);
-			}
-			p->sup = 0;
-			if (!grp)
-				break;
-		}
-	}
+	generate_detail(r, l);
 	reset_counters(r, COB_RWF_DE, NULL);
 	each_line(r->first, reset_sup);
 	r->first_gen = 0;
@@ -824,7 +874,7 @@ void cob_rw_terminate(cob_report *r, const char *loc)
 				continue;
 			use_for(r, rl);
 			if (!c->sup)
-				print_with_lines(r, rl, COB_RWF_CF);
+				print_group(r, rl, COB_RWF_CF);
 			c->sup = 0;
 			reset_counters(r, COB_RWF_CF, with_fields(rl));
 		}

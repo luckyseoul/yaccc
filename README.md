@@ -72,7 +72,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 62 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 63 programs covering moves, editing, arithmetic and
 rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -95,8 +95,8 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2 all 63 pass; the five whose *test program* `cobc` itself rejects are
-  skipped.
+  3.1.2, 58 of the 63 run and all 58 pass; the five whose *test program*
+  `cobc` itself rejects are skipped.
 
 All 63 pass, built with gcc.
 
@@ -684,6 +684,16 @@ stated plainly rather than implied.
   implementation of that behaviour, is how every compatible reimplementation is
   built. Understanding is not copying: no GnuCOBOL source text, function body
   or comment was translated into this tree.
+- **That claim is checked, not asserted.** `make provenance` fails the build on
+  a vendored file, a GPL notice, a missing SPDX tag, or a distinctive GnuCOBOL
+  function name. A grep cannot see a translation that renamed everything, so
+  `make provenance-deep` measures the code itself: for every file under
+  `runtime/`, the fraction of its 12-token runs that also occur anywhere in
+  GnuCOBOL's `libcob`, failing above 1.5%. Idiom — a linked-list walk, two
+  adjacent setters — stays under 1%; the first Report Writer port measured
+  2.1% and was restructured until it did not. It reads `third_party/gnucobol`
+  (fetched by `make gctest`) or whatever `GNUSRC` names, and skips when
+  neither is present.
 - **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
   the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
   zero tracked files (checked: `git ls-files third_party` is empty). That suite

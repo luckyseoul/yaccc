@@ -8,9 +8,10 @@ SUITE  ?= third_party/opensourcecobol4j/tests/cobol85
 # GnuCOBOL 3.1.2 testsuite sources (autotest .at files)
 GCSUITE ?= third_party/gnucobol/tests/testsuite.src
 GCTAG   ?= gnucobol-3.1.2
+GNUSRC  ?= third_party/gnucobol
 OUT    ?= build/examples
 
-.PHONY: all runtime test cli-test provenance test-ref nist nist-all gctest gctest-update examples clean
+.PHONY: all runtime test cli-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples clean
 
 all: runtime
 
@@ -28,6 +29,11 @@ cli-test: runtime
 # this tree stays MIT: no GPL code, no vendored third-party suite
 provenance:
 	$(PYTHON) tests/provenance_test.py
+
+# the same, plus token overlap against GnuCOBOL's own C: catches a translation
+# that renamed every identifier. Needs the libcob sources (fetched by $(GCSUITE))
+provenance-deep:
+	$(PYTHON) tests/provenance_test.py --gnucobol $(GNUSRC)
 
 # the same tests compared live against GnuCOBOL (needs cobc on PATH)
 test-ref: runtime
@@ -49,7 +55,7 @@ nist-all: runtime $(SUITE)
 $(GCSUITE):
 	git clone --depth 1 --filter=blob:none --sparse --branch $(GCTAG) \
 	    https://github.com/OCamlPro/gnucobol.git third_party/gnucobol
-	git -C third_party/gnucobol sparse-checkout set tests/testsuite.src
+	git -C third_party/gnucobol sparse-checkout set tests/testsuite.src libcob
 
 # GnuCOBOL's own runtime tests; fails if a test recorded as passing no longer passes
 gctest: runtime $(GCSUITE)

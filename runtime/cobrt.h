@@ -949,7 +949,8 @@ typedef struct cob_rwfld {
 
 /* one print line: an 01 group or a LINE entry */
 typedef struct cob_rwline {
-	struct cob_rwline *sister, *child;
+	struct cob_rwline *next_line;  /* the next line in the same run */
+	struct cob_rwline *first_line; /* the line an item-carrying group hangs from */
 	cob_rwfld *fields;
 	int ctl;                   /* CONTROL of a CH/CF group: control index, -1 none */
 	int decl;                  /* USE BEFORE REPORTING procedure, 0 none */

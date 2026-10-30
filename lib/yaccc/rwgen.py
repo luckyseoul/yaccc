@@ -6,8 +6,8 @@ The tables have the shape GnuCOBOL 3.1.2's compiler gives them, because the
 page and control-break behaviour its testsuite (and NIST) check depends on it:
 
 - a print *line* for every 01 entry and every entry with a LINE clause. The 01
-  lines form one chain (``sister``) in source order; an 01's first LINE entry
-  hangs from it (``child``) and its LINE entries chain from there;
+  lines form one chain (``next_line``) in source order; an 01's first LINE entry
+  hangs from it (``first_line``) and its LINE entries chain from there;
 - a list of report *items* per line: the entries under the line, in source
   order, up to the next LINE entry; a group item stays in the list (flagged)
   so PRESENT WHEN can drop everything under it, and an OCCURS item is listed
