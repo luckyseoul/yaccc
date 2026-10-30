@@ -33,6 +33,10 @@ SELF = 'tests/provenance_test.py'
 # (the 2026-10-30 Report Writer port scored 2.1%).
 OVERLAP_LIMIT = 1.5     # per cent of a file's 12-token runs
 OVERLAP_RUN = 12
+# A corpus that is missing or nearly empty would make every file score 0%,
+# which is a pass that means nothing. Asking for the check is a commitment to
+# its result, so both are failures, not skips. libcob measures ~172,000 runs.
+OVERLAP_MIN_CORPUS = 20000
 
 passed = failed = 0
 verbose = '-v' in sys.argv
@@ -85,8 +89,11 @@ def check_overlap(src):
     libcob. Renaming identifiers does not move it; restructuring does.
     """
     lib = os.path.join(src, 'libcob')
+    # not a skip: --gnucobol was asked for, and a gate that cannot run must not
+    # report success
     if not os.path.isdir(lib):
-        print(f"  skip no GnuCOBOL source tree at {lib} (--gnucobol PATH)")
+        check(f'GnuCOBOL sources present for the overlap check ({lib})', False,
+              'no such directory; run make gctest or set GNUSRC')
         return
     corpus = set()
     for f in sorted(os.listdir(lib)):
@@ -97,6 +104,13 @@ def check_overlap(src):
                     OVERLAP_RUN)
             except OSError:
                 continue
+    if verbose:
+        print(f"       corpus: {len(corpus)} runs from {lib}")
+    if len(corpus) < OVERLAP_MIN_CORPUS:
+        check(f'GnuCOBOL corpus is large enough to measure against '
+              f'({OVERLAP_MIN_CORPUS} runs)', False,
+              f"only {len(corpus)} runs in {lib}")
+        return
     rows = []
     for f in git('ls-files', 'runtime').stdout.split():
         if not f.endswith(('.c', '.h')):
@@ -109,6 +123,9 @@ def check_overlap(src):
         if runs:
             rows.append((100.0 * len(runs & corpus) / len(runs), f))
     rows.sort(reverse=True)
+    if not rows:
+        check('runtime/ has files to measure', False, 'no tracked runtime C file')
+        return
     over = [f"{f} {p:.2f}%" for p, f in rows if p > OVERLAP_LIMIT]
     check(f'no runtime file is a renamed GnuCOBOL C file (> {OVERLAP_LIMIT}% '
           f'shared {OVERLAP_RUN}-token runs)', not over, '; '.join(over))
