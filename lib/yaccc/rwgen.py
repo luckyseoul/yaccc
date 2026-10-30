@@ -430,7 +430,8 @@ class ReportWriterGen:
         rd_footing = ri.rd.footing or self.page_footing_line(ri.rd)
         self.glob.append(
             f"static cob_report {n} = {{\"{ri.name}\", &{ri.file.sym}, {pl}, {h}, {fd}, {ld}, {ft}, "
-            f"{1 if ri.rd.last_detail else 0}, {1 if rd_footing else 0}, {ri.width}, "
+            f"{1 if ri.rd.last_detail else 0}, {1 if rd_footing else 0}, "
+            f"{1 if ri.rd.first_detail else 0}, {ri.width}, "
             f"{code}, {len(ri.code)}, {len(ri.groups)}, {n}_g, {len(ri.controls)}, {ri.lc.special}, "
             f"{ri.pc.special}, {n}_fmt, {n}_sum, {n}_ctl, {n}_decl}};")
 
@@ -458,7 +459,12 @@ class ReportWriterGen:
                         if f.rw_just and (f.rw_source is not None or f.rw_sums):
                             # GnuCOBOL aligns SOURCE and SUM data within the item, not VALUEs
                             stmt = f"{{ {stmt} cob_rw_justify(buf + {off}, {f.size}, '{f.rw_just}'); }}"
-                        em(f"if (gi) {stmt}" if f.rw_group_indicate else stmt)
+                        if f.rw_group_indicate:
+                            stmt = f"if (gi) {stmt}"
+                        cond = self.present_after(ri, f)
+                        if cond is not None:
+                            stmt = f"if ({cond}) {stmt}"
+                        em(stmt)
                     em("break;")
                     em.ind -= 1
                 em("}")
@@ -577,6 +583,33 @@ class ReportWriterGen:
             em("}")
             em("(void)g;")
         self.rw_function(f"static void {n}_decl(int g)", decl)
+
+    def present_after(self, ri, f):
+        """C condition for PRESENT AFTER PAGE OR <control> (negated for
+        ABSENT AFTER): the item is shown on the first detail line of a page or
+        after one of the named controls changes."""
+        p = getattr(f, 'rw_present', None)
+        if p is None:
+            return None
+        what, absent = p
+        if not (isinstance(what, tuple) and what[0] == 'AFTER'):
+            return None
+        parts = []
+        for name in what[1]:
+            if name == 'PAGE':
+                parts.append("cob_rw_new_page")
+                continue
+            lev = ri.levels.get(name)
+            if lev is None:
+                raise CompileError(f"PRESENT AFTER '{name}': not a CONTROL of "
+                                   f"this report", f.loc)
+            if lev == 0:
+                parts.append("cob_rw_ctl_change == 0")   # FINAL: the first detail
+            else:
+                # controls nest: a change at a major level changes the minor ones too
+                parts.append(f"(cob_rw_ctl_change > 0 && cob_rw_ctl_change <= {lev})")
+        cond = ' || '.join(parts) or '1'
+        return f"!({cond})" if absent else cond
 
     def rw_source(self, ri, f):
         if f.rw_sums:

@@ -888,6 +888,7 @@ typedef struct cob_report {
 	cob_file *file;
 	int pl, h, fd, ld, ft;     /* PAGE LIMIT (0: no PAGE clause), HEADING ... FOOTING */
 	int ld_decl, ft_decl;      /* LAST DETAIL / FOOTING actually declared? */
+	int fd_decl;               /* FIRST DETAIL declared? */
 	int width;                 /* print line width including CODE */
 	const unsigned char *code;
 	int code_len;
@@ -913,6 +914,10 @@ typedef struct cob_report {
 } cob_report;
 
 extern int cob_rw_suppress;
+/* set by the runtime for the line being formatted: is this the first detail
+   line of a page, and which control level changed for it (0: none) */
+extern int cob_rw_new_page;
+extern int cob_rw_ctl_change;
 void cob_rw_initiate(cob_report *r, const char *loc);
 void cob_rw_generate(cob_report *r, int group, const char *loc);
 void cob_rw_terminate(cob_report *r, const char *loc);

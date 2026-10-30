@@ -988,13 +988,20 @@ class Parser:
                 return True
             if self.accept('AFTER'):
                 # PRESENT AFTER [NEW|COMPLETE] <control> OR PAGE OR <control>:
-                # names a page or a control; PAGE is a keyword here, not a name
+                # the item is presented on the first detail line after a new
+                # page or after one of the named controls changes; the item
+                # declared ABSENT AFTER the same condition is presented instead
+                # on the other lines
                 self.accept('NEW', 'COMPLETE')
+                names = []
                 while True:
-                    if not self.accept('PAGE'):
-                        self.parse_identifier()
+                    if self.accept('PAGE'):
+                        names.append('PAGE')
+                    else:
+                        names.append(self.user_word('control name'))
                     if not self.accept('OR'):
                         break
+                item.rw_present = (('AFTER', names), w == 'ABSENT')
                 return True
             return False
         if w in ('LINE', 'LINES'):

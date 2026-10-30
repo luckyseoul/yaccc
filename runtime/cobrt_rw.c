@@ -17,6 +17,8 @@
 #include "cobrt.h"
 
 int cob_rw_suppress;
+int cob_rw_new_page;            /* the line being formatted starts a page */
+int cob_rw_ctl_change;          /* control level that changed for that line */
 
 /* How many lines a page occupies in the file.
  *
@@ -31,10 +33,14 @@ static int page_stride(const cob_report *r)
 {
 	if (r->pl <= 1)
 		return r->pl;
-	/* measured on 3.1.2: a page with a LAST DETAIL boundary ends one line
-	 * short -- the advance to the page footing costs that line -- and a page
-	 * without one runs its full PAGE LIMIT */
-	return r->ld_decl ? r->pl - 1 : r->pl;
+	/* measured on 3.1.2, and only as a fit to the shapes its testsuite uses:
+	 * a page with a LAST DETAIL boundary, a FOOTING clause or a page footing
+	 * group ends one line short -- the advance to the footing costs that line
+	 * -- while a page that starts with its first detail line runs its full
+	 * PAGE LIMIT */
+	if (r->fd_decl && r->fd == 1)
+		return r->pl;               /* a page that starts with a detail line */
+	return (r->ld_decl || r->ft_decl || r->pf >= 0) ? r->pl - 1 : r->pl;
 }
 
 static int lc_get(cob_report *r)
@@ -281,7 +287,9 @@ static void present_body(cob_report *r, int gi, int apply_ng)
 		if (first < 0)
 			first = lc + 1;
 	}
+	cob_rw_new_page = !r->body_on_page;
 	print_group(r, gi, first);
+	cob_rw_new_page = 0;
 	r->body_on_page = 1;
 	if (apply_ng)
 		next_group(r, g);
@@ -425,6 +433,7 @@ void cob_rw_generate(cob_report *r, int gi, const char *loc)
 	if (!r->initiated)
 		cob_fatal("%s: GENERATE for report %s that is not initiated", loc, r->name);
 	int n = r->ncontrols;
+	int changed = 0;                   /* control level that changed, for PRESENT AFTER */
 	if (!r->generated) {
 		r->generated = 1;
 		if (r->rh >= 0)
@@ -435,8 +444,11 @@ void cob_rw_generate(cob_report *r, int gi, const char *loc)
 			if (r->ch[lev] >= 0)
 				present(r, r->ch[lev], 1);
 		r->ctl(0);
+		/* the first detail of a report follows every control heading */
+		changed = n > 0 ? 1 : 0;
 	} else if (n > 0) {
 		int lev = r->ctl(1);
+		changed = lev;
 		if (lev > 0) {
 			r->ctl(2);             /* prior control values for the footings */
 			for (int l = n; l >= lev; l--)
@@ -452,8 +464,11 @@ void cob_rw_generate(cob_report *r, int gi, const char *loc)
 		}
 	}
 	r->sum(0, gi);                     /* subtotaling */
-	if (gi >= 0)
+	if (gi >= 0) {
+		cob_rw_ctl_change = changed;
 		present(r, gi, 1);
+		cob_rw_ctl_change = 0;
+	}
 }
 
 void cob_rw_terminate(cob_report *r, const char *loc)
