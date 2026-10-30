@@ -661,7 +661,7 @@ examples/            payroll report with control breaks, indexed-file bank ledge
 tests/cases/         differential tests and recorded GnuCOBOL baselines
 tests/difftest.py    differential test runner
 tests/nist/          NIST CCVS85 runner and the result logs of the runs above
-tests/gnucobol/      GnuCOBOL testsuite runner and the recorded results
+tests/gnucobol/      GnuCOBOL testsuite runner, comparison tool and recorded results
 tests/cli_test.py    compiler command-line tests
 Makefile             make test | cli-test | test-ref | nist | nist-all | gctest | examples | clean
 ```
@@ -669,3 +669,140 @@ Makefile             make test | cli-test | test-ref | nist | nist-all | gctest 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Open conformance work
+
+Eight tests in the GnuCOBOL 3.1.2 testsuite still fail. This section is a
+briefing for anyone picking them up: what each one needs, the measurements
+behind it, and the files involved. Everything here was measured against a
+GnuCOBOL 3.1.2 built from source (`docs/gnucobol-oracle.md`), not inferred.
+
+To see any of them side by side with `cobc`:
+
+```
+export PATH=/tmp/gcinst/bin:$PATH LD_LIBRARY_PATH=/tmp/gcinst/lib
+python3 tests/gnucobol/compare.py "Sample Payroll Report"
+make gctest          # the gate: fails if a recorded PASS stops passing
+```
+
+`tests/gnucobol/compare.py` runs the same program through both compilers and
+diffs the files they write, which is the only way to see a Report Writer
+difference (stdout is empty for those tests).
+
+### 1. Report Writer page cursor (4 tests)
+
+`Sample Payroll Report`, `Sample Control Break`, `Sample Inventory Report`,
+`Next Group Next Page`. Three of them are one defect and the fourth is a
+sibling: YACCC's page geometry is a set of measured rules, where GnuCOBOL's is
+a cursor that walks the page -- and, when the cursor is already past a group's
+line, a group is dropped rather than moved.
+
+The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
+
+- a page is `PAGE LIMIT` lines, or `PAGE LIMIT - 1` when the report declares a
+  LAST DETAIL, a FOOTING or a page footing group (except when FIRST DETAIL is 1);
+- the last page, written by TERMINATE, is always `PAGE LIMIT` lines, its page
+  footing goes one line below its declared line, and the report footing follows
+  the page footing;
+- every other group keeps its declared line on every page.
+
+That fits 14 of the 19 runnable Report Writer tests. The four that fail show the
+rule is not enough:
+
+- **`Sample Payroll Report`** — 96 input records; `cobc` writes 88 lines with
+  17 employee rows, YACCC 133 lines with 23. `cobc` silently *drops* a group
+  whose target line is already written on the page: 8 of YACCC's rows are
+  absent from `cobc`'s file entirely. YACCC's `put_line()` instead refuses to
+  overprint and pushes the line to `r->pos + 1`, so the report grows instead.
+  This is the largest difference of the four and it is in `put_line()`.
+- **`Sample Control Break`** — `cobc` has one extra blank line before the page
+  2 heading (its L25 is blank, L26 is the heading; YACCC writes the heading at
+  L25). The page break is one line later in `cobc`.
+- **`Sample Inventory Report`** — both files are 74 lines and differ in
+  exactly six: at L48, L53 and L55 `cobc` has a blank line where YACCC has
+  content, and `cobc` prints that content on the following line. The page
+  footing and two control totals sit one line lower in `cobc`.
+- **`Next Group Next Page`** — same shape again at L14, after which `cobc`'s
+  4021 lines and YACCC's 3955 are offset from each other to the end.
+
+The fix is not another rule. `reportio.c` is a cursor machine: `write_to_line()`
+advances `curr_line` past the line it wrote and wraps it to 1 when it passes
+`def_lines`; page overflow is tested as `curr_line > def_last_detail` at two
+places in `report_line()`; `do_page_footing()` and `do_page_heading()` each
+decide whether to skip to the end of the page first. Porting that state machine
+(and deleting `page_stride()`/`pad_page()` in favour of it) is the way to get
+all four. The `cob_report` struct in `runtime/cobrt.h` needs the same fields
+`cobc` has: `curr_line`, `curr_page`, `first_detail`, `in_page_heading`,
+`in_page_footing`, `incr_page`, `incr_line`.
+
+`Sample REPORT with RIGHT/CENTER` also fails, and is *not* a defect: its first
+step expects `cobc` to reject the program under its default dialect, and YACCC
+compiles it, as GnuCOBOL does with `-std=mf`.
+
+### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34
+
+`run_misc.at:11767`. YACCC maps both to `double` (`lib/yaccc/data.py:392`), so
+it prints double precision. `cobc` holds a real IEEE 754 decimal64/decimal128
+and prints every digit:
+
+```
+A: 9216586.861751152073732718894009216     (FLOAT-DECIMAL-34, 34 digits)
+A: 9216586.861751152                       (FLOAT-DECIMAL-16, 16 digits)
+FD34: 99.33333333333333333333333333333333 IS OK
+FD16: 99.33333333333333 IS OK
+FD16: after 99E369  SIZE ERROR     (overflow; underflow 99E-398)
+FD34: after 99E6111 SIZE ERROR     (underflow 99E-6176)
+```
+
+This needs a real decimal-float type (BID or DPD in `runtime/`), arithmetic on
+it, and DISPLAY printing all its digits -- a genuine feature, not a bug fix.
+Everything else in the float family already passes, so the current `double`
+mapping is only wrong for these two USAGEs.
+
+### 3. CALL BY VALUE numeric literal WITH SIZE
+
+`run_extensions.at:1889`. The caller passes `BY VALUE 4 0 0 1 0` (automatic
+size) or `BY VALUE 1 SIZE 1 2 0 0 0`; the callee declares
+`USING BY VALUE LEN SIZE 1 VAR-1 SIZE 2 VAR-2 SIZE 4 VAR-4 SIZE 8 VAR-8` and
+selects on `LEN`. YACCC prints `1: +000` twice; expected is
+`4: +0000000001`, then `1: +002`, `2: +00003`, `4: +0000000004`,
+`8: +00000000000000000005`, ... (12 lines). The first argument's automatic size
+is being computed as 1 byte instead of the literal's natural width, so the
+callee takes its `WHEN 1` branch. Involved: the `BY VALUE ... SIZE` clauses in
+`lib/yaccc/parser.py` (around line 1560 for the callee, 2800 for the caller),
+`prog.using_sizes`, and the `BY VALUE` argument sizing in `g_Call`
+(`lib/yaccc/codegen.py`). Note that GnuCOBOL's own documentation calls its
+parameter passing here unfinished, so match `cobc`'s observed behaviour rather
+than the standard.
+
+### 4. COMP-4 No Truncate
+
+`data_binary.at:1322`, compiled with `-fnotrunc`. Under that flag `cobc` ignores
+the PICTURE's decimal point for a BINARY item, both when storing and when
+reading back:
+
+```
+PIC 9V99 COMP-4   MOVE 0.12 -> "00012"   MOVE 9.85 -> "00985"   (5 digits: capacity)
+PIC  V99 COMP-4   MOVE 0.12 -> "012"     MOVE 9.85 -> "217"     (985 truncated to 1 byte)
+PIC 9V99 DISPLAY  MOVE 0.12 -> "0.12"    (unaffected)
+```
+
+So `MOVE 9.85` stores the digits `985` (not the rounded value), `DISPLAY` prints
+them with no point, and a comparison against a DISPLAY item sees `217`, not
+`0.85`. YACCC applies the scale, so it prints `0.85`/`9.85` and reports the two
+values as equal. The flag's model is "a scaled BINARY item behaves as its
+digits without the point", which has to apply to MOVE, DISPLAY and comparison
+alike; the pieces are `binary_truncate` in `lib/yaccc/data.py` (the capacity
+digits rule already there for unscaled items) and the scale used by
+`cob_display`/`cob_d_get` in `runtime/cobrt_core.c`.
+
+### Things in this area that are *not* worth "fixing"
+
+- `cobc`'s `-fnotrunc` on a scaled PICTURE is a quirk the standard does not
+  describe; matching it is only worth it because a test asserts it.
+- NATIONAL (`PIC N`) is stored one byte per character with two bytes per
+  character of width, because that is what 3.1.2 does and what its tests
+  compare against; it is not UTF-16.
+- GnuCOBOL's Report Writer output for `rw2` (the differential test) is itself
+  corrupt -- its page counter never advances, so it repeats page 1 for ever --
+  which is why that test carries a hand-recorded baseline instead.
