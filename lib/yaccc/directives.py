@@ -4,6 +4,7 @@ control which source lines are compiled: >>DEFINE, >>IF / >>ELIF / >>ELSE /
 >>END-IF, >>EVALUATE / >>WHEN / >>END-EVALUATE, and >>SET with a compilation
 variable. One Directives object is shared by a source file and its copybooks.
 """
+import os
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -152,11 +153,19 @@ class Directives:
             return
         if toks[0][0] == 'word' and toks[0][1].upper() == 'AS':
             toks = toks[1:]
-        if len(toks) == 1 and toks[0][0] == 'word' and toks[0][1].upper() == 'PARAMETER':
+        if (len(toks) >= 1 and toks[0][0] == 'word' and toks[0][1].upper() == 'PARAMETER'
+                and all(t[0] == 'word' and t[1].upper() == 'OVERRIDE' for t in toks[1:])):
+            # >>DEFINE NAME AS PARAMETER: the value comes from -D NAME=value,
+            # else from the environment variable of the same name, else the name
+            # stays undefined so >>IF NAME IS NOT DEFINED can supply a default
             if name in self.params:
-                self.vars[name] = self.params[name]
+                v = self.params[name]
+            elif os.environ.get(name):
+                v = _literal_value(os.environ[name])
             else:
                 self.vars.pop(name, None)
+                return
+            self.vars[name] = v
             return
         if name in self.vars and not override and name in self.params:
             return                          # a -D value wins unless OVERRIDE

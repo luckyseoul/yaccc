@@ -611,7 +611,7 @@ PASS  run_misc.at:11067            Default Arithmetic Test (2)
 SKIP  run_misc.at:11118            OSVS Arithmetic (1)
 FAIL  run_misc.at:11235            OSVS Arithmetic Test (2)
 PASS  run_misc.at:11292            SET CONSTANT directive
-FAIL  run_misc.at:11395            DEFINE OVERRIDE
+PASS  run_misc.at:11395            DEFINE OVERRIDE
 PASS  run_misc.at:11461            DEFINE Defaults
 PASS  run_misc.at:11527            78 VALUE
 PASS  run_misc.at:11595            01 CONSTANT
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 496  FAIL 10  CERR 0  XERR 0  SKIP 187
+PASS 497  FAIL 9  CERR 0  XERR 0  SKIP 187

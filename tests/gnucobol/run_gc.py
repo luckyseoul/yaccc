@@ -213,14 +213,18 @@ class Runner:
         self.use_cobc = use_cobc
         self.keep = keep
 
-    def compile(self, main, modules, flags, out, cwd):
+    def compile(self, main, modules, flags, out, cwd, env=None):
+        if env is not None:
+            # the step's variables on top of the real environment: the compiler
+            # is a #!/usr/bin/env python3 script and needs PATH
+            env = dict(os.environ, **env)
         if self.use_cobc:
             cmd = ['cobc', '-x', '-o', out, main] + flags
             for m in modules:
                 cmd.append(m)
         else:
             cmd = [YACCC, main] + modules + ['-o', out, '--binary-size', '1-2-4-8'] + flags
-        return run(cmd, cwd, timeout=120)
+        return run(cmd, cwd, env=env, timeout=120)
 
     def translate_flags(self, words):
         """cobc options -> yaccc options; None if a test depends on one we lack."""
@@ -301,6 +305,9 @@ class Runner:
             env.pop('COB_SET_DEBUG', None)
             while words and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', words[0]):
                 k, v = words.pop(0).split('=', 1)
+                # the .at files write PATH=.:$PATH and expect the shell to have
+                # expanded it; shlex does not, so expand it here
+                v = re.sub(r'\$\{?(\w+)\}?', lambda m: env.get(m.group(1), ''), v)
                 env[k] = v
             if not words:
                 return 'SKIP', 'shell command'
@@ -321,7 +328,7 @@ class Runner:
                     return 'SKIP', 'cobc option ' + ' '.join(rest)
                 if status != '0':
                     # a compile that must fail
-                    rc, _, err = self.compile(srcs[0], srcs[1:], flags, 'xx_' + os.path.basename(srcs[0]) + '.exe', tmp)
+                    rc, _, err = self.compile(srcs[0], srcs[1:], flags, 'xx_' + os.path.basename(srcs[0]) + '.exe', tmp, env)
                     if rc == 0:
                         return 'FAIL', f"compile of {srcs[0]} succeeded; GnuCOBOL rejects it"
                     checks += 1
@@ -382,7 +389,7 @@ class Runner:
                     if os.path.exists(path):
                         continue
                     rc, _, err = self.compile(srcm, mods + [m for m in modules if m not in mods and m != srcm],
-                                              flags, path, tmp)
+                                              flags, path, tmp, env)
                     if rc != 0:
                         return 'CERR', err.decode('latin-1', 'replace').strip()[-400:]
                 fin = open(os.path.join(tmp, stdin_file), 'rb') if stdin_file else None
