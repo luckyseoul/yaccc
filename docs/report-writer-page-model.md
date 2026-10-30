@@ -397,3 +397,55 @@ page and its cursor are in step, which is exactly what is not true any more.
 So the next attempt must convert `present()` for all seven group types to the
 cursor model in the same change; swapping the writer alone leaves two
 coordinate systems in one file.
+
+### Step 2, third attempt: one coordinate system, all seven group types
+
+The whole engine was rewritten so that every position is a cursor line (no
+absolute page offsets anywhere), with `present()` for all seven group types
+converted in the same edit. Scored 10 -> 12 of 25 against the baseline's 21 and
+was reverted. This was the closest of the three rewrites to behaving, and it
+pinned down four things worth keeping.
+
+**The cursor is the next free line during a GENERATE, and the last written line
+between them.** That is the whole trick, and it is why `curr_line` is incremented
+at the start of a GENERATE and decremented at the end: the +1/-1 pair moves the
+meaning, not the position. `LINE n` therefore fits when `curr_line <= n`; testing
+`<` drops a line every time a group lands exactly on its clause's line, which is
+what `Report Line Order` was showing (RH one line late).
+
+**`NEXT GROUP` belongs to the group after which it is declared** -- usually the
+control footing, not the detail. The 3.1.2 trace of `Sample Charge Report 3`
+shows it plainly: detail on line 5, `Execute NEXT GROUP PLUS 2` at cursor 6,
+next detail on line 8. So `NEXT GROUP PLUS n` writes n blank lines from the
+cursor and leaves the next line at `cursor + n`. A group with no print lines
+still carries its `NEXT GROUP`; `report_line_and` sets it even when nothing is
+written, so an early `return` on `nlines == 0` silently drops every skip.
+
+**That fix alone was not enough for the Charge Report family**, and the reason
+is the remaining unknown: with `NEXT GROUP` applied, yaccc still packs the
+detail lines adjacent (55 lines against cobc's 67). Something earlier in
+`present_body` is resetting the cursor between the footing and the next detail.
+That is the first thing the next attempt should instrument -- a trace of
+`Sample Charge Report 3` with `COB_DEBUG_LOG` plus a fprintf in `emit_group`
+answers it in one run.
+
+**Two tests now match where the heuristic did not** on the way through
+(`PAGE LIMIT REPORT 2`, `Report Line Order` in content and length), which is
+what the cursor model buys; the loss is in the control-break paths, which the
+heuristic had been tuned on.
+
+### Where this leaves the port
+
+Three rewrites, three regressions against the measured heuristic. The pattern is
+consistent and now well understood: the heuristic encodes a lot of *empirical
+compensation* for paths the rewrites did not finish, so any partial port scores
+worse than the thing it replaces. The port is worth finishing only as a whole,
+and the concrete next steps are, in order:
+
+1. Instrument `emit_group`/`next_group` and find what resets the cursor between
+   a control footing and the next detail (`Sample Charge Report 3`, 55 vs 67
+   lines).
+2. Re-run the generator sweep after each fix -- it catches generality that the
+   25 testsuite programs cannot.
+3. Ship only when both axes beat the baseline: 21+ of 25 tests, and fewer than
+   128 differing generated shapes.
