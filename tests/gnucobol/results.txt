@@ -60,7 +60,7 @@ SKIP  run_extensions.at:1693       CALL USING file-name
 PASS  run_extensions.at:1738       CALL unusual PROGRAM-ID.
 PASS  run_extensions.at:1802       CALL / GOBACK with LOCAL-STORAGE
 PASS  run_extensions.at:1852       CALL BY VALUE alphanumeric item
-FAIL  run_extensions.at:1889       CALL BY VALUE numeric literal WITH SIZE
+PASS  run_extensions.at:1889       CALL BY VALUE numeric literal WITH SIZE
 PASS  run_extensions.at:1993       Case-sensitive PROGRAM-ID
 PASS  run_extensions.at:2018       Quoted PROGRAM-ID
 PASS  run_extensions.at:2041       PROGRAM-ID AS clause
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 486  FAIL 8  CERR 0  XERR 0  SKIP 199
+PASS 487  FAIL 7  CERR 0  XERR 0  SKIP 199

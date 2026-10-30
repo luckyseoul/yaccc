@@ -1081,8 +1081,14 @@ class CodeGen(ReportWriterGen, DebugGen):
                 # of bytes SIZE gave, so read it into the item here
                 n = sizes[i] if i < len(sizes) else None
                 em(f"{it.storage} = {it.storage}_dummy;")
-                em(f"if (cob_argc > {i} && cob_argv[{i}]) cob_get_value({n or it.size}, "
-                   f"cob_argv[{i}], CF({it.storage}, {it.size}, &{self.item_attr(it)}));")
+                # want: the width this program reads (SIZE, else the item's own);
+                # have: the width the caller actually passed, recorded in the
+                # frame by cob_module_push (which clears the global)
+                want = n or it.size
+                have = (f"(cob_frame_param_size({i + 1}) ? cob_frame_param_size({i + 1}) : {want})")
+                em(f"if (cob_argc > {i} && cob_argv[{i}]) "
+                   f"cob_get_arg_value({want}, {have}, cob_argv[{i}], "
+                   f"CF({it.storage}, {it.size}, &{self.item_attr(it)}));")
             else:
                 # an argument left out binds NULL, as in GnuCOBOL: ADDRESS OF
                 # the item is then NULL, which is how a program tests OMITTED

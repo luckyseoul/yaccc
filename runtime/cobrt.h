@@ -400,6 +400,25 @@ static inline void cob_get_value(int n, const unsigned char *p, cob_field *f)
 	cob_set_int(f, v);
 }
 
+/* Read a BY VALUE argument the way GnuCOBOL passes one: as a native integer,
+ * so the bytes that exist are the LOW-order ones. `want` is the width the
+ * callee asked for and `have` the width the caller supplied; when the callee
+ * asks for more than was passed, the bytes that are there are the low ones. */
+static inline void cob_get_arg_value(int want, int have, const unsigned char *p, cob_field *f)
+{
+	if (want <= 0)
+		want = have;
+	if (have <= 0) {
+		cob_set_int(f, 0);
+		return;
+	}
+	if (want >= have) {
+		cob_get_value(have, p, f);
+		return;
+	}
+	cob_get_value(want, p + (have - want), f);
+}
+
 /* store an integer in n bytes of C storage, big-endian, for CALL BY VALUE */
 static inline void cob_put_value(int n, unsigned char *p, cob_s64 v)
 {

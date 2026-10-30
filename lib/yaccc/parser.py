@@ -1551,25 +1551,30 @@ class Parser:
                 prog.chaining.append(self.parse_identifier())
         if self.accept('USING'):
             mode = 'REFERENCE'
+            pending_size = None
             while True:
                 if self.accept('BY'):
                     mode = self.expect('REFERENCE', 'VALUE', 'CONTENT').up
                 elif self.is_word('REFERENCE', 'VALUE', 'CONTENT'):
                     mode = self.next().up
+                elif self.is_word('SIZE') or self.is_word('UNSIGNED'):
+                    # USING BY VALUE LEN SIZE 2 item: the SIZE comes before the
+                    # item whose incoming width it gives, so
+                    # "... SIZE 1 VAR-1 SIZE 2 VAR-2" reads VAR-1 as one byte
+                    # and VAR-2 as two, not LEN as one byte.
+                    self.accept('UNSIGNED')
+                    self.expect('SIZE')
+                    self.accept('UNSIGNED')
+                    if self.accept('DEFAULT'):
+                        pending_size = 8
+                    elif self.accept('AUTO'):
+                        pending_size = 0
+                    else:
+                        pending_size = int(self.expect_kind('NUM', 'size').val)
                 elif self.is_user_word():
                     prog.using.append((mode, self.parse_identifier()))
-                    # USING BY VALUE x SIZE n: how many bytes the caller passes
-                    self.accept('UNSIGNED')     # BY VALUE 1 UNSIGNED SIZE 1
-                    if self.accept('SIZE'):
-                        self.accept('UNSIGNED')
-                        if self.accept('DEFAULT'):
-                            prog.using_sizes.append(8)
-                        elif self.accept('AUTO'):
-                            prog.using_sizes.append(None)
-                        else:
-                            prog.using_sizes.append(int(self.expect_kind('NUM', 'size').val))
-                    else:
-                        prog.using_sizes.append(None)
+                    prog.using_sizes.append(pending_size)
+                    pending_size = None
                 elif self.accept('OPTIONAL'):
                     pass
                 else:
