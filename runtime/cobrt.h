@@ -916,6 +916,7 @@ typedef struct cob_report {
 	int pl, h, fd, ld, ft;     /* PAGE LIMIT (0: no PAGE clause), HEADING ... FOOTING */
 	int ld_decl, ft_decl;      /* LAST DETAIL / FOOTING actually declared? */
 	int fd_decl;               /* FIRST DETAIL declared? */
+	int ft_clause;             /* a FOOTING n clause (not a page footing group) */
 	int width;                 /* print line width including CODE */
 	const unsigned char *code;
 	int code_len;

@@ -40,6 +40,11 @@ static int page_stride(const cob_report *r)
 	 * PAGE LIMIT */
 	if (r->fd_decl && r->fd == 1)
 		return r->pl;               /* a page that starts with a detail line */
+	/* a report that declares FOOTING n runs its first page to the full
+	 * PAGE LIMIT; later pages end one line short (measured: Sample Control
+	 * Break's page headings are at 1, 26, 50 with PAGE LIMIT 25) */
+	if (r->ft_clause && cob_get_int(r->page_counter) <= 1)
+		return r->pl;
 	return (r->ld_decl || r->ft_decl || r->pf >= 0) ? r->pl - 1 : r->pl;
 }
 

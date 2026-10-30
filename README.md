@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   488     6              0      199
+  693   489     5              0      199
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,7 +127,7 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 6 failures** are:
+- **The 5 failures** are:
   - 4 Report Writer tests whose output differs in where a page break lands.
     `cobc` reaches a page break through several branches of `reportio.c` and
     does not place it consistently: measuring a dozen PAGE clause shapes

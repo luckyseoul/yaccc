@@ -431,7 +431,7 @@ class ReportWriterGen:
         self.glob.append(
             f"static cob_report {n} = {{\"{ri.name}\", &{ri.file.sym}, {pl}, {h}, {fd}, {ld}, {ft}, "
             f"{1 if ri.rd.last_detail else 0}, {1 if rd_footing else 0}, "
-            f"{1 if ri.rd.first_detail else 0}, {ri.width}, "
+            f"{1 if ri.rd.first_detail else 0}, {1 if ri.rd.footing else 0}, {ri.width}, "
             f"{code}, {len(ri.code)}, {len(ri.groups)}, {n}_g, {len(ri.controls)}, {ri.lc.special}, "
             f"{ri.pc.special}, {n}_fmt, {n}_sum, {n}_ctl, {n}_decl}};")
 
