@@ -823,6 +823,13 @@ generated shapes differing while the testsuite flagged three -- which is why
 three wrong models survived review, and why the next attempt should be judged
 by it as well as by the suite.
 
+The reference's own report tables can also be dumped with `cobc -C` and decoded
+against `cob_report_line` in its `common.h`. Doing that for `Sample Charge Report
+3` shows groups are one flat `sister` chain dispatched on a type flag (not a
+typed tree), and that `NEXT GROUP` is a flag plus a `next_group_line` on the
+group's own line record. That structure, and the method that recovered it, are
+written up in `docs/report-writer-page-model.md`.
+
 `docs/report-writer-page-model.md` carries what that port needs: "Observing the
 real cursor" (3.1.2 can print its own cursor decisions -- how the page lengths
 below were measured rather than guessed), and "The 3.1.2 algorithm, exactly",

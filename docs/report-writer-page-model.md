@@ -449,3 +449,85 @@ and the concrete next steps are, in order:
    25 testsuite programs cannot.
 3. Ship only when both axes beat the baseline: 21+ of 25 tests, and fewer than
    128 differing generated shapes.
+
+## The reference's report tree, recovered from its generated C
+
+`cobc -C` emits the report tables as static C, which is the densest description
+of the reference's structure available short of reading the compiler. Decoded
+against `cob_report_line` in `libcob/common.h`, for `Sample Charge Report 3`:
+
+```
+typedef struct __cob_report_line {
+        struct __cob_report_line *sister;   /* next line at this level */
+        struct __cob_report_line *child;    /* first line below this one */
+        cob_report_field *fields;
+        cob_field        *control;          /* the CONTROL data item, if any */
+        int               use_decl;
+        unsigned int      flags;            /* COB_REPORT_*: the group type */
+        int               line;             /* the LINE value */
+        int               step_count;
+        int               next_group_line;  /* NEXT GROUP's value */
+        unsigned int      report_flags;
+        unsigned int      suppress:1;
+} cob_report_line;
+```
+
+So a generated table looks like
+
+```c
+rl_42 = {&rl_53, &rl_43, NULL, NULL, 0,    64, 0, 196, 0,    64, 0};
+rl_58 = {&rl_68, &rl_59, NULL, &f_9, 0, 17408, 0, 196, 2, 17408, 0};
+```
+
+and three structural facts follow, none of which is visible in the output:
+
+- **Groups are one flat `sister` chain in source order, with the type in
+  `flags`** (`64` = `COB_REPORT_PAGE_HEADING`, `17408` =
+  `COB_REPORT_CONTROL_FOOTING | COB_REPORT_NEXT_GROUP_PLUS`). The reference does
+  not walk "all report headings, then all page headings"; it walks one list and
+  dispatches on the flag. A port that models groups as a typed tree walks them
+  in a different order and only notices when a group is absent.
+- **`NEXT GROUP` is a flag plus `next_group_line` on the group's own line
+  record** -- `rl_58` is the control footing, and the `2` is its NEXT GROUP
+  value. It is not a property of the group it precedes, and not held in a
+  separate table.
+- **`control` is per line**, not per group (`&f_9` on `rl_58`), which is how the
+  reference decides whether a control break applies to a particular print line
+  without consulting the group's level.
+
+### Why "copy the shape" is the right method, and reading output is not
+
+The three failed ports all worked from output diffs, and diffs are lossy: they
+say two files differ at line 6, never which decision produced line 6. The three
+sources above are ordered by how much they constrain the answer:
+
+1. the reference's source (rules, directly),
+2. the reference's intermediate tables (structure, directly),
+3. the reference's output (only the product of both),
+4. our own tests (only a sample of that product).
+
+Every attempt that started at 4 and worked upwards lost to the heuristic. The
+finding recorded here came from 2 in a few minutes.
+
+### Method note: what "deriving" this actually is
+
+There is no specification to derive from -- the 3.1.2 Report Writer is original
+work dated 2013 in `libcob/ChangeLog` ("Report Writer Module initial
+development"), written by one author, not a port of IBM's or Micro Focus's. The
+behaviour is therefore recoverable only from artifacts, and the standard methods
+are: read the source; instrument the reference (a black box that can narrate
+itself is not a black box); read the intermediate representation rather than its
+output; differential-test at a scale the hand-written tests cannot reach; and
+delta-debug a failing case down to something small enough to read.
+
+Two rules of thumb learned the hard way in this file's history:
+
+- **Suspect the probe before the subject.** Three "reference bugs" here were
+  ours: an `RD` clause past column 72, `RH`/`PH` being reserved words, and a
+  `CONTROLS` entry with no matching group breaking the reference's own codegen.
+- **A wrong model with empirical compensation can beat a correct model that is
+  incomplete.** `page_start = file position` is true of the reference and scored
+  494 against a heuristic whose page arithmetic is wrong. Legacy behaviour
+  encodes years of per-symptom patches; a principled rewrite has to clear all of
+  them at once or it scores worse. That is why partial ports of this kind fail,
+  and why the port must replace the padding and the stride together.
