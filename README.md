@@ -145,9 +145,6 @@ longer passes. `make gctest-update` records a new baseline.
   - `FLOAT-DECIMAL` (decimal64/decimal128, 16 and 34 digits): YACCC maps
     FLOAT-DECIMAL to a double, so it prints double precision where GnuCOBOL
     prints the decimal's.
-  - `FUNCTION BYTE-LENGTH` on a NATIONAL item (YACCC stores `PIC N` one byte
-    per character, GnuCOBOL two), and `COMP-4 No Truncate` (GnuCOBOL's own
-    `-fnotrunc` treats a scaled PICTURE differently).
   - `CALL BY VALUE ... WITH SIZE` (GnuCOBOL's own documentation calls its
     parameter passing there unfinished), and `CBL_GC_GETOPT` and
     `CBL_ERROR_PROC (1)`, library routines YACCC does not provide (the second
@@ -672,10 +669,14 @@ MIT. See [LICENSE](LICENSE).
 
 ## Open conformance work
 
-Eight tests in the GnuCOBOL 3.1.2 testsuite still fail. This section is a
+Six tests in the GnuCOBOL 3.1.2 testsuite still fail. This section is a
 briefing for anyone picking them up: what each one needs, the measurements
 behind it, and the files involved. Everything here was measured against a
 GnuCOBOL 3.1.2 built from source (`docs/gnucobol-oracle.md`), not inferred.
+
+Two of the eight described when this section was written have since been fixed
+and are kept, marked *(fixed)*, because the measurements in them are what the
+fixes were built on.
 
 To see any of them side by side with `cobc`:
 
@@ -692,10 +693,11 @@ difference (stdout is empty for those tests).
 ### 1. Report Writer page cursor (4 tests)
 
 `Sample Payroll Report`, `Sample Control Break`, `Sample Inventory Report`,
-`Next Group Next Page`. Three of them are one defect and the fourth is a
-sibling: YACCC's page geometry is a set of measured rules, where GnuCOBOL's is
-a cursor that walks the page -- and, when the cursor is already past a group's
-line, a group is dropped rather than moved.
+`Next Group Next Page`. Three of them are one shape: YACCC's page geometry is a
+set of measured rules, where GnuCOBOL's is a cursor that walks the page. The
+fourth (`Sample Payroll Report`) is different, and is written up separately
+below because its file length is the giveaway: `cobc` writes 88 lines and never
+pads the last page at all, where YACCC writes the full 133.
 
 The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
 
@@ -710,11 +712,20 @@ That fits 14 of the 19 runnable Report Writer tests. The four that fail show the
 rule is not enough:
 
 - **`Sample Payroll Report`** — 96 input records; `cobc` writes 88 lines with
-  17 employee rows, YACCC 133 lines with 23. `cobc` silently *drops* a group
-  whose target line is already written on the page: 8 of YACCC's rows are
-  absent from `cobc`'s file entirely. YACCC's `put_line()` instead refuses to
-  overprint and pushes the line to `r->pos + 1`, so the report grows instead.
-  This is the largest difference of the four and it is in `put_line()`.
+  17 employee rows, YACCC 133 lines with 23. Two things are going on, and the
+  second is the bigger one:
+  - `cobc` **drops** a group whose target line is already written on the page
+    (`write_to_line` only writes when `curr_line <= linen`); 8 of YACCC's rows
+    are absent from `cobc`'s file entirely. YACCC's `put_line()` instead pushes
+    the line to `r->pos + 1`. Changing it to drop made no difference to the
+    test on its own, so it is not the whole story.
+  - `cobc` writes **no padding after the last page**: the file is 3,919 bytes
+    and ends immediately after "COMPANY TOTALS ... 100%" plus one newline,
+    where YACCC pads page 2 out to `PAGE LIMIT`. Yet a report of the same shape
+    with no control footings *is* padded (measured: `PAGE LIMIT 10`, `LAST
+    DETAIL 8`, 12 details gives 20 lines from both compilers). So whatever
+    decides the padding depends on the control footings, not on the PAGE
+    clause -- that is the next thing to isolate.
 - **`Sample Control Break`** — `cobc` has one extra blank line before the page
   2 heading (its L25 is blank, L26 is the heading; YACCC writes the heading at
   L25). The page break is one line later in `cobc`.
