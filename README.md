@@ -37,9 +37,6 @@ $ ./yaccc examples/mandelbrot.cbl --run
   generator, no code generator, no build step.
 - **0.69%** of the Report Writer's 12-token runs also occur in GnuCOBOL's
   `libcob`. The build fails above 1.5%, so that number is a gate, not a boast.
-- **YACCC** is named after **YACC**, "Yet Another Compiler Compiler" — itself a
-  recursive joke, since yacc is a compiler-compiler. This is that joke one
-  level down: a compiler for a language nobody calls new.
 
 COBOL's standards, for orientation: CODASYL started the work in 1959, COBOL-60
 was published within the year, the first ANSI standard arrived in 1968, and the
