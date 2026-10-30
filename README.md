@@ -83,23 +83,22 @@ conditional compilation inside a copybook, and report items placed without a
 COLUMN clause.
 
 - `make test` compares each program's output and every file it writes against
-  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, the three
-  Report Writer tests (`rw1`–`rw3`), `dbg2` and `dbg5`. They cover cases where
-  YACCC deliberately differs from GnuCOBOL, so their baselines were verified
-  by hand.
+  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, `rw1`, `dbg2`
+  and `dbg5`. They cover cases where YACCC deliberately differs from GnuCOBOL,
+  so their baselines were verified by hand.
 - Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
   had no live `cobc` to record from, so their baselines were checked by hand
-  against the standard. `rwlimit` is marked `.noref`: it prints a whole page,
-  which is the documented page-geometry difference.
+  against the standard. `rwlimit` is marked `.noref` because `cobc` rejects
+  the program (it names a report group `PH`, which `cobc` reserves).
 - Each case may add sidecars: `.in` (stdin), `.args` (the program's own
   arguments), `.flags` (compile flags), `.env` (environment), `.nocmp` (files
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2 it agrees on 57 of the 62 cases, and skips the five whose *test
-  program* `cobc` itself rejects.
+  3.1.2 all 63 pass; the five whose *test program* `cobc` itself rejects are
+  skipped.
 
-All 62 pass, built with gcc.
+All 63 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -112,7 +111,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   503     3              0      187
+  693   506     0              0      187
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,16 +126,12 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 3 failures**, all Report Writer (`Sample Payroll Report`, `Sample
-  Inventory Report`, `Next Group Next Page`): the output differs in where a
-  page break lands. `cobc` reaches a page break
-  through several branches of `reportio.c` and does not place it
-  consistently: measuring a dozen PAGE clause shapes against a live 3.1.2
-  shows a page ending one line short in some shapes and at its full
-  `PAGE LIMIT` in others. YACCC uses the rule that fits the majority --
-  `PAGE LIMIT - 1` lines when the report declares a LAST DETAIL, a FOOTING or
-  a page footing group (and not when the page starts with its first detail
-  line), with the last page always `PAGE LIMIT` lines.
+- **Failures**: none. The last three were Report Writer page breaks; the
+  Report Writer now builds its reports the way GnuCOBOL 3.1.2 does (a chain of
+  print lines walked with a line cursor; see
+  `docs/report-writer-page-model.md`) and matches `cobc` byte for byte on all
+  24 runnable Report Writer tests and on the 527 report shapes
+  `tests/rw_oracle.py --full` generates.
 
 ### Performance
 
@@ -348,13 +343,12 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   - LINE (absolute, PLUS, ON NEXT PAGE), NEXT GROUP, COLUMN (absolute, PLUS,
     LEFT / RIGHT / CENTER), SOURCE, VALUE;
   - an item with no COLUMN clause is placed directly after the previous item
-    of its line, and an item with no LINE clause starts the line after the
-    last one;
+    of its line;
   - report groups described by entries subordinate to an 01 entry without
     TYPE (a GnuCOBOL extension);
-  - SUM ... UPON ... RESET ON, with subtotaling, crossfooting and rolling
-    forward;
-  - GROUP INDICATE.
+  - SUM ... UPON ... RESET ON, with subtotaling and rolling forward;
+  - PRESENT WHEN / ABSENT WHEN, PRESENT / ABSENT AFTER [NEW] PAGE or a
+    control, GROUP INDICATE, OCCURS with STEP and COLUMN lists.
 - Statements: INITIATE, GENERATE (detail or summary reporting), TERMINATE,
   USE BEFORE REPORTING with SUPPRESS PRINTING.
 - LINE-COUNTER and PAGE-COUNTER, qualified by report name when several
@@ -531,17 +525,13 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
 ### Not implemented
 
 - SCREEN SECTION and COMMUNICATION SECTION.
-- Report Writer features added by the 2002 standard such as PRESENT WHEN,
-  and OCCURS with STEP in report groups.
+- Report Writer: VARYING in report groups (GnuCOBOL 3.1.2 doesn't have it
+  either).
 - SYNCHRONIZED alignment: items are laid out packed, so a `POINTER, SYNC`
   item in a group is not aligned as it should be.
 - ANY LENGTH is implemented for LINKAGE items: the size comes from the
   calling program's argument.
 - JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.
-- Report Writer page geometry on reports long enough to break a page. The
-  model GnuCOBOL uses is written up in `docs/report-writer-page-model.md`;
-  yaccc's page advance differs from it in a way that shows up as one extra
-  blank line at each page boundary.
 - Split keys on indexed files (a key made of several SOURCE items).
 - Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
 - Dynamic loading: a CALLed program must be compiled into the same executable.
@@ -572,18 +562,19 @@ All of these were checked against GnuCOBOL 3.1.2:
    digits (GnuCOBOL 3.1.2 shows only the last nine). The irrational results
    (SQRT, LOG, SIN, ...) have 38 significant digits; GnuCOBOL computes about 96,
    so a DISPLAY of one shows fewer digits, and their last digits can differ.
-5. **Report Writer.** YACCC follows the standard's presentation rules. Each page
-   of a report with a PAGE clause occupies exactly PAGE LIMIT lines of the file.
-   GnuCOBOL 3.1.2 differs in these ways:
-   - it loses a line at each page break when the report has no page footing;
-   - it prints the last page footing one line too low;
-   - it doesn't present CONTROL HEADING FINAL;
-   - it ignores `SUM ... UPON` and `RESET ON`.
+5. **Report Writer.** Page layout, control breaks and the order groups print in
+   are GnuCOBOL 3.1.2's, quirks included, since its testsuite and NIST both
+   check them. Four standard rules that GnuCOBOL 3.1.2 doesn't apply are kept:
+   - CONTROL HEADING FINAL is presented (GnuCOBOL never prints it);
+   - `SUM ... UPON` adds only on GENERATEs of the named DETAIL groups, and
+     `RESET ON` resets a counter at the named control (GnuCOBOL ignores both);
+   - at TERMINATE the control footings see the control values of the last
+     GENERATE, as the standard requires. GnuCOBOL uses whatever the program
+     has moved into those fields since, which defeats the usual end-of-file
+     HIGH-VALUES idiom.
 
-   At TERMINATE, YACCC presents the control footings with the control values
-   of the last GENERATE, as the standard requires. GnuCOBOL uses whatever the
-   program has moved into those fields since, which defeats the usual
-   end-of-file HIGH-VALUES idiom.
+   No test in either suite depends on these (`tests/cases/rw1.cbl` covers
+   them).
 6. **Debug module.** Before each debugging procedure YACCC space-fills
    DEBUG-ITEM, as the standard requires, and DEBUG-LINE always names the
    statement that caused it (`tests/cases/dbg2.cbl`). GnuCOBOL 3.1.2 differs in
@@ -618,11 +609,11 @@ source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─�
 | `lib/yaccc/parser.py` | 2,602 | recursive-descent parser to the AST (`nodes.py`, 638) |
 | `lib/yaccc/data.py` | 510 | PICTURE analysis, USAGE resolution, storage layout |
 | `lib/yaccc/codegen.py` | 3,627 | name resolution, C generation, typed fast paths |
-| `lib/yaccc/rwgen.py` | 500 | REPORT SECTION analysis, report tables and callbacks |
+| `lib/yaccc/rwgen.py` | 820 | REPORT SECTION analysis: print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `runtime/cobrt_core.c` | 2,573 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_io.c` | 1,555 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
-| `runtime/cobrt_rw.c` | 417 | Report Writer control system: paging, control breaks, INITIATE/GENERATE/TERMINATE |
+| `runtime/cobrt_rw.c` | 856 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 424 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 678 | intrinsic functions |
 | `runtime/cobrt_math.c` | 728 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
@@ -680,19 +671,19 @@ stated plainly rather than implied.
 - **No GnuCOBOL code is in this repository.** The compiler, the C runtime and
   every test program here were written for YACCC. GnuCOBOL is GPL-3.0 and
   YACCC is MIT; the two never mix in one tree, and that is deliberate.
-- **Behaviour was learned by measuring GnuCOBOL, and in one place by reading
+- **Behaviour was learned by measuring GnuCOBOL, and in places by reading
   it.** Most of the compatibility work here was empirical: build GnuCOBOL 3.1.2
   from source, run the same program through `cobc` and through YACCC, and diff
   the results (that is what `tests/gnucobol/compare.py` does). For the Report
-  Writer's page geometry, `reportio.c` -- specifically `write_to_line`,
-  `do_page_footing` and `do_page_heading` -- was also read, because cobc's
-  output alone did not explain *why* a page break lands where it does.
+  Writer, GnuCOBOL's runtime and the report tables `cobc -C` generates were
+  also read, because output alone did not explain where a page break lands.
+  The model is written up in our own words in
+  `docs/report-writer-page-model.md`, YACCC's implementation was written from
+  that description, and `tests/rw_oracle.py` checks it against a live `cobc`.
   Reading a program to understand its behaviour, then writing your own
   implementation of that behaviour, is how every compatible reimplementation is
   built. Understanding is not copying: no GnuCOBOL source text, function body
-  or comment was translated into this tree, and the one attempt at a close port
-  of that page cursor was discarded rather than shipped (see "Open conformance
-  work").
+  or comment was translated into this tree.
 - **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
   the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
   zero tracked files (checked: `git ls-files third_party` is empty). That suite
@@ -719,16 +710,11 @@ MIT. See [LICENSE](LICENSE).
 
 ## Open conformance work
 
-Three tests in the GnuCOBOL 3.1.2 testsuite still fail, and all three are the
-same problem: where a Report Writer page break lands. This section is a
-briefing for anyone picking them up: what each one needs, the measurements
-behind it, and the files involved. Everything here was measured against a
-GnuCOBOL 3.1.2 built from source (`docs/gnucobol-oracle.md`), not inferred.
+No test in the GnuCOBOL 3.1.2 testsuite fails. The notes below record how the
+last failures were fixed, because the measurements in them are what the fixes
+were built on.
 
-The sections that have since been fixed are kept, marked *(fixed)*, because the
-measurements in them are what the fixes were built on.
-
-To see any of them side by side with `cobc`:
+To see any test side by side with `cobc`:
 
 ```
 export PATH=/tmp/gcinst/bin:$PATH LD_LIBRARY_PATH=/tmp/gcinst/lib
@@ -736,131 +722,32 @@ python3 tests/gnucobol/compare.py "Sample Payroll Report"
 make gctest          # the gate: fails if a recorded PASS stops passing
 ```
 
-`tests/gnucobol/compare.py` runs the same program through both compilers and
-diffs the files they write, which is the only way to see a Report Writer
-difference (stdout is empty for those tests).
+### 1. Report Writer page breaks *(fixed)*
 
-### 1. Report Writer page cursor (3 tests)
+`Sample Payroll Report`, `Sample Inventory Report` and `Next Group Next Page`
+were the last three failures. YACCC's Report Writer used to place page breaks
+with rules measured from `cobc`'s output; they fit 21 of the 25 Report Writer
+tests and disagreed with `cobc` on 128 of the 131 shapes `tests/rw_oracle.py`
+generates. Three ports of a page cursor scored lower still, because they kept
+YACCC's model of a report as a typed tree of groups and worked from a
+description of a later GnuCOBOL.
 
-`Sample Payroll Report`, `Sample Inventory Report`, `Next Group Next Page`.
-YACCC's page geometry is a set of measured rules, where GnuCOBOL's is a cursor
-that walks the page. `Sample Control Break` passed once the FOOTING rule below
-was measured, and `Report PRESENT AFTER` failed for an unrelated reason and is
-written up in section 5.
+What fixed it was building the report the way 3.1.2 does: one chain of print
+lines (an 01 entry or a LINE entry each) walked by group type, item lists that
+stop at the next LINE entry, controls minor first, a hidden counter per SUM
+entry, and a line cursor that each GENERATE advances on entry and steps back on
+exit. `cobc -C` shows those tables directly, and a live `cobc` 3.1.2 checks
+every shape. Three non-geometry rules turned out to matter as much as the
+cursor:
 
-The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
+- a report item with SUM, used in arithmetic or as a MOVE's sending item, is
+  its sum counter (a USE BEFORE REPORTING procedure computes from the total
+  about to print), while DISPLAY and SOURCE see the item as last printed;
+- a second absolute `LINE n` in one group is dropped and joins the line
+  before it;
+- indexed SOURCE items are taken when the GENERATE starts, for every group.
 
-- a page is `PAGE LIMIT` lines, or `PAGE LIMIT - 1` when the report declares a
-  LAST DETAIL, a FOOTING or a page footing group (except when FIRST DETAIL is 1);
-- when the report declares a page footing *group*, the page instead ends where
-  `cobc`'s `do_page_footing()` leaves it: it pads to the last line of the page
-  only while there is one to pad (`if (curr_line < def_lines) write (def_lines
-  - curr_line) lines`, which fills up to `def_lines - 1`), so a footing whose
-  line has already reached the limit ends the page at that line. Measured:
-  `PAGE LIMIT 12` with a footing at 10 ends the page at 11, `PAGE LIMIT 25`
-  with a footing at 24 ends it at 24;
-- the last page, written by TERMINATE, is always `PAGE LIMIT` lines, its page
-  footing goes one line below its declared line, and the report footing follows
-  the page footing;
-- every other group keeps its declared line on every page.
-
-That fits 21 of the 25 Report Writer tests in the file (1 is skipped, 3 fail).
-**It is known to be the wrong shape of answer**, and these are the decisive
-measurements: two reports with the same PAGE clause shape need *different*
-strides, and one report needs two different strides on its own two pages.
-
-- `Sample Customer Report` (`PAGE LIMIT 66`, `HEADING 1`, `FIRST DETAIL 5`,
-  `LAST DETAIL 58`, no page footing, no `FOOTING`) — `cobc` puts the page 2
-  heading on output line 66, so a page is **65** lines: `PAGE LIMIT - 1`.
-- A synthetic report of the same shape (`PAGE LIMIT 20`, `HEADING 1`,
-  `FIRST DETAIL 3`, `LAST DETAIL 14`, control footings, no page footing) —
-  `cobc` puts the page 2 heading on output line 21, so a page is **20** lines:
-  `PAGE LIMIT`.
-
-- `Sample Control Break` (`PAGE LIMIT 25`, `HEADING 1`, `FIRST DETAIL 5`,
-  `FOOTING 23`) — one report, **two different strides**: its page-2 heading is
-  at output line 26 and its page-3 heading at line 50, so page 1 is 25 lines
-  and page 2 is 24.
-
-Same declared geometry, different stride; same report, different stride. The
-stride falls out of where the cursor happens to be when the break is taken, so
-no predicate on the RD can produce it. Switching `page_stride()` to the
-page-footing-only rule fixes the synthetic case and drops the 17 tests whose
-titles contain "report" from 14 passing to 10 -- the same fact from the other
-side. (Measuring that subset is how the wrong "14 of 19" figure in earlier
-versions of this note arose: the filter silently omits `Sample Control Break`,
-`Duplicate Detail Line` and `STUDENT REPORT`.)
-
-Four page models have been implemented and measured against this heuristic, and
-every one scored lower, so none is in the tree:
-
-| model | Report Writer tests | whole suite |
-|---|---|---|
-| the measured heuristic (current) | 21 of 25 | 503 pass / 3 fail |
-| full cursor port (`curr_line`, `write_at`, footing/heading branches) | 10 of 23 | 485 |
-| `write_to_line` as the only primitive (a primitive 3.1.2 does not have) | -- | 492 |
-| each page starts at the file position | -- | 494 |
-| page = `PAGE LIMIT`, or its last written line if the cursor reached it | 15 of 25 | 497 |
-
-A further one-line change -- a page footing whose declared line the cursor has
-already passed lands at the cursor -- is correct per the source but moved no
-test by itself, so it is out as well. The last row is the closest so far: it
-improves the generated sweep in `tests/rw_oracle.py` from 128 differing shapes
-to 117 while costing the testsuite six tests, because the rule and the
-`LINE PLUS` pre-overflow skip are entangled.
-
-The reason they all lose is now understood and written down: the heuristic's
-padding happens to reproduce the *file* geometry of most shapes even though its
-page arithmetic is wrong. Correcting the arithmetic alone removes that
-compensation without supplying the reproduction, so the score falls. A port has
-to replace the padding **and** the page advance together, in one change.
-
-`tests/rw_oracle.py` is the tool that scores any such port: it generates report
-programs across the whole page-geometry space, compiles each with both
-compilers and compares the report files byte for byte, cutting a mismatch down
-to the smallest shape that still shows it. Its first run found 128 of 131
-generated shapes differing while the testsuite flagged three -- which is why
-three wrong models survived review, and why the next attempt should be judged
-by it as well as by the suite.
-
-The reference's own report tables can also be dumped with `cobc -C` and decoded
-against `cob_report_line` in its `common.h`. Doing that for `Sample Charge Report
-3` shows groups are one flat `sister` chain dispatched on a type flag (not a
-typed tree), and that `NEXT GROUP` is a flag plus a `next_group_line` on the
-group's own line record. That structure, and the method that recovered it, are
-written up in `docs/report-writer-page-model.md`.
-
-`docs/report-writer-page-model.md` carries what that port needs: "Observing the
-real cursor" (3.1.2 can print its own cursor decisions -- how the page lengths
-below were measured rather than guessed), and "The 3.1.2 algorithm, exactly",
-decoded from `reportio.c` and `fileio.c`. The non-obvious parts are that
-`curr_line` is incremented at the start of each GENERATE and decremented at the
-end (the pair cancels unless the page footing cleared `incr_line`), that
-`do_page_footing` pads only while the cursor is short of PAGE LIMIT and
-otherwise just resets to line 1, and that the overflow test compares
-`curr_line` before *and* after a line is positioned -- so a group can carry the
-cursor past LAST DETAIL and eject a page later than a group-granularity model
-would.
-
-- **`Sample Payroll Report`** — 96 input records; `cobc` writes 88 lines with
-  17 employee rows, YACCC 133 lines with 23. `cobc` both *drops* a group whose
-  target line is already written on the page and writes **no padding** after
-  its last page (3,919 bytes, ending at "COMPANY TOTALS ... 100%"). Neither is
-  reproduced yet.
-- **`Sample Inventory Report`** — 74 lines from both compilers, differing in
-  6: the first page now ends where `cobc`'s does (see `do_page_footing` below),
-  but from page 2 on `cobc` ends each page one line later than page 1 in the
-  same report, so the page footing sits at 49 against 48. It has a PAGE
-  FOOTING group at LINE 24 and `FOOTING 20` together.
-- **`Next Group Next Page`** — 4021 lines against 3955, offset from line 14.
-
-The fix is not another rule, and it is not a small one: it is the state machine
-in "The 3.1.2 algorithm, exactly" in `docs/report-writer-page-model.md`, ported
-in one change rather than piecemeal. `cob_report` in `runtime/cobrt.h` needs the
-fields that machine has -- `curr_line`, `curr_page`, `incr_line`,
-`first_detail`, `first_generate`, `in_page_heading`, `in_page_footing`,
-`in_report_footing` -- and `page_stride()`/`pad_page()`/`finish_page()` go away
-in favour of it.
+`docs/report-writer-page-model.md` describes the model in full.
 
 ### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34 *(fixed)*
 
@@ -958,6 +845,8 @@ Three failures that had nothing to do with Report Writer page geometry:
 - NATIONAL (`PIC N`) is stored one byte per character with two bytes per
   character of width, because that is what 3.1.2 does and what its tests
   compare against; it is not UTF-16.
-- GnuCOBOL's Report Writer output for `rw2` (the differential test) is itself
-  corrupt -- its page counter never advances, so it repeats page 1 for ever --
-  which is why that test carries a hand-recorded baseline instead.
+- GnuCOBOL 3.1.2's Report Writer quirks (a control heading for a major control
+  also prints the minor controls' headings; a NEXT GROUP on a DETAIL with a
+  single LINE entry is ignored; ABSENT WHEN prints when the condition is
+  *true*) are reproduced, not fixed: the testsuite and NIST were written
+  against them.

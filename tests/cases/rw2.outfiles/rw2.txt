@@ -16,33 +16,50 @@
 
 
 
+END OF PAGE  1
+
+INVENTORY                    PAGE  1
+------------------------------------
+
+WAREHOUSE A
 
 
+
+
+
+
+
+
+
+
+
+
+
+END OF PAGE  1
+
+INVENTORY                    PAGE  1
+------------------------------------
+
+  A    PART-01     1  05
+       PART-02     2  06
+       PART-03     3  07
+       PART-04     4  08
+       PART-05     5  09
+       PART-06     6  10
+       PART-07     7  11
+       PART-08     8  12
+       PART-09     9  13
+       PART-10    10  14
+       PART-11    11  15
+
+
+
+END OF PAGE  1
 
 INVENTORY                    PAGE  2
 ------------------------------------
 
-WAREHOUSE A
-  A    PART-01     1  06
-       PART-02     2  07
-       PART-03     3  08
-       PART-04     4  09
-       PART-05     5  10
-       PART-06     6  11
-       PART-07     7  12
-       PART-08     8  13
-       PART-09     9  14
-       PART-10    10  15
-
-
-
-END OF PAGE  2
-
-INVENTORY                    PAGE  3
-------------------------------------
-
-  A    PART-11    11  05
-       PART-12    12  06
+  A    PART-12    12  05
   SUBTOTAL        78
 
 
@@ -55,9 +72,10 @@ INVENTORY                    PAGE  3
 
 
 
-END OF PAGE  3
 
-INVENTORY                    PAGE  4
+END OF PAGE  2
+
+INVENTORY                    PAGE  3
 ------------------------------------
 
 WAREHOUSE B
@@ -75,7 +93,8 @@ WAREHOUSE B
 
 
 
-END OF PAGE  4
+END OF PAGE  3
+
 
 
 
@@ -85,14 +104,3 @@ END OF PAGE  4
 
 
 TOTAL PARTS:  138
-
-
-
-
-
-
-
-
-
-
-

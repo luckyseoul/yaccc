@@ -662,19 +662,19 @@ PASS  run_reportwriter.at:776      Sample Charge Report
 PASS  run_reportwriter.at:1129     Sample Charge Report 2
 PASS  run_reportwriter.at:1499     Sample Charge Report 3
 PASS  run_reportwriter.at:1799     Sample Charge Report 4
-FAIL  run_reportwriter.at:2215     Sample Payroll Report
+PASS  run_reportwriter.at:2215     Sample Payroll Report
 PASS  run_reportwriter.at:2900     Sample REPORT with RIGHT/CENTER
 PASS  run_reportwriter.at:3068     STUDENT REPORT with INITIAL
 PASS  run_reportwriter.at:3220     ORDER REPORT; Test substring
 PASS  run_reportwriter.at:3568     Sample Control Break
-FAIL  run_reportwriter.at:3797     Sample Inventory Report
+PASS  run_reportwriter.at:3797     Sample Inventory Report
 PASS  run_reportwriter.at:3990     Duplicate Detail Line
 PASS  run_reportwriter.at:4118     Report with OCCURS
 SKIP  run_reportwriter.at:4223     Report CODE and LIMIT COLUMNS
 PASS  run_reportwriter.at:4444     Duplicate INITIATE
 PASS  run_reportwriter.at:4511     Missing INITIATE and GENERATE
 PASS  run_reportwriter.at:4571     Missing INITIATE and TERMINATE
-FAIL  run_reportwriter.at:4625     Next Group Next Page
+PASS  run_reportwriter.at:4625     Next Group Next Page
 PASS  run_reportwriter.at:8948     Report PRESENT AFTER
 PASS  run_returncode.at:23         RETURN-CODE moving
 PASS  run_returncode.at:49         RETURN-CODE passing
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 503  FAIL 3  CERR 0  XERR 0  SKIP 187
+PASS 506  FAIL 0  CERR 0  XERR 0  SKIP 187
