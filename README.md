@@ -720,6 +720,16 @@ stated plainly rather than implied.
   implementation of that behaviour, is how every compatible reimplementation is
   built. Understanding is not copying: no GnuCOBOL source text, function body
   or comment was translated into this tree.
+- **The Report Writer's debt is the largest, and it went the long way round.**
+  Its page model was learnt from GnuCOBOL 3.1.2 and nothing else: the report
+  tables `cobc -C` emits, the output of the 24 runnable Report Writer tests,
+  and a live `cobc` driven over generated report shapes. An earlier attempt to
+  port the reference's runtime was removed rather than kept — it took over a
+  thousand lines to move the testsuite from 503 to 506, and it was a
+  translation, not an implementation. Rebuilding it from measurements instead
+  left `runtime/cobrt_rw.c` with no shared run of twelve tokens against
+  GnuCOBOL's `libcob`, and the page-break failures it had masked are recorded
+  as open work below rather than hidden behind a green gate.
 - **That claim is checked, not asserted.** `make provenance` fails the build on
   a vendored file, a GPL notice, a missing SPDX tag, or a distinctive GnuCOBOL
   function name. A grep cannot see a translation that renamed everything, so
