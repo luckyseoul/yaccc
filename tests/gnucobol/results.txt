@@ -102,12 +102,12 @@ PASS  run_extensions.at:3588       System routine CBL_IMP
 PASS  run_extensions.at:3615       System routine CBL_NIMP
 PASS  run_extensions.at:3642       System routine CBL_NOT
 PASS  run_extensions.at:3668       System routine CBL_EQ
-FAIL  run_extensions.at:3695       System routine CBL_GC_GETOPT
+PASS  run_extensions.at:3695       System routine CBL_GC_GETOPT
 PASS  run_extensions.at:4132       System routine CBL_GC_FORK
 PASS  run_extensions.at:4200       System routine CBL_GC_WAITPID
 SKIP  run_extensions.at:4252       System routine CBL_GC_HOSTED
 PASS  run_extensions.at:4382       System routine SYSTEM, parameter handling
-FAIL  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
+SKIP  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
 SKIP  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
 SKIP  run_extensions.at:4673       DISPLAY DIRECTIVE and $DISPLAY
 PASS  run_extensions.at:4706       Conditional / define directives (1)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 484  FAIL 11  CERR 0  XERR 0  SKIP 198
+PASS 485  FAIL 9  CERR 0  XERR 0  SKIP 199

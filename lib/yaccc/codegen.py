@@ -151,6 +151,7 @@ SYSTEM_ROUTINES = {
     'C$CHDIR': (1, 2), 'CBL_GET_CURRENT_DIR': (3, 3),
     'CBL_DELETE_FILE': (1, 1), 'C$DELETE': (1, 2), 'CBL_RENAME_FILE': (2, 2), 'CBL_COPY_FILE': (2, 2),
     'C$COPY': (2, 3), 'CBL_CHECK_FILE_EXIST': (2, 2), 'C$FILEINFO': (2, 2),
+    'CBL_GC_GETOPT': (6, 6), 'CBL_ERROR_PROC': (2, 2),
     'CBL_OPEN_FILE': (5, 5), 'CBL_CREATE_FILE': (5, 5), 'CBL_READ_FILE': (5, 5),
     'CBL_WRITE_FILE': (5, 5), 'CBL_CLOSE_FILE': (1, 1), 'CBL_FLUSH_FILE': (1, 1),
 }
@@ -1020,6 +1021,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 continue
             for r in fi.fd.records[:1]:
                 em(f"memset({fi.buf}, ' ', {fi.size});")
+        # a new program starts its own CBL_GC_GETOPT scan over the arguments
+        em("cob_getopt_reset();")
         init_body = em.lines
         init_locals = self.fn_locals
         self.funcs.append(f"static void {init_name}(void)")

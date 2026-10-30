@@ -39,7 +39,8 @@ QUADRIGRAPHS = (('@<:@', '['), ('@:>@', ']'), ('@S|@', '$'), ('@%:@', '#'), ('@&
 
 # cobc options that do not change behavior here, and translations
 IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra'}
-FLAG_MAP = {'-free': ['-free'], '-fixed': ['-fixed'], '-fdebugging-line': ['--debugging-mode'],
+FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
+            '--fixed': ['-fixed'], '-fdebugging-line': ['--debugging-mode'],
             # yaccc has these as its own options
             '-fnotrunc': ['-fno-binary-truncate'],
             '-fbinary-truncate': [],        # yaccc's default

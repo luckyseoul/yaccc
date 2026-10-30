@@ -59,6 +59,16 @@ void cob_init(int argc, char **argv)
 		setvbuf(stdout, NULL, _IOFBF, 1 << 16);
 }
 
+int cob_arg_count(void)
+{
+	return g_argc;
+}
+
+const char *cob_arg_value(int i)
+{
+	return (i >= 0 && i < g_argc) ? g_argv[i] : NULL;
+}
+
 void cob_stop_run(int rc)
 {
 	fflush(stdout);
@@ -68,14 +78,66 @@ void cob_stop_run(int rc)
 	exit(rc & 0xff);
 }
 
+/* ================================================================ error procedures
+ *
+ * CBL_ERROR_PROC (index, proc-address) registers a procedure the runtime calls
+ * when it is about to fail: the procedure receives the error message, NUL
+ * terminated, and may return (GnuCOBOL continues with the next registered
+ * procedure) -- the program still ends with status 1 afterwards. Registering
+ * the same address twice is ignored, and a registration goes to the front, so
+ * the procedures run most-recently-registered first.
+ */
+#define COB_MAX_ERR_PROCS 8
+static int (*err_procs[COB_MAX_ERR_PROCS])(int, unsigned char **);
+static int n_err_procs;
+static int in_error_proc;
+
+void cob_error_proc_set(void *fn)
+{
+	if (!fn)
+		return;
+	for (int i = 0; i < n_err_procs; i++)
+		if ((void *)err_procs[i] == fn)
+			return;                         /* already registered */
+	if (n_err_procs == COB_MAX_ERR_PROCS) {
+		memmove(&err_procs[1], &err_procs[0],
+		        (size_t)(COB_MAX_ERR_PROCS - 1) * sizeof err_procs[0]);
+		n_err_procs--;
+	}
+	memmove(&err_procs[1], &err_procs[0], (size_t)n_err_procs * sizeof err_procs[0]);
+	err_procs[0] = (int (*)(int, unsigned char **))fn;
+	n_err_procs++;
+}
+
 void cob_fatal(const char *fmt, ...)
 {
+	char msg[1024];
 	va_list ap;
-	fflush(stdout);
-	fprintf(stderr, "cobrt: runtime error: ");
 	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
+	vsnprintf(msg, sizeof msg, fmt, ap);
 	va_end(ap);
+	fflush(stdout);
+	if (n_err_procs && !in_error_proc) {
+		/* hand the message to every registered procedure, then report */
+		static unsigned char buf[1024];
+		size_t n = strlen(msg);
+		if (n > sizeof buf - 1)
+			n = sizeof buf - 1;
+		memcpy(buf, msg, n);
+		buf[n] = 0;
+		unsigned char *av[1] = { buf };
+		in_error_proc = 1;
+		for (int i = 0; i < n_err_procs; i++)
+			if (err_procs[i])
+				err_procs[i](1, av);
+		in_error_proc = 0;
+		fprintf(stderr, "libcob: error: %s\n", msg);
+		cob_close_all_files();
+		fflush(stdout);
+		exit(1);
+	}
+	fprintf(stderr, "cobrt: runtime error: ");
+	fputs(msg, stderr);
 	fputc('\n', stderr);
 	cob_close_all_files();
 	fflush(stdout);

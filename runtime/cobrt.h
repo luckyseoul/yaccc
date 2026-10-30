@@ -283,6 +283,9 @@ static inline cob_s64 cob_chk_sub(cob_s64 v, cob_s64 max, const char *name, cons
 
 /* ------------------------------------------------------------ runtime control */
 void cob_init(int argc, char **argv);
+int cob_arg_count(void);                /* the process's argument count */
+const char *cob_arg_value(int i);       /* argument i, NULL if out of range */
+void cob_getopt_reset(void);            /* start CBL_GC_GETOPT over from argv[1] */
 void cob_stop_run(int rc) __attribute__((noreturn));
 void cob_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
 void cob_perform_overflow(const char *loc) __attribute__((noreturn));
@@ -740,6 +743,9 @@ int cob_sys_c_getpid(int n, cob_field **a);
 int cob_sys_c_sleep(int n, cob_field **a);
 int cob_sys_cbl_gc_nanosleep(int n, cob_field **a);
 int cob_sys_cbl_gc_fork(int n, cob_field **a);
+int cob_sys_cbl_gc_getopt(int n, cob_field **a);
+int cob_sys_cbl_error_proc(int n, cob_field **a);
+void cob_error_proc_set(void *fn);
 int cob_sys_cbl_gc_waitpid(int n, cob_field **a);
 int cob_sys_cbl_create_dir(int n, cob_field **a);
 int cob_sys_cbl_delete_dir(int n, cob_field **a);

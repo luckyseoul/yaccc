@@ -652,3 +652,266 @@ int cob_sys_cbl_flush_file(int n, cob_field **a)
 		return -1;
 	return handle_fd(a[0]) >= 0 ? 0 : -1;
 }
+
+/* ================================================================ CBL_GC_GETOPT
+ *
+ * GNU getopt_long over COBOL data:
+ *   SO         PIC X(n)   optstring: "ab:c::"  (":" required, "::" optional arg)
+ *   LO         group      array of 38-byte records, no padding:
+ *                           name[25], has_value[1], valpoint[8], val[4]
+ *   LONGIND    PIC 99     index from 0 of the long option that matched
+ *   LONG-ONLY  numeric    a single-dash word is tried as a long option first
+ *   RETURN-CHAR PIC X(4)  the option's letter, or '?' when it failed
+ *   OPT-VAL    PIC X(10)  the option's argument, blank padded
+ *
+ * Returns 3 for an option, 2 when its argument did not fit OPT-VAL, 0 for a
+ * long option that stores its VAL through VALPOINT, 63 ('?') when the option
+ * was not understood, and -1 when none are left. Every value here was measured
+ * on GnuCOBOL 3.1.2; the messages are glibc's, which is what it prints.
+ */
+#define GO_ENTRY 38
+
+static int go_argi = 1;         /* argv index we are looking at */
+static int go_ch = 1;           /* offset in the current short-option token */
+static int go_done;             /* saw "--" */
+static int go_started;
+
+void cob_getopt_reset(void)
+{
+	go_argi = 1;
+	go_ch = 1;
+	go_done = 0;
+	go_started = 0;
+}
+
+static const char *go_prog(void)
+{
+	const char *p = cob_arg_value(0);
+	return p ? p : "";
+}
+
+static void go_put(cob_field *f, const char *src, size_t n, int *truncated)
+{
+	memset(f->data, ' ', f->size);
+	size_t k = n < f->size ? n : f->size;
+	if (k && src)
+		memcpy(f->data, src, k);
+	if (n > f->size)
+		*truncated = 1;
+}
+
+static void go_put_int(cob_field *f, int v)
+{
+	cob_set_int(f, v);
+}
+
+/* name of long option i, without the blank padding; returns its length */
+static size_t go_name(const unsigned char *lo, int i, char *out)
+{
+	const unsigned char *p = lo + (size_t)i * GO_ENTRY;
+	size_t n = 25;
+	while (n > 0 && p[n - 1] == ' ')
+		n--;
+	memcpy(out, p, n);
+	out[n] = 0;
+	return n;
+}
+
+int cob_sys_cbl_gc_getopt(int n, cob_field **a)
+{
+	if (n < 6)
+		return 63;
+	cob_field *so = a[0], *lo = a[1], *ind = a[2], *ov = a[5], *rch = a[4];
+	int long_only = (int)cob_get_int(a[3]);
+	int nargs = cob_arg_count();
+	if (lo->size == 0 || lo->size % GO_ENTRY != 0)
+		cob_fatal("Call to CBL_GC_GETOPT with wrong longoption size");
+	int nent = (int)(lo->size / GO_ENTRY);
+	if (!go_started) {
+		go_argi = 1;
+		go_ch = 1;
+		go_done = 0;
+		go_started = 1;
+	}
+	char optstr[512];
+	size_t osl = so->size < sizeof optstr - 1 ? so->size : sizeof optstr - 1;
+	memcpy(optstr, so->data, osl);
+	optstr[osl] = 0;
+	/* the optstring ends at the first space or NUL */
+	for (size_t i = 0; i < osl; i++)
+		if (optstr[i] == ' ' || optstr[i] == 0) {
+			optstr[i] = 0;
+			break;
+		}
+	if (!optstr[0] && so->size > 0 && so->data[0] == ' ')
+		optstr[0] = 0;
+
+	const char *tok = NULL;
+	for (;;) {
+		if (go_done || go_argi >= nargs)
+			return -1;
+		tok = cob_arg_value(go_argi);
+		if (!tok)
+			return -1;
+		if (tok[0] != '-' || tok[1] == 0) {
+			go_argi++;              /* a plain operand: not an option */
+			continue;
+		}
+		if (tok[1] == '-' && tok[2] == 0) {
+			go_done = 1;
+			go_argi++;
+			return -1;
+		}
+		if (tok[1] == '-')
+			break;                  /* long option */
+		/* ---- short option(s) in this token ---- */
+		while (tok[go_ch]) {
+			char c = tok[go_ch];
+			const char *o = strchr(optstr, c);
+			if (!o || c == ':') {
+				fprintf(stderr, "%s: invalid option -- '%c'\n", go_prog(), c);
+				go_ch++;
+				if (!tok[go_ch]) {
+					go_argi++;
+					go_ch = 1;
+				}
+				go_put(rch, "?", 1, &(int){0});
+				return '?';
+			}
+			int need = o[1] == ':' ? (o[2] == ':' ? 2 : 1) : 0;
+			const char *arg = NULL;
+			size_t alen = 0;
+			int took_next = 0;
+			if (need == 1) {
+				if (tok[go_ch + 1]) {
+					arg = tok + go_ch + 1;
+					alen = strlen(arg);
+				} else if (go_argi + 1 < nargs) {
+					arg = cob_arg_value(go_argi + 1);
+					alen = arg ? strlen(arg) : 0;
+					took_next = 1;
+				} else {
+					fprintf(stderr, "%s: option requires an argument -- '%c'\n",
+					        go_prog(), c);
+					go_argi++;
+					go_ch = 1;
+					go_put(rch, "?", 1, &(int){0});
+					return '?';
+				}
+			} else if (need == 2) {
+				if (tok[go_ch + 1]) {
+					arg = tok + go_ch + 1;
+					alen = strlen(arg);
+				}
+			}
+			if (took_next || need == 1 || need == 2) {
+				go_argi += 1 + took_next;   /* the rest of the token was the argument */
+				go_ch = 1;
+			} else if (tok[go_ch + 1]) {
+				go_ch++;                    /* the next letter of a cluster: -jkl */
+			} else {
+				go_argi++;
+				go_ch = 1;
+			}
+			go_put(rch, &c, 1, &(int){0});
+			int truncated = 0;
+			if (arg)
+				go_put(ov, arg, alen, &truncated);
+			return truncated ? 2 : 3;
+		}
+		go_argi++;
+		go_ch = 1;
+	}
+
+	/* ---- long option ---- */
+	{
+		const char *name = tok + 2;
+		const char *eq = strchr(name, '=');
+		size_t nlen = eq ? (size_t)(eq - name) : strlen(name);
+		int exact = -1, best = -1, nbest = 0;
+		char nm[26];
+		for (int i = 0; i < nent; i++) {
+			size_t l = go_name(lo->data, i, nm);
+			if (l == 0)
+				continue;               /* an empty slot ends nothing: skip it */
+			if (l == nlen && memcmp(nm, name, nlen) == 0) {
+				exact = i;
+				break;
+			}
+			if (nlen < l && memcmp(nm, name, nlen) == 0) {
+				best = i;
+				nbest++;
+			}
+		}
+		int match = exact >= 0 ? exact : (nbest == 1 ? best : -1);
+		if (match < 0) {
+			if (nbest > 1) {
+				fprintf(stderr, "%s: option '--%.*s' is ambiguous; possibilities:",
+				        go_prog(), (int)nlen, name);
+				for (int i = 0; i < nent; i++) {
+					size_t l = go_name(lo->data, i, nm);
+					if (l > nlen && memcmp(nm, name, nlen) == 0)
+						fprintf(stderr, " '--%s'", nm);
+				}
+				fputc('\n', stderr);
+			} else {
+				fprintf(stderr, "%s: unrecognized option '--%.*s'\n",
+				        go_prog(), (int)nlen, name);
+			}
+			go_argi++;
+			go_ch = 1;
+			go_put(rch, "?", 1, &(int){0});
+			return '?';
+		}
+		const unsigned char *ent = lo->data + (size_t)match * GO_ENTRY;
+		int has_value = ent[25] - '0';
+		void *valpoint = NULL;
+		memcpy(&valpoint, ent + 26, sizeof valpoint);
+		const unsigned char *val = ent + 34;
+		go_put_int(ind, match);
+		if (valpoint) {
+			memcpy(valpoint, val, 4);
+			go_argi++;
+			go_ch = 1;
+			return 0;
+		}
+		go_put(rch, (const char *)val, 4, &(int){0});
+		const char *arg = NULL;
+		size_t alen = 0;
+		if (eq) {
+			arg = eq + 1;
+			alen = strlen(arg);
+		} else if (has_value == 1) {
+			if (go_argi + 1 < nargs) {
+				arg = cob_arg_value(go_argi + 1);
+				alen = arg ? strlen(arg) : 0;
+				go_argi++;
+			} else {
+				fprintf(stderr, "%s: option '--%.*s' requires an argument\n",
+				        go_prog(), (int)nlen, name);
+				go_argi++;
+				go_ch = 1;
+				go_put(rch, "?", 1, &(int){0});
+				return '?';
+			}
+		}
+		go_argi++;
+		go_ch = 1;
+		int truncated = 0;
+		go_put(ov, arg, arg ? alen : 0, &truncated);
+		return truncated ? 2 : 3;
+	}
+}
+
+/* CBL_ERROR_PROC (index, procedure-address): register a runtime error handler.
+ * The first argument selects a slot, but GnuCOBOL's procedures form one chain
+ * in which the latest registration runs first whatever the index, which is what
+ * its own test depends on. */
+int cob_sys_cbl_error_proc(int n, cob_field **a)
+{
+	if (n < 2)
+		return -1;
+	void *fn = cob_pointer_get(a[1]);
+	cob_error_proc_set(fn);
+	return 0;
+}
