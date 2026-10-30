@@ -146,8 +146,19 @@ def main():
     mods = args[1:] or ['NC', 'SM', 'IC', 'SQ', 'RL', 'IX', 'ST', 'SG', 'OB', 'IF', 'RW', 'DB']
     grand = dict(progs=0, ok=0, cerr=0, xerr=0, total=0, passed=0, failed=0, deleted=0, inspect=0)
     summary = []
-    for m in mods:
-        res = run_module(suite, m)
+    # Modules are independent of each other -- each compiles and runs inside its
+    # own directory -- so they can go at once. Programs *within* a module cannot:
+    # the second-phase .SUB tests read the files the first phase wrote, so
+    # shuffling them changes what is tested. Verified by comparing the totals
+    # of a parallel run against a serial one.
+    jobs = int(os.environ.get('NIST_JOBS', '0') or 0) or min(len(mods), os.cpu_count() or 1)
+    if jobs > 1 and len(mods) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            results = list(pool.map(lambda m: run_module(suite, m), mods))
+    else:
+        results = [run_module(suite, m) for m in mods]
+    for m, res in zip(mods, results):
         if res is None:
             continue
         rows, t = res

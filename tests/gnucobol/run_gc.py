@@ -430,6 +430,9 @@ def main():
     ap.add_argument('--log', help='write failure details to this file')
     ap.add_argument('--expect', help='results file written by -v (tests/gnucobol/results.txt): '
                     'report only the tests whose result changed, and fail if a passing test no longer passes')
+    ap.add_argument('-j', '--jobs', type=int, default=0,
+                    help='run this many tests at once (default: CPU count, capped at 16). '
+                         'Each test builds and runs in its own directory, so they are independent')
     a = ap.parse_args()
     files = a.files or sorted(f for f in os.listdir(a.suite) if f.startswith(('run_', 'data_')) and f.endswith('.at'))
     want = {}
@@ -438,16 +441,31 @@ def main():
             parts = line.split()
             if len(parts) >= 2 and parts[0] in STATUSES:
                 want[parts[1]] = parts[0]
-    runner = Runner(a.cobc, a.keep)
-    counts = {}
-    changed = []
-    log = open(a.log, 'w') if a.log else None
+    jobs = a.jobs or min(os.cpu_count() or 1, 16)
+    # collect first, so the work can be handed out in one go and reported in a
+    # stable order whatever order it finishes in
+    todo = []
     for fn in files:
         path = fn if os.path.isabs(fn) else os.path.join(a.suite, fn)
         for t in parse_file(path):
             if a.pattern and a.pattern.lower() not in t.title.lower():
                 continue
-            res, info = runner.run_test(t)
+            todo.append(t)
+
+    def work(t):
+        # a Runner per test: its state is per-test and this keeps it thread-safe
+        return Runner(a.cobc, a.keep).run_test(t)
+
+    counts = {}
+    changed = []
+    log = open(a.log, 'w') if a.log else None
+    from concurrent.futures import ThreadPoolExecutor
+    if jobs > 1 and len(todo) > 1:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            results = list(pool.map(work, todo))
+    else:
+        results = [work(t) for t in todo]
+    for t, (res, info) in zip(todo, results):
             key = f"{os.path.basename(t.path)}:{t.line}"
             counts[res] = counts.get(res, 0) + 1
             if a.expect:
