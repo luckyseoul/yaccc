@@ -756,9 +756,9 @@ MIT. See [LICENSE](LICENSE).
 
 ## Open conformance work
 
-No test in the GnuCOBOL 3.1.2 testsuite fails. The notes below record how the
-last failures were fixed, because the measurements in them are what the fixes
-were built on.
+No test in the GnuCOBOL 3.1.2 testsuite fails. Items 1-5 record how the last
+failures were fixed, because the measurements in them are what the fixes were
+built on. Item 6 is a defect the suites do not cover and which is still open.
 
 To see any test side by side with `cobc`:
 
@@ -885,6 +885,66 @@ Three failures that had nothing to do with Report Writer page geometry:
   `cob_report_initiate` in `cobc`'s `reportio.c` never looks at the file, so
   neither does YACCC's now: the write path still reports a file that is closed
   when a line is actually due.
+
+### 6. A division by an inexact intrinsic result gives 0 *(open)*
+
+Found while building [SPACE.cob](https://github.com/luckyseoul/SPACE.cob), which
+works around it. No program in NIST CCVS85, GnuCOBOL's testsuite or
+`tests/cases/` divides by an intrinsic function, so `make gctest` and
+`make nist` both stay green; it is recorded here so that green does not read as
+"no known arithmetic defects".
+
+Dividing by an intrinsic function whose result is not exactly representable
+gives zero in YACCC and the true quotient in GnuCOBOL 3.1.2:
+
+```cobol
+COMPUTE A = 1 / FUNCTION PI          *> YACCC 0, cobc 0.3183098861837906
+COMPUTE B = 1 / FUNCTION SQRT(2)     *> YACCC 0, cobc 0.7071067811865475
+COMPUTE C = 1 / FUNCTION SQRT(4)     *> both 0.5 (the result is exact)
+```
+
+Computing the function into a `COMP-2` item first and dividing by that item
+gives the right answer, which is the workaround `space.cob` uses. The zero
+survives a move into a decimal receiver, so it is not a display problem.
+
+**Cause.** `d_div` in `runtime/cobrt_core.c` chooses its scaling from the
+dividend alone:
+
+```c
+int shift = 37 - ndigits(a.v);
+if (shift < 0)
+	shift = 0;
+cob_s128 av = a.v * P10[shift];
+r.v = av / b.v;                     /* integer division */
+```
+
+`hp_to_dec` in `runtime/cobrt_math.c` returns 38 significant digits, so for
+`1 / FUNCTION PI` the divisor is about 3.14e37 while the dividend is scaled to
+1e36. The integer quotient is 0, and the 37-digit target is never reached.
+
+GnuCOBOL does not have the problem for a different reason than precision
+policy: `cob_decimal_div` in `libcob/numeric.c` puts the operands in GMP
+integers, which cannot overflow, and shifts the dividend by a fixed
+`COB_MAX_DIGITS` (38) plus any scale correction before dividing
+(`shift_decimal`, then `mpz_tdiv_q`). The quotient therefore carries 38
+significant digits whatever the divisor's magnitude. YACCC's `d_div` works in
+a fixed 128-bit integer, so it cannot buy that room the same way.
+
+Measured against `cobc`, dividing by `FUNCTION PI`:
+
+| dividend | YACCC | cobc |
+|---|---|---|
+| `1` | `0` | `0.3183098861837906` |
+| `10000000000000000000` | `0` | `3.183098861837906E+18` |
+| 37 nines | `0` | `3.183098861837907E+36` |
+| 38 nines | `3E+37` | `3.183098861837906E+37` |
+
+The last row is the diagnostic: the quotient only becomes nonzero once the
+dividend's integer magnitude exceeds the divisor's, and even then it is the
+integer part of the ratio rather than the ratio. Scaling the dividend is not
+enough — the shift has to account for the divisor's digits too, and doing that
+in 128 bits overflows for a small dividend, so the fix needs either a two-step
+division or the `hp` path in `cobrt_math.c`.
 
 ### Things in this area that are *not* worth "fixing"
 
