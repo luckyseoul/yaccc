@@ -420,6 +420,19 @@ static cob_dec d_div(cob_dec a, cob_dec b, int lim)
 	if (shift < 0)
 		shift = 0;
 	cob_s128 av = a.v * P10[shift];
+	/* The dividend is scaled to 37 digits whatever the divisor, so a divisor
+	 * of more than 19 significant digits leaves fewer than 18 in the quotient:
+	 * a 38-digit intrinsic result such as FUNCTION PI or FUNCTION SQRT(2)
+	 * left none, and 1 / FUNCTION PI was 0. Unless the division is exact,
+	 * round such a divisor to 19 digits, which keeps 18 or more in the
+	 * quotient. */
+	int bdig = ndigits(b.v);
+	if (bdig > 19 && av % b.v != 0) {
+		int k = bdig - 19;
+		cob_s128 half = P10[k] / 2;
+		b.v = (b.v < 0 ? b.v - half : b.v + half) / P10[k];
+		b.scale -= k;
+	}
 	r.v = av / b.v;
 	r.scale = a.scale + shift - b.scale;
 	if (r.scale < 0) {

@@ -22,22 +22,22 @@ $ ./yaccc examples/mandelbrot.cbl --run
 
 - **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
   them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **504** of GnuCOBOL 3.1.2's own testsuite pass. Two still fail, both Report
-  Writer page breaks; the other 187 are skipped because they need more than
-  compiling and running a program.
-- **63** differential test programs, compared with GnuCOBOL byte for byte:
+- **506** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 187
+  are skipped because they need more than compiling and running a program.
+- **64** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes.
-- **136** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
-  `cobc` byte for byte. The rest are the open work described below.
+- **527** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
+  `cobc` byte for byte.
 - **1** NIST test that cannot pass unattended. OBNC1M prints
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 224 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **13,247** lines of Python in the compiler, standard library only — no parser
+- **13,178** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
-- **0.00%** of the Report Writer's 12-token runs occur in GnuCOBOL's `libcob`
-  — no shared run of twelve tokens at all. The build fails above 1.5%, so that
-  number is a gate, not a boast.
+- **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
+  occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
+  file shows, against 10.7% for the port that was removed. The build fails
+  above 3%, so that number is a gate, not a boast.
 
 COBOL's standards, for orientation: CODASYL started the work in 1959, COBOL-60
 was published within the year, the first ANSI standard arrived in 1968, and the
@@ -102,8 +102,8 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 63 programs covering moves, editing, arithmetic and
-rounding modes, PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
+`tests/cases/` holds 64 programs covering moves, editing, arithmetic and
+rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
 ACCEPT, CALL and CANCEL, library routines and exception functions, ALTER,
@@ -125,10 +125,10 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 58 of the 63 run and all 58 pass; the five whose *test program*
+  3.1.2, 59 of the 64 run and all 59 pass; the five whose *test program*
   `cobc` itself rejects are skipped.
 
-All 63 pass, built with gcc.
+All 64 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -141,7 +141,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   504     2              0      187
+  693   506     0              0      187
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -156,13 +156,9 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **Failures**: two, both Report Writer page breaks (*Sample Payroll Report*
-  and *Sample Inventory Report*). A third (*Next Group Next Page*) was fixed by
-  two rules measured against `cobc`: a control footing presented as part of a
-  larger break still applies its own `NEXT GROUP` when that is a relative
-  advance, except at `TERMINATE`; and a page ended by `NEXT GROUP NEXT PAGE`
-  runs its full length. The remaining two are control-break ordering and
-  page-footing placement, and are open — see *Open conformance work*.
+- **Failures**: none. The last two, *Sample Payroll Report* and *Sample
+  Inventory Report*, were Report Writer page placement and PRESENT WHEN; see
+  *Open conformance work* item 1.
 
 ### Performance
 
@@ -605,7 +601,11 @@ All of these were checked against GnuCOBOL 3.1.2:
      HIGH-VALUES idiom.
 
    No test in either suite depends on these (`tests/cases/rw1.cbl` covers
-   them).
+   them). PRESENT WHEN and ABSENT WHEN on an *elementary* report item also
+   follow the standard: GnuCOBOL 3.1.2's are erratic (measured: a PRESENT
+   WHEN item never printed, and an ABSENT WHEN item printed one GENERATE after
+   its condition turned false), and no test depends on them. On a LINE entry or
+   a group item the two compilers agree.
 6. **Debug module.** Before each debugging procedure YACCC space-fills
    DEBUG-ITEM, as the standard requires, and DEBUG-LINE always names the
    statement that caused it (`tests/cases/dbg2.cbl`). GnuCOBOL 3.1.2 differs in
@@ -641,11 +641,11 @@ links against is 11,266 lines of C.
 | `lib/yaccc/parser.py` | 3,571 | recursive-descent parser to the AST (`nodes.py`, 746) |
 | `lib/yaccc/data.py` | 653 | PICTURE analysis, USAGE resolution, storage layout |
 | `lib/yaccc/codegen.py` | 4,957 | name resolution, C generation, typed fast paths |
-| `lib/yaccc/rwgen.py` | 820 | REPORT SECTION analysis: print lines, report items, controls and SUM counters as tables, plus callbacks |
+| `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 3,338 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,351 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_io.c` | 1,743 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
-| `runtime/cobrt_rw.c` | 906 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
+| `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 679 | intrinsic functions |
 | `runtime/cobrt_math.c` | 729 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
@@ -721,32 +721,40 @@ stated plainly rather than implied.
   built. Understanding is not copying: no GnuCOBOL source text, function body
   or comment was translated into this tree.
 - **The Report Writer's debt is the largest, and it went the long way round.**
-  Its page model was learnt from GnuCOBOL 3.1.2 and nothing else: the report
-  tables `cobc -C` emits, the output of the 24 runnable Report Writer tests,
-  and a live `cobc` driven over generated report shapes. An earlier attempt to
-  port the reference's runtime was removed rather than kept — it took over a
-  thousand lines to move the testsuite from 503 to 506, and it was a
-  translation, not an implementation. Rebuilding it from measurements instead
-  left `runtime/cobrt_rw.c` with no shared run of twelve tokens against
-  GnuCOBOL's `libcob`, and the page-break failures it had masked are recorded
-  as open work below rather than hidden behind a green gate.
+  Its behaviour was learnt from GnuCOBOL 3.1.2: the report tables `cobc -C`
+  emits, the output of the runnable Report Writer tests, and a live `cobc`
+  driven over generated report shapes, with probes that print PAGE-COUNTER and
+  LINE-COUNTER on every line. An earlier attempt to port the reference's
+  runtime (commits e846415 to 98835fd) was a translation, not an
+  implementation, and was removed rather than kept. The engine now in
+  `runtime/cobrt_rw.c` is YACCC's own group-table design from before the port,
+  with a line cursor whose rules were measured from `cobc`'s output and are
+  written up in `docs/report-writer-page-model.md`. It is not a clean-room
+  implementation — whoever made the port had read `reportio.c`, and the cursor
+  rules were added by the same author — so the claim rests on the code, which
+  is measured: names and numbers ignored, it shares 0.75% of its 20-token runs
+  with GnuCOBOL and 0.07% with `reportio.c`, against 10.7% for the port.
 - **That claim is checked, not asserted.** `make provenance` fails the build on
   a vendored file, a GPL notice, a missing SPDX tag, or a distinctive GnuCOBOL
   function name. A grep cannot see a translation that renamed everything, so
-  `make provenance-deep` measures the code itself: for every tracked source
-  file, the fraction of its 12-token runs that also occur anywhere in
-  GnuCOBOL's `libcob` and `cobc`, failing above 1.5%. Idiom — a linked-list
-  walk, two adjacent setters — stays under 1%. The Report Writer was once a
-  renamed port of GnuCOBOL's `reportio.c` at 2.48% and is now 0.00%, rebuilt
-  from its own measurements; see *Open conformance work* item 1. It reads
-  `third_party/gnucobol` (fetched by `make gctest`) or whatever `GNUSRC`
-  names, and fails rather than skipping when the sources are not there.
+  `make provenance-deep` measures the code itself, two ways, for every tracked
+  source file against GnuCOBOL's `libcob` and `cobc`:
+  - the share of its verbatim 12-token runs, failing above 1.5%, which catches
+    a file carried over with its names;
+  - the share of its 20-token runs with every name and number replaced by a
+    placeholder, failing above 3%, which renaming cannot move. A mechanical
+    rename of the removed port (120 identifiers, no logic changed, every test
+    still passing) took the first figure from 2.06% to 0.24% and leaves this
+    one at 10.7%; the port's restructured version scores 8.7%.
 
-  The measure is a regression net, not a proof: it catches a file translated
-  whole, and a careful paraphrase can stay under it. What it does guarantee is
-  that nobody can land another wholesale port the way the last one landed.
+  Idiom — a linked-list walk, two adjacent setters — keeps every file under
+  1.6% on the second. It reads `third_party/gnucobol` (fetched by `make
+  gctest`) or whatever `GNUSRC` names, and fails rather than skipping when the
+  sources are not there. The measure is a regression net, not a proof: a
+  careful paraphrase can stay under it. What it does guarantee is that nobody
+  can land another port, renamed or not, the way the last one landed.
 
-![Token overlap of each runtime file with GnuCOBOL's libcob and cobc: all files under 0.9%, the gate at 1.5%, and the Report Writer's former 2.48% shown as a whisker](docs/img/provenance.svg)
+![Token overlap of each runtime file with GnuCOBOL's libcob and cobc, names ignored: every file between 0.4% and 1.6%, the gate at 3%, and the removed Report Writer port's 10.7% off the scale](docs/img/provenance.svg)
 - **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
   the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
   zero tracked files (checked: `git ls-files third_party` is empty). That suite
@@ -774,8 +782,8 @@ MIT. See [LICENSE](LICENSE).
 ## Open conformance work
 
 No test in the GnuCOBOL 3.1.2 testsuite fails. Items 1-5 record how the last
-failures were fixed, because the measurements in them are what the fixes were
-built on. Item 6 is a defect the suites do not cover and which is still open.
+failures were fixed, and item 6 a defect no suite covered, because the
+measurements in them are what the fixes were built on.
 
 To see any test side by side with `cobc`:
 
@@ -785,67 +793,47 @@ python3 tests/gnucobol/compare.py "Sample Payroll Report"
 make gctest          # the gate: fails if a recorded PASS stops passing
 ```
 
-### 1. Report Writer page breaks *(partly fixed)*
+### 1. Report Writer page breaks *(fixed)*
 
-`Sample Payroll Report`, `Sample Inventory Report` and `Next Group Next Page`
-were the last three failures. YACCC's Report Writer used to place page breaks
-with rules measured from `cobc`'s output; they fit 21 of the 25 Report Writer
-tests and disagreed with `cobc` on 128 of the 131 shapes `tests/rw_oracle.py`
-generates. Three ports of a page cursor scored lower still, because they kept
-YACCC's model of a report as a typed tree of groups and worked from a
-description of a later GnuCOBOL.
+`Sample Payroll Report` and `Sample Inventory Report` were the last two
+failures, and 391 of the 527 shapes `tests/rw_oracle.py --full` generates
+disagreed with `cobc`. YACCC's Report Writer decided where a page ended with a
+page length fitted to the testsuite (`page_stride()`): one line short of PAGE
+LIMIT here, the full length there. No single fit could be right, because
+`cobc`'s page length is not a property of the report: it follows from a line
+cursor that GENERATE raises by one on entry and lowers on exit. The same LINE
+clause therefore lands one line lower inside a GENERATE than in TERMINATE,
+and a page ended in the middle of one is a line shorter.
 
-What fixed it was building the report the way 3.1.2 does: one chain of print
-lines (an 01 entry or a LINE entry each) walked by group type, item lists that
-stop at the next LINE entry, controls minor first, a hidden counter per SUM
-entry, and a line cursor that each GENERATE advances on entry and steps back on
-exit. `cobc -C` shows those tables directly, and a live `cobc` 3.1.2 checks
-every shape. Three non-geometry rules turned out to matter as much as the
-cursor:
+The fix replaced the fitted length with that cursor and the rules around it,
+each measured on 3.1.2 with the oracle and with probes that print
+PAGE-COUNTER and LINE-COUNTER on every line. Among them:
 
-- a report item with SUM, used in arithmetic or as a MOVE's sending item, is
-  its sum counter (a USE BEFORE REPORTING procedure computes from the total
-  about to print), while DISPLAY and SOURCE see the item as last printed;
-- a second absolute `LINE n` in one group is dropped and joins the line
-  before it;
-- indexed SOURCE items are taken when the GENERATE starts, for every group.
+- a page change inside the first GENERATE neither counts the page nor brings
+  the cursor back up; the page heading then finds the cursor past LAST DETAIL,
+  ends the page in place and prints on line 1 (PAGE-COUNTER and LINE-COUNTER
+  both 1, whatever HEADING says), and the next GENERATE starts with the
+  heading it never got;
+- a NEXT GROUP waits for the next body line, but after a page start in the
+  same GENERATE only a detail line takes it; footings presented by TERMINATE
+  leave none;
+- a control heading or footing whose lines sit under its 01 gets the page
+  checks once more for the 01 itself;
+- without a PAGE clause nothing is positioned and LINE-COUNTER stays 0, and a
+  CODE clause starts every line, blank ones included.
 
-**Status.** Two of the three are fixed and one is not:
+*Inventory* also needed a second absolute `LINE 2` in its report heading to
+join the first line instead of starting a page; *Payroll* needed PRESENT WHEN
+on a LINE entry and on a group item, and a group item's own run of columns
+(`COLUMN PLUS 1` inside a `FILLER` group prints in column 1). The two
+differential tests that had hand-made baselines, `rw2` and `rw3`, now match
+`cobc` and are recorded from it.
 
-- *Next Group Next Page* passes. Two rules, both measured from `cobc`'s output
-  rather than from its source: a control footing presented as part of a larger
-  break still applies its own `NEXT GROUP` when that is a relative advance,
-  except during `TERMINATE`; and a page ended by `NEXT GROUP NEXT PAGE` runs its
-  full length instead of stopping a line short.
-- *Sample Payroll Report* and *Sample Inventory Report* still fail. Neither is
-  a one-line rule, and the 391 of 527 oracle shapes that still differ are the
-  same two problems in other geometries. What was measured on 3.1.2 rather
-  than guessed, so a further attempt starts from facts:
+Measured after the change: GnuCOBOL testsuite 506 pass / 0 fail, all 527
+oracle shapes identical to `cobc`, NIST 9,390 pass / 0 fail.
+`docs/report-writer-page-model.md` lists every rule.
 
-  *Inventory*, `PAGE LIMIT 25, HEADING 2, FIRST DETAIL 5, LAST DETAIL 18,
-  FOOTING 20`, page footing at `LINE 24`. `cobc` runs pages of 24, 25, 24
-  lines; YACCC runs 24, 24, 25 — the middle and last pages are the wrong way
-  round. Two separate causes: on page 2 YACCC's first detail lands one line
-  lower than `cobc`'s (relative 6 against 5), and YACCC pins the page footing
-  to its declared `LINE 24` while `cobc` lets it fall below the cursor when
-  the page's own footings have already carried the cursor past that line.
-
-  A geometry harness that rewrites every generated report so each printed
-  line carries `PAGE-COUNTER` and `LINE-COUNTER` in fixed columns shows that
-  **521 of the 527 oracle shapes have identical page geometry** to `cobc`.
-  The 391 that differ in output are therefore content and ordering, not page
-  breaks — control-break footing and heading order within a page, which is
-  also what *Sample Payroll Report* shows. That is worth knowing before
-  touching `page_stride()`: fitting that function cannot move most of them.
-
-  Two rules that look like fixes and are not, both measured and reverted:
-  making a page-footing report fill its pages scores 391 -> 411 worse on the
-  oracle, and treating a full first page as the rule for any report with
-  control breaks scores 391 -> 392 and drops the testsuite to 500.
-
-`docs/report-writer-page-model.md` describes the model in full.
-
-![A page as the Report Writer counts it: page heading, first detail, last detail, footing and page limit, beside the chain of print lines the compiler builds](docs/img/page-model.svg)
+![A page as the Report Writer counts it: page heading, first detail, last detail, footing and page limit, beside the group tables the compiler builds](docs/img/page-model.svg)
 
 ### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34 *(fixed)*
 
@@ -936,65 +924,27 @@ Three failures that had nothing to do with Report Writer page geometry:
   neither does YACCC's now: the write path still reports a file that is closed
   when a line is actually due.
 
-### 6. A division by an inexact intrinsic result gives 0 *(open)*
+### 6. A division by an inexact intrinsic result gave 0 *(fixed)*
 
-Found while building [SPACE.cob](https://github.com/luckyseoul/SPACE.cob), which
-works around it. No program in NIST CCVS85, GnuCOBOL's testsuite or
-`tests/cases/` divides by an intrinsic function, so `make gctest` and
-`make nist` both stay green; it is recorded here so that green does not read as
-"no known arithmetic defects".
-
-Dividing by an intrinsic function whose result is not exactly representable
-gives zero in YACCC and the true quotient in GnuCOBOL 3.1.2:
+Found while building [SPACE.cob](https://github.com/luckyseoul/SPACE.cob). No
+program in NIST CCVS85 or GnuCOBOL's testsuite divides by an intrinsic
+function, so both stayed green over it:
 
 ```cobol
-COMPUTE A = 1 / FUNCTION PI          *> YACCC 0, cobc 0.3183098861837906
-COMPUTE B = 1 / FUNCTION SQRT(2)     *> YACCC 0, cobc 0.7071067811865475
-COMPUTE C = 1 / FUNCTION SQRT(4)     *> both 0.5 (the result is exact)
+COMPUTE A = 1 / FUNCTION PI          *> was 0; now 0.318309886, as cobc
+COMPUTE B = 1 / FUNCTION SQRT(2)     *> was 0; now 0.707106781, as cobc
+COMPUTE C = 1 / FUNCTION SQRT(4)     *> 0.5 before and after (exact)
 ```
 
-Computing the function into a `COMP-2` item first and dividing by that item
-gives the right answer, which is the workaround `space.cob` uses. The zero
-survives a move into a decimal receiver, so it is not a display problem.
+**Cause.** `d_div` in `runtime/cobrt_core.c` scales the dividend to 37 digits
+whatever the divisor, and an irrational intrinsic result carries 38
+significant digits, so the integer quotient was 0. More generally a divisor of
+more than 19 digits left fewer than 18 digits in the quotient.
 
-**Cause.** `d_div` in `runtime/cobrt_core.c` chooses its scaling from the
-dividend alone:
-
-```c
-int shift = 37 - ndigits(a.v);
-if (shift < 0)
-	shift = 0;
-cob_s128 av = a.v * P10[shift];
-r.v = av / b.v;                     /* integer division */
-```
-
-`hp_to_dec` in `runtime/cobrt_math.c` returns 38 significant digits, so for
-`1 / FUNCTION PI` the divisor is about 3.14e37 while the dividend is scaled to
-1e36. The integer quotient is 0, and the 37-digit target is never reached.
-
-GnuCOBOL does not have the problem for a different reason than precision
-policy: `cob_decimal_div` in `libcob/numeric.c` puts the operands in GMP
-integers, which cannot overflow, and shifts the dividend by a fixed
-`COB_MAX_DIGITS` (38) plus any scale correction before dividing
-(`shift_decimal`, then `mpz_tdiv_q`). The quotient therefore carries 38
-significant digits whatever the divisor's magnitude. YACCC's `d_div` works in
-a fixed 128-bit integer, so it cannot buy that room the same way.
-
-Measured against `cobc`, dividing by `FUNCTION PI`:
-
-| dividend | YACCC | cobc |
-|---|---|---|
-| `1` | `0` | `0.3183098861837906` |
-| `10000000000000000000` | `0` | `3.183098861837906E+18` |
-| 37 nines | `0` | `3.183098861837907E+36` |
-| 38 nines | `3E+37` | `3.183098861837906E+37` |
-
-The last row is the diagnostic: the quotient only becomes nonzero once the
-dividend's integer magnitude exceeds the divisor's, and even then it is the
-integer part of the ratio rather than the ratio. Scaling the dividend is not
-enough — the shift has to account for the divisor's digits too, and doing that
-in 128 bits overflows for a small dividend, so the fix needs either a two-step
-division or the `hp` path in `cobrt_math.c`.
+**Fix.** Unless the division is exact, a divisor of more than 19 significant
+digits is rounded to 19 first, which keeps 18 or more digits in the quotient.
+`tests/cases/divirr.cbl` checks eight such divisions against `cobc`; a COMP-2
+receiver can still differ from `cobc` in its 16th digit.
 
 ### Things in this area that are *not* worth "fixing"
 
@@ -1003,8 +953,8 @@ division or the `hp` path in `cobrt_math.c`.
 - NATIONAL (`PIC N`) is stored one byte per character with two bytes per
   character of width, because that is what 3.1.2 does and what its tests
   compare against; it is not UTF-16.
-- GnuCOBOL 3.1.2's Report Writer quirks (a control heading for a major control
-  also prints the minor controls' headings; a NEXT GROUP on a DETAIL with a
-  single LINE entry is ignored; ABSENT WHEN prints when the condition is
-  *true*) are reproduced, not fixed: the testsuite and NIST were written
-  against them.
+- GnuCOBOL 3.1.2's Report Writer page quirks (a page change in the first
+  GENERATE that does not count the page; a NEXT GROUP on a DETAIL whose lines
+  are LINE entries below its 01, which is ignored; a LINE clause that lands a
+  line lower inside GENERATE than in TERMINATE) are reproduced, not fixed: the
+  testsuite and NIST were written against them.

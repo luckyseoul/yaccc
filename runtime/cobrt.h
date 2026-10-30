@@ -921,6 +921,7 @@ typedef struct {
 	int has_decl;              /* USE BEFORE REPORTING */
 	int (*present_when)(void); /* PRESENT WHEN: NULL when unconditional */
 	int absent;                /* ABSENT WHEN: invert the condition */
+	int hdr;                   /* the 01 is a print line of its own, with nothing on it */
 } cob_rw_group;
 
 typedef struct cob_report {
@@ -938,21 +939,24 @@ typedef struct cob_report {
 	int ncontrols;
 	cob_field *line_counter;
 	cob_field *page_counter;
-	void (*fmt)(int group, int line, unsigned char *buf, int gi);
+	int (*fmt)(int group, int line, unsigned char *buf, int gi);  /* 0: line absent */
 	void (*sum)(int op, int arg);
 	int (*ctl)(int op);
 	void (*decl)(int group);
 	/* state */
 	int initiated, generated, terminating;
-	int page_start, pos, open;
-	int next_page, body_on_page;
-	int ng_page;               /* the break was NEXT GROUP NEXT PAGE */
+	int cur;                   /* the page line cursor (see cobrt_rw.c) */
+	int pend_kind, pend_num;   /* a NEXT GROUP waiting for the next group */
+	int breaking;              /* control footings are being presented */
+	int first_gen;             /* the first GENERATE is running */
+	int ending, starting;      /* a page footing / page heading is being presented */
+	int heading_due;           /* a page has ended and the next has no heading yet */
+	int just_set;              /* a page was started since the last detail line */
+	int body_on_page;          /* a body group has printed on this page */
 	unsigned char *buf;
 	unsigned char *gi;
 	int *ch, *cf;
 	int rh, ph, pf, rf;
-	int final_page;            /* TERMINATE is writing the last page */
-	int pf_pos;                /* page line the page footing went on */
 } cob_report;
 
 extern int cob_rw_suppress;

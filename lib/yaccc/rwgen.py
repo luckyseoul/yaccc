@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Report Writer: analysis of the REPORT SECTION and generation of the report
 tables and callbacks driven by the runtime RWCS (runtime/cobrt_rw.c)."""
-from .data import (DataItem, Picture, layout, resolve_types, Occurs, T_NUM_BINARY,
+from .data import (DataItem, Picture, layout, resolve_types, Occurs, T_NUM_COMP5,
                   T_NUM_EDITED)
 from .errors import CompileError
 from .nodes import DataRef, NumLit, StrLit
@@ -138,9 +138,11 @@ class ReportWriterGen:
 
     def rw_special(self, ri, name):
         sym = self.sym('rwc_')
+        # an unsigned 32-bit binary item: DISPLAY shows ten digits, as cobc's
+        # LINE-COUNTER and PAGE-COUNTER do
         it = DataItem(1, name, ri.rd.loc)
-        it.type = T_NUM_BINARY
-        it.digits = 9
+        it.type = T_NUM_COMP5
+        it.digits = 10
         it.flags = 0
         it.size = 4
         it.report_name = ri.name
@@ -217,14 +219,47 @@ class ReportWriterGen:
         self.register_tree(g)
         self.ctx.rw_trees.append(g)
         cur = None
+        # An 01 LINE clause is dropped when the 01's first subordinate entry has
+        # one too; the 01 is then, like an 01 without LINE whose lines come from
+        # entries below it, a print line of its own that holds nothing (`hdr`).
+        nested = (g.rw_line is not None and bool(g.children)
+                  and g.children[0].rw_line is not None)
+        gi.hdr = (g.rw_line is None or nested) and any(
+            c.rw_line is not None for c in g.walk() if c is not g)
+        floor = 0                   # items of the line before this index belong to an outer group
+        gi.line_conds = {}          # print line index -> PRESENT WHEN of its LINE entry
 
-        def walk(it, shift=0, subs=()):
-            nonlocal cur
-            if it.rw_line is not None:
-                cur = (it.rw_line, [])
-                gi.lines.append(cur)
+        def when_of(it):
+            """PRESENT WHEN / ABSENT WHEN on an entry below the 01 (the 01's own
+            is checked by the runtime for the whole group)."""
+            p = getattr(it, 'rw_present', None)
+            if it is g or p is None:
+                return None
+            if isinstance(p[0], tuple) and p[0] and p[0][0] == 'AFTER':
+                return None
+            return p
+
+        def walk(it, shift=0, subs=(), conds=()):
+            nonlocal cur, floor
+            own = when_of(it)
+            if it.rw_line is not None and not (it is g and nested):
+                kind_num = tuple(it.rw_line)
+                if not (kind_num[0] == 'ABS' and cur is not None
+                        and any(tuple(sp) == kind_num for sp, _ in gi.lines)):
+                    cur = (it.rw_line, [])
+                    gi.lines.append(cur)
+                    floor = 0
+                    if own is not None:
+                        # on a LINE entry it decides whether the line is there
+                        gi.line_conds[len(gi.lines) - 1] = own
+                        own = None
+                # else: a second absolute LINE n with the same n as an earlier
+                # one in the group joins the line before it (measured on cobc
+                # 3.1.2: run_reportwriter.at's Inventory report heading)
+            if own is not None:
+                conds = conds + (own,)
             if not it.children:
-                place(it, shift, subs)
+                place(it, shift, subs, conds)
                 return
             if it.occurs:
                 # OCCURS on a group repeats everything inside it, each occurrence
@@ -234,15 +269,24 @@ class ReportWriterGen:
                 for k in range(it.occurs.max):
                     cur[1].append(Spacer(c0 + k * step, it.loc))
                     for c in it.children:
-                        walk(c, 0, subs + ((it, k + 1),))
+                        walk(c, 0, subs + ((it, k + 1),), conds)
                 return
+            # a group item below the line entry starts its own run of columns:
+            # COLUMN PLUS and items without COLUMN count from its first column
+            # (measured: a FILLER group holding COLUMN PLUS 1 prints in column 1)
+            inner = it is not g and it.rw_line is None and cur is not None
+            saved = floor
+            if inner:
+                floor = len(cur[1])
             for c in it.children:
-                walk(c, shift, subs)
+                walk(c, shift, subs, conds)
+            if inner:
+                floor = saved
 
         def start_col(it, shift):
             """Column of an item's first occurrence, from the previous item of
             the line and its own COLUMN clause."""
-            prev = cur[1][-1] if cur[1] else None
+            prev = cur[1][-1] if len(cur[1]) > floor else None
             prev_end = prev.rw_column + prev.rw_slot if prev else 1
             col = it.rw_column
             if col is None:
@@ -253,7 +297,7 @@ class ReportWriterGen:
                 return (prev_end - 1 if prev else 0) + col[1] + shift
             return col + shift
 
-        def place(it, shift, subs):
+        def place(it, shift, subs, conds=()):
             nonlocal cur
             if cur is None:
                 # a group without LINE clauses: its items go on the next line
@@ -280,6 +324,7 @@ class ReportWriterGen:
                 rep.rw_slot = it.size if listed else (step if step else it.size)
                 rep.rw_subs = subs + ((it, k + 1),) if it.occurs else subs
                 rep.rw_columns = None
+                rep.rw_when = conds
                 cur[1].append(rep)
             if it.rw_group_indicate and gi.type != 'DE':
                 raise CompileError("GROUP INDICATE is only allowed in a DETAIL group", it.loc)
@@ -416,13 +461,13 @@ class ReportWriterGen:
                 self.glob.append(f"static int {fsym}(void) {{ return {body}; }}")
                 pw, ab = fsym, 1 if invert else 0
             rows.append(f"{{{RW_TYPE_C[g.type]}, {g.level}, {len(g.lines)}, {lsym}, {ngk}, {ngn}, "
-                        f"{1 if g.decl_sec else 0}, {pw}, {ab}}}")
+                        f"{1 if g.decl_sec else 0}, {pw}, {ab}, {1 if getattr(g, 'hdr', False) else 0}}}")
         self.glob.append(f"static const cob_rw_group {n}_g[] = {{{', '.join(rows)}}};")
         code = 'NULL'
         if ri.code:
             code = f"{n}_code"
             self.glob.append(f"static const unsigned char {code}[] = {{{', '.join(str(b) for b in ri.code)}}};")
-        self.protos.append(f"static void {n}_fmt(int g, int line, unsigned char *buf, int gi);")
+        self.protos.append(f"static int {n}_fmt(int g, int line, unsigned char *buf, int gi);")
         self.protos.append(f"static void {n}_sum(int op, int arg);")
         self.protos.append(f"static int {n}_ctl(int op);")
         self.protos.append(f"static void {n}_decl(int g);")
@@ -447,6 +492,11 @@ class ReportWriterGen:
                 for li, (_, fields) in enumerate(g.lines):
                     em(f"case {li}:")
                     em.ind += 1
+                    lc = getattr(g, 'line_conds', {}).get(li)
+                    if lc is not None:
+                        em(f"if (!({self.rw_when_c([lc])})) return 0;")
+                    if not any(not getattr(f, 'rw_spacer', False) for f in fields):
+                        em("return 0;")     # a line with no items prints nothing
                     for f in fields:
                         if getattr(f, 'rw_spacer', False):
                             continue
@@ -464,6 +514,9 @@ class ReportWriterGen:
                         cond = self.present_after(ri, f)
                         if cond is not None:
                             stmt = f"if ({cond}) {stmt}"
+                        when = getattr(f, 'rw_when', ())
+                        if when:
+                            stmt = f"if ({self.rw_when_c(when)}) {stmt}"
                         em(stmt)
                     em("break;")
                     em.ind -= 1
@@ -472,7 +525,8 @@ class ReportWriterGen:
                 em.ind -= 1
             em("}")
             em("(void)buf; (void)gi; (void)line;")
-        self.rw_function(f"static void {n}_fmt(int g, int line, unsigned char *buf, int gi)", fmt)
+            em("return 1;")
+        self.rw_function(f"static int {n}_fmt(int g, int line, unsigned char *buf, int gi)", fmt)
 
         # sum counter callback
         def add(em, dst, src, cond=None):
@@ -583,6 +637,15 @@ class ReportWriterGen:
             em("}")
             em("(void)g;")
         self.rw_function(f"static void {n}_decl(int g)", decl)
+
+    def rw_when_c(self, conds):
+        """C condition for a list of (condition, absent) PRESENT WHEN /
+        ABSENT WHEN clauses, all of which must hold."""
+        parts = []
+        for c, absent in conds:
+            body = self.cond(c)
+            parts.append(f"!({body})" if absent else f"({body})")
+        return ' && '.join(parts)
 
     def present_after(self, ri, f):
         """C condition for PRESENT AFTER PAGE OR <control> (negated for

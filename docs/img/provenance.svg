@@ -1,64 +1,63 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420" role="img">
-<rect x="0" y="0" width="880" height="420" fill="#faf7ef"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="432" viewBox="0 0 880 432" role="img">
+<rect x="0" y="0" width="880" height="432" fill="#faf7ef"/>
 <text x="24" y="33" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6d655a" text-anchor="start" font-weight="600" letter-spacing="1.9">IS ANY OF THIS A RENAMED COPY OF GNUCOBOL?</text>
-<text x="24" y="53" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" fill="#9a9184" text-anchor="start" font-weight="normal">Share of each file's 12-token runs that also occur in GnuCOBOL's libcob and cobc, comments and literals removed</text>
+<text x="24" y="53" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" fill="#9a9184" text-anchor="start" font-weight="normal">Share of each file's 20-token runs, every name and number replaced, that also occur in GnuCOBOL's libcob and cobc</text>
 <text x="196.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">0</text>
-<text x="308.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">0.5%</text>
-<text x="420.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">1.0%</text>
-<text x="532.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">1.5%</text>
-<text x="644.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">2.0%</text>
-<text x="756.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">2.5%</text>
-<text x="186" y="106" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_dt.c</text>
+<text x="336.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">1%</text>
+<text x="476.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">2%</text>
+<text x="616.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">3%</text>
+<text x="756.0" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="middle" font-weight="normal">4%</text>
+<text x="186" y="106" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_fn.c</text>
 <line x1="196" y1="102" x2="756" y2="102" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="97" width="199.4" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="106" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.89%</text>
-<text x="186" y="128" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_sys.c</text>
+<rect x="196" y="97" width="210.8" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="106" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">1.51%</text>
+<text x="186" y="128" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_json.c</text>
 <line x1="196" y1="124" x2="756" y2="124" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="119" width="183.7" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="128" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.82%</text>
-<text x="186" y="150" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_fn.c</text>
+<rect x="196" y="119" width="197.4" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="128" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">1.41%</text>
+<text x="186" y="150" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_dt.c</text>
 <line x1="196" y1="146" x2="756" y2="146" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="141" width="174.7" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="150" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.78%</text>
-<text x="186" y="172" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_core.c</text>
+<rect x="196" y="141" width="179.0" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="150" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">1.28%</text>
+<text x="186" y="172" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt.h</text>
 <line x1="196" y1="168" x2="756" y2="168" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="163" width="127.7" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="172" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.57%</text>
-<text x="186" y="194" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_xml.c</text>
+<rect x="196" y="163" width="148.9" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="172" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">1.06%</text>
+<text x="186" y="194" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_core.c</text>
 <line x1="196" y1="190" x2="756" y2="190" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="185" width="125.4" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="194" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.56%</text>
-<text x="186" y="216" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt.h</text>
+<rect x="196" y="185" width="139.2" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="194" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.99%</text>
+<text x="186" y="216" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_sys.c</text>
 <line x1="196" y1="212" x2="756" y2="212" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="207" width="65.0" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="216" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.29%</text>
-<text x="186" y="238" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_io.c</text>
+<rect x="196" y="207" width="135.5" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="216" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.97%</text>
+<text x="186" y="238" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_xml.c</text>
 <line x1="196" y1="234" x2="756" y2="234" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="229" width="38.1" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="238" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.17%</text>
-<text x="186" y="260" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_json.c</text>
+<rect x="196" y="229" width="120.8" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="238" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.86%</text>
+<text x="186" y="260" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_str.c</text>
 <line x1="196" y1="256" x2="756" y2="256" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="251" width="20.2" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="260" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.09%</text>
-<text x="186" y="282" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_math.c</text>
+<rect x="196" y="251" width="114.2" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="260" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.82%</text>
+<text x="186" y="282" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_io.c</text>
 <line x1="196" y1="278" x2="756" y2="278" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="273" width="9.0" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="282" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.04%</text>
-<text x="186" y="304" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_str.c</text>
+<rect x="196" y="273" width="112.9" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="282" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.81%</text>
+<text x="186" y="304" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_rw.c</text>
 <line x1="196" y1="300" x2="756" y2="300" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="295" width="6.7" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="304" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.03%</text>
-<text x="186" y="326" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_rw.c</text>
+<rect x="196" y="295" width="105.5" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="304" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.75%</text>
+<line x1="196" y1="308" x2="756" y2="308" stroke="#b0701f" stroke-width="1.1" stroke-dasharray="2 2"/>
+<path d="M 750 305 L 756 308 L 750 311" fill="none" stroke="#b0701f" stroke-width="1.1"/>
+<text x="746" y="304" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#b0701f" text-anchor="end" font-weight="normal">the removed port: 10.7%</text>
+<text x="186" y="326" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="end" font-weight="normal">cobrt_math.c</text>
 <line x1="196" y1="322" x2="756" y2="322" stroke="#efe9db" stroke-width="1"/>
-<rect x="196" y="317" width="1.2" height="11" fill="#1f6f4a" rx="1"/>
-<text x="800" y="326" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.00%</text>
-<line x1="196.0" y1="330" x2="751.52" y2="330" stroke="#b0701f" stroke-width="1.1" stroke-dasharray="2 2"/>
-<line x1="751.52" y1="326" x2="751.52" y2="334" stroke="#b0701f" stroke-width="1.1"/>
-<text x="743.52" y="326" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#b0701f" text-anchor="end" font-weight="normal">was 2.48%</text>
-<line x1="532.0" y1="84" x2="532.0" y2="338" stroke="#9e332a" stroke-width="1.2" stroke-dasharray="4 3"/>
-<text x="538.0" y="90" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#9e332a" text-anchor="start" font-weight="600">gate 1.5%</text>
-<line x1="24" y1="360" x2="846" y2="360" stroke="#ddd5c3" stroke-width="1"/>
-<text x="24" y="379" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.2" fill="#6d655a" text-anchor="start" font-weight="normal">Renaming identifiers does not move this number; restructuring does. Common idiom — a list walk,</text>
-<text x="24" y="394" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.2" fill="#6d655a" text-anchor="start" font-weight="normal">two adjacent setters — sits near 0.5% across the runtime. make provenance-deep fails the build above the gate.</text>
-<desc>Token overlap of each runtime file with GnuCOBOL</desc>
+<rect x="196" y="317" width="55.6" height="11" fill="#1f6f4a" rx="1"/>
+<text x="800" y="326" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#6d655a" text-anchor="end" font-weight="normal">0.40%</text>
+<line x1="616.0" y1="84" x2="616.0" y2="338" stroke="#9e332a" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="622.0" y="90" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#9e332a" text-anchor="start" font-weight="600">gate 3%</text>
+<line x1="24" y1="358" x2="846" y2="358" stroke="#ddd5c3" stroke-width="1"/>
+<text x="24" y="377" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.2" fill="#6d655a" text-anchor="start" font-weight="normal">Renaming identifiers does not move this number; restructuring does. A second check counts verbatim</text>
+<text x="24" y="392" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.2" fill="#6d655a" text-anchor="start" font-weight="normal">12-token runs (gate 1.5%) for files carried over with their names. make provenance-deep runs both.</text>
+<desc>Token overlap of each runtime file with GnuCOBOL, names ignored</desc>
 </svg>
