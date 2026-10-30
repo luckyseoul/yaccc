@@ -11,6 +11,15 @@ attempt does not have to reverse-engineer it again.
 
 ## The model
 
+> **This section describes a function that does not exist.** `write_to_line`
+> appears nowhere in the GnuCOBOL 3.1.2 tarball this project measures against
+> (`grep -r write_to_line libcob cobc` finds nothing; `reportio.c` is 1,835
+> lines). Two ports were written from this section and both scored below the
+> existing heuristic -- as they would, implementing a primitive the reference
+> never had. The 3.1.2 algorithm, read from its actual source, is in
+> "The 3.1.2 algorithm, exactly" below; that is the one to implement, and
+> `tests/rw_oracle.py` is how to check it.
+
 Page position is a 1-based line number, `curr_line`, not a byte offset.
 
 `write_to_line(r, linen)` is the only primitive that puts a record on the page:
@@ -152,6 +161,80 @@ output file and so recovers the page offsets directly.
   constant page length; the drift comes from the cursor being able to sit on a
   line the file has already passed.
 
+### The 3.1.2 algorithm, exactly
+
+Decoded from `libcob/reportio.c` and `libcob/fileio.c` in the 3.1.2 tarball
+(this is the version whose output the suite asserts). Four pieces, and the
+non-obvious parts are marked.
+
+**State**: `curr_line` (0-based at INITIATE), `curr_page`, and a one-bit
+`incr_line`.
+
+**INITIATE**: `curr_page = 1; curr_line = 0; incr_line = TRUE`.
+
+**Around every GENERATE** -- this is the part no output-based derivation
+finds:
+
+```
+generate():
+    if (incr_line) { incr_line = FALSE; curr_line++; }   # start
+    ... headings, control breaks, the detail group ...
+    curr_line--;                                         # end
+    incr_line = TRUE;
+```
+
+The `--` at the end and the `++` at the start cancel, **except** when
+`do_page_footing` cleared `incr_line` -- then the increment is skipped and the
+next line lands one higher than a naive model predicts.
+
+**Each print line** (`report_line`):
+
+```
+if (curr_line > LAST DETAIL && !in_report_footing && !in_page_footing)
+        { page_footing(); page_heading(); }
+... position the line: an ABS line already passed by the cursor ejects the
+    page first; then `while (curr_line < line) write blank; curr_line++` ...
+if (curr_line > LAST DETAIL && !in_report_footing && !in_page_heading
+                          && !in_page_footing)
+        { page_footing(); page_heading(); }
+write record; curr_line++;          # write_rec itself never moves the cursor
+```
+
+Two things worth noting: the overflow test compares **`curr_line`**, not the
+line being placed, and it runs **before and after** positioning -- so a group
+can carry the cursor past LAST DETAIL and the ejection happens on the next
+line, one page later than a group-granularity model ejects.
+
+**Page footing**:
+
+```
+if (curr_line < PAGE LIMIT)
+        { write (PAGE LIMIT - curr_line) lines; curr_line = PAGE LIMIT;
+          incr_line = FALSE; }
+else    { curr_line = 1; }        # no padding at all
+```
+
+The `else` is why a page is not always PAGE LIMIT long: once the footing's own
+line has reached the limit, nothing is padded and the page simply ends there.
+
+**Page heading**:
+
+```
+if (!first_generate && curr_line <= PAGE LIMIT && curr_line > HEADING)
+        { while (curr_line <= PAGE LIMIT) { write; curr_line++; }
+          if (curr_line > PAGE LIMIT) curr_line = 1; }
+curr_page++;
+while (curr_line < HEADING)       { write; curr_line++; }
+print the page heading;
+while (curr_line < FIRST DETAIL)  { write; curr_line++; }
+```
+
+**Predicted page lengths**, to check a port against before running the suite:
+`Sample Control Break` (PAGE LIMIT 25, FOOTING 23, no page footing group) is
+25, 24, 25; `Sample Inventory Report` (25, LAST DETAIL 18, page footing at
+LINE 24) is 24, 25, 24; `Sample Charge Report 3` is a single 66-line page. All
+three were measured from the file cobc writes.
+
 ### Measured scoreboard (the thing to beat)
 
 Every model below was implemented and run against the full suite. The measured
@@ -186,3 +269,58 @@ one change, and be scored against this table rather than against a single test.
 - Treating `incr_line` as "the cursor does not advance on this write" makes
   `seek`-style loops spin forever. In 3.1.2 `write_rec` never touches the
   cursor at all; only the report-line writer advances it, unconditionally.
+
+## The differential oracle (`tests/rw_oracle.py`)
+
+Guessing from a handful of failing tests is what let three wrong models look
+plausible. `tests/rw_oracle.py` replaces that with thousands of shapes:
+
+```sh
+export PATH=/tmp/gcinst/bin:$PATH LD_LIBRARY_PATH=/tmp/gcinst/lib
+python3 tests/rw_oracle.py                  # the generated sweep
+python3 tests/rw_oracle.py --full           # the whole sweep
+python3 tests/rw_oracle.py --testsuite --no-sweep   # just the 3.1.2 RW tests
+python3 tests/rw_oracle.py --case pl=10,fd=2,ld=2   # one shape, keep files
+```
+
+It generates programs that vary PAGE LIMIT, HEADING, FIRST/LAST DETAIL,
+FOOTING and a page-footing group, all seven group types, `LINE` and
+`NEXT GROUP` in their absolute, PLUS and NEXT PAGE forms, several print lines
+per group, control breaks, `SUM`, `GROUP INDICATE` and the record count. Each
+program is compiled with both compilers and the report files compared byte for
+byte; a mismatch is cut down to the smallest shape that still shows it. It
+needs `cobc`, so it is a development tool and not a CI step.
+
+Its first run, before any fix, found **128 of 131** generated shapes differing
+-- while the testsuite flagged only three. The testsuite was never a broad
+enough sample to tell models apart, which is exactly why three wrong ones
+survived review.
+
+### What it has already established
+
+Three generator bugs, each of which would have looked like a compiler bug:
+
+- **Fixed-format column 72.** A single-line `RD ... PAGE LIMIT ... HEADING ...
+  FIRST DETAIL ... LAST DETAIL ...` truncates at column 72 and fails to
+  compile, with an error pointing at the *following* line. Every `RD` in the
+  testsuite is written one clause per line for this reason. The generator now
+  asserts no line exceeds 72 columns.
+- **`RH` and `PH` are reserved words** (the report/page-heading abbreviations),
+  so `01 rh TYPE REPORT HEADING` is a syntax error. Group names in the
+  generator are `rep-head`, `page-head`, `ctl-head`, `de-line`, `ctl-foot`,
+  `page-foot`, `rep-foot`.
+- **A `CONTROLS` entry with no report group of that name breaks cobc itself**:
+  `CONTROLS ARE FINAL, ctl1, ctl2` with no `ctl2` group emits C that references
+  an undeclared `f_11` and fails to compile. Not a YACCC issue; worth knowing
+  before declaring controls that never appear.
+
+One real step towards the page rule. Replacing the stride heuristic with
+"the page is `PAGE LIMIT` lines if the next free line is still short of it,
+otherwise it ends on its last written line" (the shape of 3.1.2's
+padding-or-reset) moved the generated sweep from 128 differing shapes to 117 --
+but took the testsuite from 503 to 497, so it was reverted. The trace shows why
+the two disagree: for `LINE PLUS n`, cobc's internal `line` is `n + 1`, and the
+pre-overflow skip it performs (`curr_line += line - 1`) runs even when the
+group would not fit, which moves the footing by one line. The stride rule and
+that skip are entangled, so the next attempt must change both together -- the
+same conclusion as before, now with a measurement behind each half.

@@ -791,24 +791,49 @@ side. (Measuring that subset is how the wrong "14 of 19" figure in earlier
 versions of this note arose: the filter silently omits `Sample Control Break`,
 `Duplicate Detail Line` and `STUDENT REPORT`.)
 
-A page-cursor port was written and measured but not kept: `curr_line`/
-`curr_page` advance on every write, `write_at()` drops lines the cursor has
-passed, and the break path follows `do_page_footing`/`do_page_heading`. It
-scored 10 of 23 Report Writer tests against the heuristic's 18, so it is not in
-the tree and its branch is deleted. A second, more careful port -- one
-`write_to_line` primitive for every record, per
-`docs/report-writer-page-model.md` -- scored 492 pass against this heuristic's
-503 and was reverted too, as was a third that let each page start at the file
-position (494). That note carries the scoreboard of all four models and why
-correcting the page arithmetic alone loses: the heuristic's padding happens to
-reproduce most shapes' file geometry, so a port has to replace the padding and
-the stride in one change. Before a third, read "Observing the real cursor" in
-that note: 3.1.2 can print its own cursor decisions, and doing so is how the
-page lengths below were measured rather than guessed. The pieces it got wrong were the pad
-endpoints inside `do_page_footing` and the report-footing placement at
-TERMINATE. Coming back to this means fixing those two first: the cursor itself
-(advance on write, drop past cursor) reproduced `Report Line Order`,
-`PAGE LIMIT REPORT 2` and `EMPTY REPORT` exactly, so that part is right.
+Four page models have been implemented and measured against this heuristic, and
+every one scored lower, so none is in the tree:
+
+| model | Report Writer tests | whole suite |
+|---|---|---|
+| the measured heuristic (current) | 21 of 25 | 503 pass / 3 fail |
+| full cursor port (`curr_line`, `write_at`, footing/heading branches) | 10 of 23 | 485 |
+| `write_to_line` as the only primitive (a primitive 3.1.2 does not have) | -- | 492 |
+| each page starts at the file position | -- | 494 |
+| page = `PAGE LIMIT`, or its last written line if the cursor reached it | 15 of 25 | 497 |
+
+A further one-line change -- a page footing whose declared line the cursor has
+already passed lands at the cursor -- is correct per the source but moved no
+test by itself, so it is out as well. The last row is the closest so far: it
+improves the generated sweep in `tests/rw_oracle.py` from 128 differing shapes
+to 117 while costing the testsuite six tests, because the rule and the
+`LINE PLUS` pre-overflow skip are entangled.
+
+The reason they all lose is now understood and written down: the heuristic's
+padding happens to reproduce the *file* geometry of most shapes even though its
+page arithmetic is wrong. Correcting the arithmetic alone removes that
+compensation without supplying the reproduction, so the score falls. A port has
+to replace the padding **and** the page advance together, in one change.
+
+`tests/rw_oracle.py` is the tool that scores any such port: it generates report
+programs across the whole page-geometry space, compiles each with both
+compilers and compares the report files byte for byte, cutting a mismatch down
+to the smallest shape that still shows it. Its first run found 128 of 131
+generated shapes differing while the testsuite flagged three -- which is why
+three wrong models survived review, and why the next attempt should be judged
+by it as well as by the suite.
+
+`docs/report-writer-page-model.md` carries what that port needs: "Observing the
+real cursor" (3.1.2 can print its own cursor decisions -- how the page lengths
+below were measured rather than guessed), and "The 3.1.2 algorithm, exactly",
+decoded from `reportio.c` and `fileio.c`. The non-obvious parts are that
+`curr_line` is incremented at the start of each GENERATE and decremented at the
+end (the pair cancels unless the page footing cleared `incr_line`), that
+`do_page_footing` pads only while the cursor is short of PAGE LIMIT and
+otherwise just resets to line 1, and that the overflow test compares
+`curr_line` before *and* after a line is positioned -- so a group can carry the
+cursor past LAST DETAIL and eject a page later than a group-granularity model
+would.
 
 - **`Sample Payroll Report`** — 96 input records; `cobc` writes 88 lines with
   17 employee rows, YACCC 133 lines with 23. `cobc` both *drops* a group whose
@@ -822,20 +847,13 @@ TERMINATE. Coming back to this means fixing those two first: the cursor itself
   FOOTING group at LINE 24 and `FOOTING 20` together.
 - **`Next Group Next Page`** — 4021 lines against 3955, offset from line 14.
 
-The fix is not another rule. `reportio.c` is a cursor machine: `write_to_line()`
-advances `curr_line` past the line it wrote and wraps it to 1 when it passes
-`def_lines`; page overflow is tested as `curr_line > def_last_detail` at two
-places in `report_line()`; `do_page_footing()` and `do_page_heading()` each
-decide whether to skip to the end of the page first. Porting that state machine
-(and deleting `page_stride()`/`pad_page()` in favour of it) is the way to get
-all three, and the port's first two thirds are already known to work (see the
-paragraph above). The `cob_report` struct in `runtime/cobrt.h` needs the same fields
-`cobc` has: `curr_line`, `curr_page`, `first_detail`, `in_page_heading`,
-`in_page_footing`, `incr_page`, `incr_line`.
-
-`Sample REPORT with RIGHT/CENTER` also fails, and is *not* a defect: its first
-step expects `cobc` to reject the program under its default dialect, and YACCC
-compiles it, as GnuCOBOL does with `-std=mf`.
+The fix is not another rule, and it is not a small one: it is the state machine
+in "The 3.1.2 algorithm, exactly" in `docs/report-writer-page-model.md`, ported
+in one change rather than piecemeal. `cob_report` in `runtime/cobrt.h` needs the
+fields that machine has -- `curr_line`, `curr_page`, `incr_line`,
+`first_detail`, `first_generate`, `in_page_heading`, `in_page_footing`,
+`in_report_footing` -- and `page_stride()`/`pad_page()`/`finish_page()` go away
+in favour of it.
 
 ### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34 *(fixed)*
 
