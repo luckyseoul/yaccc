@@ -29,8 +29,6 @@ enum cob_type {
 #define COB_F_BINARY_TRUNC 0x40
 #define COB_F_ZERO         0x80   /* COB_ALL: figurative ZERO */
 #define COB_F_UNSIGNED_PACKED 0x100 /* COMP-6: packed with no sign nibble */
-#define COB_F_NO_SCALE     0x200 /* -fnotrunc: a BINARY item is read back without
-                                  * its PICTURE's decimal point */
 
 typedef struct {
 	unsigned char type;
@@ -39,8 +37,6 @@ typedef struct {
 	unsigned short flags;         /* COB_F_*: more than eight are defined */
 	const char *pic;              /* edited picture (expanded) */
 	unsigned char currency;
-	unsigned char pdigits;        /* PICTURE digits when `digits` is the
-	                               * storage capacity (-fnotrunc), else 0 */
 } cob_attr;
 
 typedef struct {
@@ -447,6 +443,7 @@ int cob_cmp(const cob_field *a, const cob_field *b);
 int cob_cmp_alnum(const unsigned char *a, size_t al, const unsigned char *b, size_t bl);
 int cob_is_numeric(const cob_field *f);
 extern int cob_host_sign;
+extern int cob_pretty_display;
 int cob_cmp_float(const cob_field *a, const cob_field *b);
 int cob_cmp_dbl(double x, double y);
 double cob_dbl_div(double a, double b);

@@ -42,7 +42,7 @@ IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-W
 FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '--fixed': ['-fixed'], '-fdebugging-line': ['--debugging-mode'],
             # yaccc has these as its own options
-            '-fnotrunc': ['-fno-binary-truncate'],
+            '-fnotrunc': ['-fnotrunc'],
             '-fbinary-truncate': [],        # yaccc's default
             '-fno-ref-mod-zero-length': ['--refmod-zero-length'],
             # $SET CONSTANT is always defined here; the flag only switches it on

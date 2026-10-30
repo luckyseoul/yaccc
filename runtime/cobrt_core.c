@@ -127,11 +127,17 @@ void cob_fatal(const char *fmt, ...)
 		buf[n] = 0;
 		unsigned char *av[1] = { buf };
 		in_error_proc = 1;
-		for (int i = 0; i < n_err_procs; i++)
+		/* each procedure returns the program's RETURN-CODE: zero means it
+		 * handled the error, which stops the chain and the standard message
+		 * (as GnuCOBOL's cob_runtime_error does with a handler's return) */
+		int more = 1;
+		for (int i = 0; i < n_err_procs && more; i++)
 			if (err_procs[i])
-				err_procs[i](1, av);
+				more = err_procs[i](1, av);
 		in_error_proc = 0;
-		fprintf(stderr, "libcob: error: %s\n", msg);
+		n_err_procs = 0;
+		if (more)
+			fprintf(stderr, "libcob: error: %s\n", msg);
 		cob_close_all_files();
 		fflush(stdout);
 		exit(1);
@@ -1007,19 +1013,13 @@ cob_dec cob_d_get(const cob_field *f)
 	switch (f->attr->type) {
 	case COB_NUM_DISPLAY:
 		r = get_display(f);
-		if (f->attr->flags & COB_F_NO_SCALE)
-			r.scale = 0;
 		return r;
 	case COB_NUM_PACKED:
 		r = get_packed(f);
-		if (f->attr->flags & COB_F_NO_SCALE)
-			r.scale = 0;
 		return r;
 	case COB_NUM_BINARY:
 		r.v = get_binary_raw(f, 1, f->attr->flags & COB_F_SIGNED);
-		/* -fnotrunc: the PICTURE's decimal point is not applied when the item
-		 * is read back (the stored value is unchanged) */
-		r.scale = (f->attr->flags & COB_F_NO_SCALE) ? 0 : f->attr->scale;
+		r.scale = f->attr->scale;
 		return r;
 	case COB_NUM_COMP5:
 		r.v = get_binary_raw(f, 0, f->attr->flags & COB_F_SIGNED);
@@ -1205,12 +1205,6 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		/* COB_SIZE_REPORT: the value is stored truncated, as without a size
 		 * check, but the overflow is reported so the exception can be raised */
 		int report = 0;
-		if ((a->flags & COB_F_NO_SCALE) && a->type != COB_INDEX) {
-			/* -fnotrunc: the item has no decimal point, and the value written
-			 * to it keeps the digits it had -- measured on 3.1.2, where
-			 * MOVE 0.12 to a PIC 9V99 COMP-4 stores 12 and prints 00012 */
-			v = d.v;
-		} else {
 		if (d.scale < a->scale && !(opt & (COB_SIZE_CHECK | COB_SIZE_REPORT))) {
 			/* drop the high-order digits no item can hold before scaling up */
 			int k = a->scale - d.scale;
@@ -1218,7 +1212,6 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 				d.v %= P10[38 - k];
 		}
 		v = rescale(d.v, d.scale, a->scale, opt, &ovf);
-		}
 		if (ovf) {
 			if (opt & COB_SIZE_CHECK)
 				return 1;
@@ -1846,14 +1839,10 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz)
 	case COB_NUM_DOUBLE: {
 		cob_dec d = cob_d_get(f);
 		int digits = a->digits ? a->digits : 18;
-		/* -fnotrunc / -std=ibm: the item has no decimal point, and cob_d_get
-		 * already says so, so the text is the raw digits. `digits` is then the
-		 * storage capacity, so the PICTURE's count pads the text instead. */
-		int sc = (a->flags & COB_F_NO_SCALE) ? d.scale : a->scale;
-		if (a->pdigits)
-			digits = a->pdigits;
 		int ovf = 0;
-		cob_s128 v = rescale(d.v, d.scale, sc, 0, &ovf);
+		/* the stored digits, with the PICTURE's point applied only when
+		 * DISPLAY would write one (a numeric-to-alphanumeric MOVE never does) */
+		cob_s128 v = cob_pretty_display ? rescale(d.v, d.scale, a->scale, 0, &ovf) : d.v;
 		cob_u128 u = cob_uabs(v);
 		size_t n = (size_t)digits;
 		/* pad to the PICTURE's digit count, but never cut a value that is
@@ -2226,6 +2215,8 @@ int cob_cmp_dbl(double x, double y)
 }
 
 int cob_host_sign;      /* -std=ibm: sign F is valid in signed packed items */
+int cob_pretty_display = 1;  /* DISPLAY writes a numeric item's point and a
+                              * leading sign; -std=ibm / -fnotrunc turn it off */
 
 int cob_is_numeric(const cob_field *f)
 {
@@ -2404,16 +2395,6 @@ void cob_display_warn_punch(const char *loc)
 static int disp_digits(const cob_field *f)
 {
 	const cob_attr *a = f->attr;
-	if ((a->flags & COB_F_NO_SCALE) && (a->type == COB_NUM_BINARY || a->type == COB_NUM_COMP5)) {
-		/* -fnotrunc / -std=ibm: an untruncated BINARY item prints as many
-		 * digits as its storage holds (2 bytes: 5, 4: 10, 8: 20), measured on
-		 * cobc -- PIC 9(2) COMP holding 5 prints "00005" */
-		static const int cap[] = { 0, 3, 5, 0, 10, 0, 0, 0, 20 };
-		int c = (f->size < sizeof cap / sizeof *cap) ? cap[f->size] : 0;
-		if (c > a->digits)
-			return c;
-		return a->digits;
-	}
 	if (a->type == COB_NUM_COMP5) {
 		/* as many digits as the largest value of the size */
 		static const unsigned char dig[17] = { 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25, 27, 29, 32, 34, 37, 39 };
@@ -2452,10 +2433,51 @@ void cob_display(int dev, const cob_field *f)
 		}
 		cob_dec d = cob_d_get(f);
 		int digits = disp_digits(f);
-		int scale = (a->type == COB_INDEX || (a->flags & COB_F_NO_SCALE)) ? 0 : a->scale;
+		int scale = (a->type == COB_INDEX) ? 0 : a->scale;
 		int sgn = (a->flags & COB_F_SIGNED) || a->type == COB_INDEX;
 		int o = 0;
 		int ovf = 0;
+		/* GnuCOBOL's cob_print_realbin is used for a COMP-5 / INDEX item in any
+		 * dialect, and for a BINARY item when the point is not written:
+		 * display_numeric and cob_print_realbin alike write the digits with no
+		 * decimal point, and only the COMP-5 / INDEX / BINARY forms pad to the
+		 * digits the storage holds */
+		int realbin = a->type == COB_NUM_COMP5 || a->type == COB_INDEX;
+		int binfield = realbin || a->type == COB_NUM_BINARY;
+		if (!cob_pretty_display || realbin) {
+			int width = a->digits;   /* the PICTURE's digits */
+			if (binfield) {
+				static const int bin_cap[] = { 0, 3, 5, 0, 10, 0, 0, 0, 20 };
+				int c = (f->size < sizeof bin_cap / sizeof *bin_cap) ? bin_cap[f->size] : 0;
+				if (c > width)
+					width = c;
+			}
+			int trailing = a->type == COB_NUM_DISPLAY && !(a->flags & COB_F_SIGN_LEAD);
+			cob_u128 u = cob_uabs(d.v);
+			char t[64];
+			/* a binary item shows the whole value however wide the PICTURE is
+			 * (cob_print_realbin pads to its width but never cuts); a DISPLAY
+			 * item holds exactly its PICTURE's digits */
+			int need = 1;
+			for (cob_u128 q = u; q >= 10; q /= 10)
+				need++;
+			if (binfield && need > width)
+				width = need;
+			if (width > 39)
+				width = 39;
+			for (int i = 0; i < width; i++) {
+				t[i] = (char)('0' + (int)(u % 10));
+				u /= 10;
+			}
+			if (sgn && !trailing)
+				buf[o++] = d.v < 0 ? '-' : '+';
+			for (int i = width - 1; i >= 0; i--)
+				buf[o++] = t[i];
+			if (sgn && trailing)
+				buf[o++] = d.v < 0 ? '-' : '+';
+			fwrite(buf, 1, (size_t)o, fp);
+			return;
+		}
 		cob_s128 v = rescale(d.v, d.scale, scale < 0 ? 0 : scale, 0, &ovf);
 		if (scale < 0) {
 			digits -= scale;

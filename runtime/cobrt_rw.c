@@ -381,8 +381,11 @@ void cob_rw_initiate(cob_report *r, const char *loc)
 		cob_warning("%s: INITIATE for report %s that is already initiated", loc, r->name);
 		return;
 	}
-	if (!r->file->open_mode || !r->file->fp)
-		cob_fatal("%s: INITIATE for report %s: file %s is not open", loc, r->name, r->file->select_name);
+	/* GnuCOBOL's INITIATE does not look at the file, and neither does this
+	 * one: a program may INITIATE a report before it OPENs the file and
+	 * GENERATE into it afterwards (run_reportwriter.at's "Report PRESENT
+	 * AFTER" does exactly that). The write path reports a closed file if the
+	 * report is still unopened when a line is due. */
 	if (!r->buf) {
 		r->buf = cob_malloc((size_t)r->width + 1);
 		r->gi = cob_malloc((size_t)r->ngroups + 1);
@@ -402,7 +405,7 @@ void cob_rw_initiate(cob_report *r, const char *loc)
 	cob_set_int(r->page_counter, 1);
 	lc_set(r, 0);
 	/* the report starts on a fresh page of the file */
-	if (r->file->fp != stdout && ftell(r->file->fp) == 0) {
+	if (r->file->fp && r->file->fp != stdout && ftell(r->file->fp) == 0) {
 		r->pos = 0;
 		r->open = 0;
 	}

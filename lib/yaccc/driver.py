@@ -153,6 +153,12 @@ def main(argv=None):
                     help='a BINARY item is limited to the digits of its PICTURE (default)')
     ap.add_argument('-fno-binary-truncate', dest='binary_truncate', action='store_false',
                     help='a BINARY item may use the whole capacity of its USAGE')
+    ap.add_argument('-fnotrunc', dest='notrunc', action='store_true',
+                    help='cobc -fnotrunc: -fno-binary-truncate and -fno-pretty-display together')
+    ap.add_argument('-fpretty-display', dest='pretty_display', action='store_true', default=None,
+                    help='DISPLAY writes a numeric item with its decimal point (default)')
+    ap.add_argument('-fno-pretty-display', dest='pretty_display', action='store_false',
+                    help='DISPLAY writes the stored digits as they stand')
     ap.add_argument('-fdpc-in-data', dest='dpc_in_data', default=None,
                     choices=['none', 'json', 'xml', 'all'],
                     help='use the decimal comma in JSON/XML numbers when '
@@ -198,6 +204,11 @@ def main(argv=None):
     d = opts.dialect
     opts.binary_size = args.binary_size or d.binary_size
     opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
+    opts.pretty_display = d.pretty_display if args.pretty_display is None else args.pretty_display
+    opts.arithmetic_osvs = d.arithmetic_osvs
+    if args.notrunc:
+        opts.binary_truncate = False
+        opts.pretty_display = False
     opts.missing_period = d.missing_period if args.missing_period is None else args.missing_period
     opts.host_sign = d.host_sign
     opts.nonnum_zero = d.nonnum_zero

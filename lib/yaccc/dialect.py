@@ -9,7 +9,7 @@ appear here; the README says what each one changes.
 """
 
 # name: binary_size, binary_truncate, missing_period, host_sign, nonnum_zero,
-#       space_raw
+#       space_raw, pretty_display, arithmetic_osvs
 # host_sign: a signed PACKED-DECIMAL item whose sign nibble is F (the host's
 # "unsigned" sign) passes the NUMERIC class test, as on IBM mainframes
 # nonnum_zero: MOVE of a figurative constant other than ZERO, or of an
@@ -17,19 +17,25 @@ appear here; the README says what each one changes.
 # (Micro Focus)
 # space_raw: MOVE SPACE to a numeric DISPLAY item stores spaces, as MOVE
 # LOW-VALUE / HIGH-VALUE store their bytes (ACUCOBOL)
+# pretty_display: DISPLAY of a numeric item writes its decimal point and a
+# leading sign.  Without it the stored digits are written as they stand and a
+# BINARY item shows the digits its storage holds (IBM, and -fnotrunc)
+# arithmetic_osvs: a COMPUTE with more than one operation truncates each
+# intermediate result to the largest scale in the statement, as OS/VS COBOL
+# does, so a chain of divisions loses precision step by step (IBM)
 DIALECTS = {
-    'default':   ('2-4-8',   True,  False, False, False, False),
-    'gnu':       ('2-4-8',   True,  True,  False, False, False),
-    'cobol85':   ('2-4-8',   True,  False, False, False, False),
-    'cobol2002': ('2-4-8',   True,  False, False, False, False),
-    'cobol2014': ('2-4-8',   True,  False, False, False, False),
+    'default':   ('2-4-8',   True,  False, False, False, False, True,  False),
+    'gnu':       ('2-4-8',   True,  True,  False, False, False, True,  False),
+    'cobol85':   ('2-4-8',   True,  False, False, False, False, True,  False),
+    'cobol2002': ('2-4-8',   True,  False, False, False, False, True,  False),
+    'cobol2014': ('2-4-8',   True,  False, False, False, False, True,  False),
     # measured against cobc 3.1.2: PIC 9(2) COMP holding 1289 displays as 09
     # under mf (one-byte storage, value cut to the PICTURE) and as 01289 under
     # ibm (no truncation, and a scaled item loses its decimal point too), so it
     # is ibm that switches truncation off, not mf
-    'mf':        ('1-2-4-8', True,  True,  False, True,  False),
-    'ibm':       ('2-4-8',   False, True,  True,  False, False),
-    'acu':       ('1-2-4-8', True,  True,  False, False, True),
+    'mf':        ('1-2-4-8', False, True,  False, True,  False, True,  False),
+    'ibm':       ('2-4-8',   False, True,  True,  False, False, False, True),
+    'acu':       ('1-2-4-8', True,  True,  False, False, True,  True,  False),
 }
 
 _ALIASES = {
@@ -53,8 +59,10 @@ class Dialect:
             key = _ALIASES[name.lower().strip()]
         except KeyError:
             raise KeyError(name) from None
-        bs, trunc, per, hs, nz, sr = DIALECTS[key]
+        bs, trunc, per, hs, nz, sr, pretty, osvs = DIALECTS[key]
         self.name = key
+        self.pretty_display = pretty
+        self.arithmetic_osvs = osvs
         self.host_sign = hs
         self.nonnum_zero = nz
         self.space_raw = sr

@@ -108,7 +108,7 @@ PASS  run_extensions.at:4200       System routine CBL_GC_WAITPID
 SKIP  run_extensions.at:4252       System routine CBL_GC_HOSTED
 PASS  run_extensions.at:4382       System routine SYSTEM, parameter handling
 SKIP  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
-FAIL  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
+PASS  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
 SKIP  run_extensions.at:4673       DISPLAY DIRECTIVE and $DISPLAY
 PASS  run_extensions.at:4706       Conditional / define directives (1)
 PASS  run_extensions.at:4731       Conditional / define directives (2)
@@ -609,7 +609,7 @@ SKIP  run_misc.at:10899            ZERO unsigned and negative binary subscript
 PASS  run_misc.at:10963            Default Arithmetic (1)
 PASS  run_misc.at:11067            Default Arithmetic Test (2)
 SKIP  run_misc.at:11118            OSVS Arithmetic (1)
-FAIL  run_misc.at:11235            OSVS Arithmetic Test (2)
+PASS  run_misc.at:11235            OSVS Arithmetic Test (2)
 PASS  run_misc.at:11292            SET CONSTANT directive
 PASS  run_misc.at:11395            DEFINE OVERRIDE
 PASS  run_misc.at:11461            DEFINE Defaults
@@ -675,7 +675,7 @@ PASS  run_reportwriter.at:4444     Duplicate INITIATE
 PASS  run_reportwriter.at:4511     Missing INITIATE and GENERATE
 PASS  run_reportwriter.at:4571     Missing INITIATE and TERMINATE
 FAIL  run_reportwriter.at:4625     Next Group Next Page
-FAIL  run_reportwriter.at:8948     Report PRESENT AFTER
+PASS  run_reportwriter.at:8948     Report PRESENT AFTER
 PASS  run_returncode.at:23         RETURN-CODE moving
 PASS  run_returncode.at:49         RETURN-CODE passing
 PASS  run_returncode.at:101        RETURN-CODE nested
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 500  FAIL 6  CERR 0  XERR 0  SKIP 187
+PASS 503  FAIL 3  CERR 0  XERR 0  SKIP 187

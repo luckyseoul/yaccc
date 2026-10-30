@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   500     6              0      187
+  693   503     3              0      187
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,23 +127,16 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 6 failures**:
-  - 4 Report Writer tests (`Sample Payroll Report`, `Sample Inventory
-    Report`, `Next Group Next Page`, `Report PRESENT AFTER`) whose output
-    differs in where a page break lands. `cobc` reaches a page break through
-    several branches of `reportio.c` and does not place it consistently:
-    measuring a dozen PAGE clause shapes against a live 3.1.2 shows a page
-    ending one line short in some shapes and at its full `PAGE LIMIT` in
-    others. YACCC uses the rule that fits the majority -- `PAGE LIMIT - 1`
-    lines when the report declares a LAST DETAIL, a FOOTING or a page footing
-    group (and not when the page starts with its first detail line), with the
-    last page always `PAGE LIMIT` lines.
-  - `OSVS Arithmetic Test (2)`: under `-std=ibm`, `cobc` stores a scaled
-    item's value normally and only prints it without its decimal point, while
-    YACCC also stores and reads it unscaled; and IBM OS/VS intermediate
-    precision (`arithmetic-osvs`) is not implemented.
-  - `System routine CBL_ERROR_PROC (2)`: an error procedure that should stop
-    the standard error handling.
+- **The 3 failures**, all Report Writer (`Sample Payroll Report`, `Sample
+  Inventory Report`, `Next Group Next Page`): the output differs in where a
+  page break lands. `cobc` reaches a page break
+  through several branches of `reportio.c` and does not place it
+  consistently: measuring a dozen PAGE clause shapes against a live 3.1.2
+  shows a page ending one line short in some shapes and at its full
+  `PAGE LIMIT` in others. YACCC uses the rule that fits the majority --
+  `PAGE LIMIT - 1` lines when the report declares a LAST DETAIL, a FOOTING or
+  a page footing group (and not when the page starts with its first detail
+  line), with the last page always `PAGE LIMIT` lines.
 
 ### Performance
 
@@ -221,13 +214,13 @@ open, or where implementations have long differed. A dialect is not a claim of
 conformance to a vendor's implementation: it sets the settings below, and
 `-f` overrides the first three individually.
 
-| Dialect | `binary-size` | `binary-truncate` | `missing-period` | `host-sign` | `non-numeric-zero` | `space-raw` |
-|---|---|---|---|---|---|---|
-| `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no | no | no | no |
-| `gnu` (GnuCOBOL) | 2-4-8 | on | yes | no | no | no |
-| `ibm` | 2-4-8 | off | yes | yes | no | no |
-| `mf` (Micro Focus) | 1-2-4-8 | on | yes | no | yes | no |
-| `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes |
+| Dialect | `binary-size` | `binary-truncate` | `missing-period` | `host-sign` | `non-numeric-zero` | `space-raw` | `pretty-display` | `arithmetic-osvs` |
+|---|---|---|---|---|---|---|---|---|
+| `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no | no | no | no | on | no |
+| `gnu` (GnuCOBOL) | 2-4-8 | on | yes | no | no | no | on | no |
+| `ibm` | 2-4-8 | off | yes | yes | no | no | off | yes |
+| `mf` (Micro Focus) | 1-2-4-8 | off | yes | no | yes | no | on | no |
+| `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes | on | no |
 
 - **`binary-size`** — the byte widths `PIC 9(n) COMP` uses. Under `2-4-8`
   (IBM and the default here) a 2-digit COMP item occupies 2 bytes; under
@@ -246,6 +239,17 @@ conformance to a vendor's implementation: it sets the settings below, and
   (with a warning), as Micro Focus does.
 - **`space-raw`** — whether MOVE SPACE to a numeric DISPLAY item stores spaces,
   the way MOVE LOW-VALUE and HIGH-VALUE store their bytes.
+- **`pretty-display`** — whether `DISPLAY` of a numeric item writes its decimal
+  point and a leading sign. With it off the stored digits are written as they
+  stand, a `SIGN LEADING` item puts its sign first and any other signed DISPLAY
+  item puts it last, and a BINARY item is printed at the width of its storage
+  rather than of its PICTURE. `-fnotrunc` turns this off too, as `cobc` does.
+- **`arithmetic-osvs`** — whether a `COMPUTE` of more than one operation cuts
+  each intermediate result back to a scale OS/VS COBOL derives from the
+  operands: the larger operand scale for `+` and `-`, their sum for `*`, and
+  for `/` the larger of the operand difference and the largest scale in the
+  statement. `20500 / 0.9 / 33.45` into `PIC S9(7)V99` is 680.94 with it on
+  and 680.95 with it off, and `cobc` warns about every statement it changes.
 
 `yaccc -std=ibm prog.cbl` and `yaccc -std=mf prog.cbl` therefore produce
 different binaries for the same source. Anything not listed above is the same
@@ -715,14 +719,14 @@ MIT. See [LICENSE](LICENSE).
 
 ## Open conformance work
 
-Five tests in the GnuCOBOL 3.1.2 testsuite still fail. This section is a
+Three tests in the GnuCOBOL 3.1.2 testsuite still fail, and all three are the
+same problem: where a Report Writer page break lands. This section is a
 briefing for anyone picking them up: what each one needs, the measurements
 behind it, and the files involved. Everything here was measured against a
 GnuCOBOL 3.1.2 built from source (`docs/gnucobol-oracle.md`), not inferred.
 
-Two of the eight described when this section was written have since been fixed
-and are kept, marked *(fixed)*, because the measurements in them are what the
-fixes were built on.
+The sections that have since been fixed are kept, marked *(fixed)*, because the
+measurements in them are what the fixes were built on.
 
 To see any of them side by side with `cobc`:
 
@@ -738,12 +742,11 @@ difference (stdout is empty for those tests).
 
 ### 1. Report Writer page cursor (3 tests)
 
-`Sample Payroll Report`, `Sample Inventory Report`, `Next Group Next Page`
-(`Sample Control Break` passed once the FOOTING rule below was measured). YACCC's page geometry is a
-set of measured rules, where GnuCOBOL's is a cursor that walks the page. The
-fourth (`Sample Payroll Report`) is different, and is written up separately
-below because its file length is the giveaway: `cobc` writes 88 lines and never
-pads the last page at all, where YACCC writes the full 133.
+`Sample Payroll Report`, `Sample Inventory Report`, `Next Group Next Page`.
+YACCC's page geometry is a set of measured rules, where GnuCOBOL's is a cursor
+that walks the page. `Sample Control Break` passed once the FOOTING rule below
+was measured, and `Report PRESENT AFTER` failed for an unrelated reason and is
+written up in section 5.
 
 The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
 
@@ -754,7 +757,7 @@ The rule in `page_stride()` (`runtime/cobrt_rw.c`) is:
   the page footing;
 - every other group keeps its declared line on every page.
 
-That fits 18 of the 25 Report Writer tests in the file (2 are skipped, 5 fail).
+That fits 21 of the 25 Report Writer tests in the file (1 is skipped, 3 fail).
 **It is known to be the wrong shape of answer**, and these are the decisive
 measurements: two reports with the same PAGE clause shape need *different*
 strides, and one report needs two different strides on its own two pages.
@@ -816,7 +819,7 @@ paragraph above). The `cob_report` struct in `runtime/cobrt.h` needs the same fi
 step expects `cobc` to reject the program under its default dialect, and YACCC
 compiles it, as GnuCOBOL does with `-std=mf`.
 
-### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34
+### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34 *(fixed)*
 
 `run_misc.at:11767`. YACCC maps both to `double` (`lib/yaccc/data.py:392`), so
 it prints double precision. `cobc` holds a real IEEE 754 decimal64/decimal128
@@ -872,6 +875,38 @@ digits without the point", which has to apply to MOVE, DISPLAY and comparison
 alike; the pieces are `binary_truncate` in `lib/yaccc/data.py` (the capacity
 digits rule already there for unscaled items) and the scale used by
 `cob_display`/`cob_d_get` in `runtime/cobrt_core.c`.
+
+### 5. OS/VS arithmetic, error procedures, and INITIATE *(fixed)*
+
+Three failures that had nothing to do with Report Writer page geometry:
+
+- **`OSVS Arithmetic Test (2)`** (`run_misc.at:11235`, `-std=ibm`). `cobc`
+  truncates each intermediate result of a `COMPUTE` to a scale derived from the
+  operands and the receiver; YACCC kept full precision and so ended up with a
+  different last digit. The scales were read out of `decimal_compute` in
+  `cobc/typeck.c`: the larger operand scale for `+` and `-`, the sum for `*`,
+  and for `/` the larger of the operand difference and the largest scale in the
+  statement (the receiver included). Only *intermediate* results are cut --
+  the outermost one must reach the receiving item intact, or `ROUNDED` has
+  nothing left to round. Measured both ways: `20500 / 0.9 / 33.45` into
+  `PIC S9(7)V99` is 680.94 cut, 680.95 uncut, and `RES ROUNDED` over the same
+  chain is 680.95, which is only reachable if the last division keeps its
+  digits. Now `arithmetic-osvs` in `lib/yaccc/dialect.py`, with `cobc`'s
+  warning; `dec_osvs()` in `lib/yaccc/codegen.py` does the cutting.
+- **`System routine CBL_ERROR_PROC (2)`** (`run_extensions.at:4592`). The
+  error procedure ran and printed the right six lines, and then the runtime
+  carried on: it called the next handler and printed `libcob: error:` as well.
+  `cob_runtime_error` treats a handler's return value as "keep going": the
+  generated ENTRY returns its program's `RETURN-CODE`, so a handler that exits
+  with zero has handled the error. `cob_fatal` in `runtime/cobrt_core.c` now
+  stops the chain and suppresses the standard message in that case, and exits
+  with status 1 as `cobc` does.
+- **`Report PRESENT AFTER`** (`run_reportwriter.at:8948`). YACCC required the
+  report's file to be open at `INITIATE` and stopped with "file OUT-FILE is not
+  open"; the program `INITIATE`s the report first and `OPEN`s the file after.
+  `cob_report_initiate` in `cobc`'s `reportio.c` never looks at the file, so
+  neither does YACCC's now: the write path still reports a file that is closed
+  when a line is actually due.
 
 ### Things in this area that are *not* worth "fixing"
 

@@ -7,7 +7,7 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_NUM_EDITED,
                    T_INDEX, T_ALL, T_POINTER, T_NUM_DEC_FLOAT, TYPE_NAMES, NUMERIC_TYPES,
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
-                   F_BINARY_TRUNC, F_UNSIGNED_PACKED, F_NO_SCALE)
+                   F_BINARY_TRUNC, F_UNSIGNED_PACKED)
 from .errors import CompileError, DIAG
 from .nodes import *
 from .dbggen import DebugGen
@@ -75,6 +75,8 @@ class Options:
     def __init__(self):
         self.binary_size = '2-4-8'
         self.binary_truncate = True  # a BINARY item holds its PICTURE's digits
+        self.pretty_display = True   # DISPLAY writes the point and a leading sign
+        self.arithmetic_osvs = False # truncate each COMPUTE intermediate (OS/VS)
         self.missing_period = False  # accept a statement where '.' is required
         self.host_sign = False       # signed packed with sign F is NUMERIC (ibm)
         self.nonnum_zero = False     # MOVE SPACE/QUOTE/LOW/HIGH or "abc" to numeric moves 0 (mf)
@@ -314,6 +316,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append('\tcob_init(argc, argv);')
         if getattr(self.opts, 'host_sign', False):
             out.append('\tcob_host_sign = 1;')
+        if not getattr(self.opts, 'pretty_display', True):
+            out.append('\tcob_pretty_display = 0;')
         out.append(f'\tcob_when_compiled = {c_string(wc)};')
         out.append('\tcob_register_all();')
         out.append(f'\tint rc = {self.prog_syms[id(main)]}(-1, NULL);')
@@ -344,11 +348,7 @@ class CodeGen(ReportWriterGen, DebugGen):
             pic = it.pic.edited_pic
             if it.pic.currency != '$':
                 cur = ord(it.pic.currency)
-        # under -fnotrunc `digits` holds the storage capacity; the PICTURE's own
-        # count is kept alongside for the numeric-to-alphanumeric text width
-        pdig = getattr(it, 'pic_digits', 0) if (it.flags & F_NO_SCALE) else 0
-        it.attr_sym = self.attr(it.type, min(it.digits, 255), it.scale, it.flags, pic, cur,
-                                min(pdig or 0, 255))
+        it.attr_sym = self.attr(it.type, min(it.digits, 255), it.scale, it.flags, pic, cur)
         return it.attr_sym
 
     def lit_str(self, b):
@@ -1573,8 +1573,6 @@ class CodeGen(ReportWriterGen, DebugGen):
             return None
         if it.scale < 0 or it.digits > 18 or it.children:
             return None
-        if it.flags & F_NO_SCALE:
-            return None     # -fnotrunc: the runtime path reads it without its point
         t = it.type
         if t == T_NUM_BINARY and it.size in (2, 4, 8):
             kind = 'BIN'
@@ -1883,6 +1881,40 @@ class CodeGen(ReportWriterGen, DebugGen):
                 return f"cob_frame_param_size({n})"
             return self.size_expr(it)
         return f"({self.field(r)})->size"
+
+    def dec_osvs(self, e, wide, dmax, top):
+        """(C cob_dec expression, scale) with OS/VS intermediate precision.
+
+        Each operation's result is cut back to the scale OS/VS COBOL gives it:
+        the larger operand scale for + and -, their sum for *, and for /
+        the larger of the operand difference and dmax, the largest scale in
+        the statement. Cutting happens on every result but the outermost,
+        which the receiving item's own store deals with (and which ROUNDED
+        must still see in full). Measured on cobc 3.1.2, which tracks the same
+        scales in a stack across the expression."""
+        if isinstance(e, BinOp):
+            lc, ls = self.dec_osvs(e.left, wide, dmax, False)
+            rc, rs = self.dec_osvs(e.right, wide, dmax, False)
+            fn = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '**': 'pow'}[e.op]
+            if wide and e.op in ('*', '/'):
+                fn += '_wide'
+            t = f"cob_d_{fn}({lc}, {rc})"
+            if e.op in ('+', '-'):
+                p = max(ls, rs)
+            elif e.op == '*':
+                p = ls + rs
+            elif e.op == '/':
+                p = max(ls - rs, dmax)
+            else:
+                p = ls - rs
+            p = max(0, p)
+            if not top:
+                t = f"cob_d_trunc({t}, {p})"
+            return t, p
+        if isinstance(e, Neg):
+            c, sc = self.dec_osvs(e.e, wide, dmax, False)
+            return f"cob_d_neg({c})", sc
+        return self.dec(e, wide), self.expr_scale(e)
 
     def dec(self, e, wide=False):
         """A C cob_dec expression. `wide` keeps the decimal-float exponent
@@ -3032,6 +3064,52 @@ class CodeGen(ReportWriterGen, DebugGen):
             return it.type
         return None
 
+    def osvs_scale(self, expr, targets):
+        """The scale OS/VS COBOL cuts every intermediate result back to, or
+        None when the statement is not subject to it: a single operation has no
+        intermediate to cut, and a floating-point receiver works in double."""
+        if not getattr(self.opts, 'arithmetic_osvs', False):
+            return None
+        if self.op_count(expr) < 2:
+            return None
+        scale = 0
+        for t in targets:
+            try:
+                it = self.resolve(t.ref)
+            except Exception:
+                return None
+            if not isinstance(it, DataItem) or it.type not in NUMERIC_TYPES:
+                return None
+            if it.scale > scale:
+                scale = it.scale
+        return max(scale, self.expr_scale(expr))
+
+    def op_count(self, e):
+        """Binary operators in an arithmetic expression."""
+        if isinstance(e, BinOp):
+            return 1 + self.op_count(e.left) + self.op_count(e.right)
+        if isinstance(e, Neg):
+            return self.op_count(e.e)
+        return 0
+
+    def expr_scale(self, e):
+        """The largest decimal scale any operand of the expression carries."""
+        if isinstance(e, NumLit):
+            return e.scale
+        if isinstance(e, DataRef):
+            try:
+                it = self.resolve(e)
+            except Exception:
+                return 0
+            if isinstance(it, DataItem) and it.type in NUMERIC_TYPES:
+                return max(0, it.scale)
+            return 0
+        if isinstance(e, BinOp):
+            return max(self.expr_scale(e.left), self.expr_scale(e.right))
+        if isinstance(e, Neg):
+            return self.expr_scale(e.e)
+        return 0
+
     def g_Compute(self, s):
         em = self.em
         em(f"cob_cur_loc = &{self.loc_sym(s)};")
@@ -3077,7 +3155,11 @@ class CodeGen(ReportWriterGen, DebugGen):
         em.ind += 1
         em("int cob_err = 0;")
         wide = self.uses_dec_float(s.expr) or any(self.is_dec_float_ref(t.ref) for t in s.targets)
-        em(f"cob_dec cob_t = {self.dec(s.expr, wide)};")
+        osc = self.osvs_scale(s.expr, s.targets)
+        if osc is not None:
+            DIAG.warn("precision of result may change with arithmetic-osvs", s.loc)
+        rhs = self.dec_osvs(s.expr, wide, osc, True)[0] if osc is not None else self.dec(s.expr, wide)
+        em(f"cob_dec cob_t = {rhs};")
         for t in s.targets:
             em(f"cob_err |= cob_d_set({self.field(t.ref)}, cob_t, {self.target_opt(t, chk)});")
         self.handlers('cob_err', s.on_error, s.not_on_error)
