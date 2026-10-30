@@ -669,7 +669,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Open conformance work
 
-Six tests in the GnuCOBOL 3.1.2 testsuite still fail. This section is a
+Five tests in the GnuCOBOL 3.1.2 testsuite still fail. This section is a
 briefing for anyone picking them up: what each one needs, the measurements
 behind it, and the files involved. Everything here was measured against a
 GnuCOBOL 3.1.2 built from source (`docs/gnucobol-oracle.md`), not inferred.
@@ -690,10 +690,10 @@ make gctest          # the gate: fails if a recorded PASS stops passing
 diffs the files they write, which is the only way to see a Report Writer
 difference (stdout is empty for those tests).
 
-### 1. Report Writer page cursor (4 tests)
+### 1. Report Writer page cursor (3 tests)
 
-`Sample Payroll Report`, `Sample Control Break`, `Sample Inventory Report`,
-`Next Group Next Page`. Three of them are one shape: YACCC's page geometry is a
+`Sample Payroll Report`, `Sample Inventory Report`, `Next Group Next Page`
+(`Sample Control Break` passed once the FOOTING rule below was measured). YACCC's page geometry is a
 set of measured rules, where GnuCOBOL's is a cursor that walks the page. The
 fourth (`Sample Payroll Report`) is different, and is written up separately
 below because its file length is the giveaway: `cobc` writes 88 lines and never
@@ -735,40 +735,25 @@ side. (Measuring that subset is how the wrong "14 of 19" figure in earlier
 versions of this note arose: the filter silently omits `Sample Control Break`,
 `Duplicate Detail Line` and `STUDENT REPORT`.)
 
-A page-cursor port exists on the branch `rw-cursor-port` (commit at the head of
-that branch): `curr_line`/`curr_page` advance on every write, `write_at()`
-drops lines the cursor has passed, and the break path follows
-`do_page_footing`/`do_page_heading`. It is **not** an improvement yet — 7 of 17
-pass against 14 for the heuristic on the same filter — so it is parked rather
-than merged. The pieces it still gets wrong are the pad endpoints inside
-`do_page_footing` and the report-footing placement at TERMINATE.
-
-The four failures:
+A page-cursor port was written and measured but not kept: `curr_line`/
+`curr_page` advance on every write, `write_at()` drops lines the cursor has
+passed, and the break path follows `do_page_footing`/`do_page_heading`. It
+scored 10 of 23 Report Writer tests against the heuristic's 18, so it is not in
+the tree and its branch is deleted. The pieces it got wrong were the pad
+endpoints inside `do_page_footing` and the report-footing placement at
+TERMINATE. Coming back to this means fixing those two first: the cursor itself
+(advance on write, drop past cursor) reproduced `Report Line Order`,
+`PAGE LIMIT REPORT 2` and `EMPTY REPORT` exactly, so that part is right.
 
 - **`Sample Payroll Report`** — 96 input records; `cobc` writes 88 lines with
-  17 employee rows, YACCC 133 lines with 23. Two things are going on, and the
-  second is the bigger one:
-  - `cobc` **drops** a group whose target line is already written on the page
-    (`write_to_line` only writes when `curr_line <= linen`); 8 of YACCC's rows
-    are absent from `cobc`'s file entirely. YACCC's `put_line()` instead pushes
-    the line to `r->pos + 1`. Changing it to drop made no difference to the
-    test on its own, so it is not the whole story.
-  - `cobc` writes **no padding after the last page**: the file is 3,919 bytes
-    and ends immediately after "COMPANY TOTALS ... 100%" plus one newline,
-    where YACCC pads page 2 out to `PAGE LIMIT`. Yet a report of the same shape
-    with no control footings *is* padded (measured: `PAGE LIMIT 10`, `LAST
-    DETAIL 8`, 12 details gives 20 lines from both compilers). So whatever
-    decides the padding depends on the control footings, not on the PAGE
-    clause -- that is the next thing to isolate.
-- **`Sample Control Break`** — `cobc` has one extra blank line before the page
-  2 heading (its L25 is blank, L26 is the heading; YACCC writes the heading at
-  L25). The page break is one line later in `cobc`.
-- **`Sample Inventory Report`** — both files are 74 lines and differ in
-  exactly six: at L48, L53 and L55 `cobc` has a blank line where YACCC has
-  content, and `cobc` prints that content on the following line. The page
-  footing and two control totals sit one line lower in `cobc`.
-- **`Next Group Next Page`** — same shape again at L14, after which `cobc`'s
-  4021 lines and YACCC's 3955 are offset from each other to the end.
+  17 employee rows, YACCC 133 lines with 23. `cobc` both *drops* a group whose
+  target line is already written on the page and writes **no padding** after
+  its last page (3,919 bytes, ending at "COMPANY TOTALS ... 100%"). Neither is
+  reproduced yet.
+- **`Sample Inventory Report`** — 74 lines from both compilers, differing in
+  17: from line 29 the detail rows sit one line lower in `cobc` and stay
+  offset. It has a PAGE FOOTING group at LINE 24 and `FOOTING 20` together.
+- **`Next Group Next Page`** — 4021 lines against 3955, offset from line 14.
 
 The fix is not another rule. `reportio.c` is a cursor machine: `write_to_line()`
 advances `curr_line` past the line it wrote and wraps it to 1 when it passes
@@ -776,7 +761,8 @@ advances `curr_line` past the line it wrote and wraps it to 1 when it passes
 places in `report_line()`; `do_page_footing()` and `do_page_heading()` each
 decide whether to skip to the end of the page first. Porting that state machine
 (and deleting `page_stride()`/`pad_page()` in favour of it) is the way to get
-all four. The `cob_report` struct in `runtime/cobrt.h` needs the same fields
+all three, and the port's first two thirds are already known to work (see the
+paragraph above). The `cob_report` struct in `runtime/cobrt.h` needs the same fields
 `cobc` has: `curr_line`, `curr_page`, `first_detail`, `in_page_heading`,
 `in_page_footing`, `incr_page`, `incr_line`.
 
