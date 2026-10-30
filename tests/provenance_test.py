@@ -17,6 +17,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# this file necessarily contains the marker strings it looks for
+SELF = 'tests/provenance_test.py'
 
 passed = failed = 0
 verbose = '-v' in sys.argv
@@ -58,7 +60,7 @@ def main():
     for f in git('ls-files').stdout.split():
         if not f.endswith(('.c', '.h', '.py')):
             continue
-        if f.startswith(('tests/gnucobol/', 'tests/nist/')):
+        if f == SELF or f.startswith(('tests/gnucobol/', 'tests/nist/')):
             continue        # the runners name their suite's tests, not its code
         try:
             text = open(os.path.join(ROOT, f), encoding='latin-1').read()
@@ -74,7 +76,7 @@ def main():
         base = os.path.basename(f)
         if base in ('COPYING', 'LICENSE') and base != 'LICENSE':
             gpl.append(f)
-        if not f.endswith(('.c', '.h', '.py', '.sh')):
+        if f == SELF or not f.endswith(('.c', '.h', '.py', '.sh')):
             continue
         try:
             text = open(os.path.join(ROOT, f), encoding='latin-1').read(4000)

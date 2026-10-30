@@ -456,6 +456,8 @@ size_t cob_field_text(const cob_field *f, unsigned char *buf, size_t bufsz);
 
 /* ------------------------------------------------------------ display / accept */
 void cob_display(int dev, const cob_field *f);
+int cob_display_ok(int dev);
+void cob_display_warn_punch(const char *loc);
 void cob_display_lit(int dev, const char *s, size_t n);
 void cob_display_dec(int dev, cob_dec d);
 /* DISPLAY's text for a FLOAT-DECIMAL-16/34 item (GnuCOBOL's decimal format:

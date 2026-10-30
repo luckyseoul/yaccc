@@ -615,7 +615,7 @@ FAIL  run_misc.at:11395            DEFINE OVERRIDE
 PASS  run_misc.at:11461            DEFINE Defaults
 PASS  run_misc.at:11527            78 VALUE
 PASS  run_misc.at:11595            01 CONSTANT
-FAIL  run_misc.at:11675            DISPLAY UPON
+SKIP  run_misc.at:11675            DISPLAY UPON
 PASS  run_misc.at:11767            FLOAT-DECIMAL w/o SIZE ERROR
 PASS  run_misc.at:11941            FLOAT-SHORT / FLOAT-LONG w/o SIZE ERROR
 PASS  run_misc.at:12140            FLOAT-SHORT with SIZE ERROR
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 495  FAIL 12  CERR 0  XERR 0  SKIP 186
+PASS 495  FAIL 11  CERR 0  XERR 0  SKIP 187

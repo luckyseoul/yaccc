@@ -2320,9 +2320,63 @@ int cob_is_class(const cob_field *f, const unsigned char *table)
 
 /* ================================================================ DISPLAY */
 
+/* DISPLAY devices: 0 CONSOLE (stdout), 1 SYSERR, 2 PRINTER, 3 SYSPUNCH.
+ * PRINTER and SYSPUNCH go to the file the environment names, opened on first
+ * use and kept open so a program's output lands in one file. */
+static FILE *dev_file[4];
+
 static FILE *dev_fp(int dev)
 {
-	return dev == 1 ? stderr : stdout;
+	const char *n;
+	switch (dev) {
+	case 1:
+		return stderr;
+	case 2:
+		if (!dev_file[2]) {
+			n = getenv("COB_DISPLAY_PRINT_FILE");
+			if (n && *n)
+				dev_file[2] = fopen(n, "a");
+			if (!dev_file[2]) {
+				n = getenv("COB_DISPLAY_PRINT_PIPE");
+				if (n && *n)
+					dev_file[2] = popen(n, "w");
+			}
+			if (!dev_file[2])
+				dev_file[2] = stdout;   /* no printer configured */
+		}
+		return dev_file[2];
+	case 3:
+		if (!dev_file[3]) {
+			n = getenv("COB_DISPLAY_PUNCH_FILE");
+			if (n && *n)
+				dev_file[3] = fopen(n, "a");
+			if (!dev_file[3])
+				return NULL;            /* nothing to punch to */
+		}
+		return dev_file[3];
+	default:
+		return stdout;
+	}
+}
+
+/* Can this device be written? SYSPUNCH cannot when COB_DISPLAY_PUNCH_FILE is
+ * unset: GnuCOBOL warns, skips the output and takes ON EXCEPTION. */
+int cob_display_ok(int dev)
+{
+	return dev != 3 || dev_fp(3) != NULL;
+}
+
+void cob_display_warn_punch(const char *loc)
+{
+	/* once per run, and with no source location: that is what cobc prints */
+	static int warned;
+	(void)loc;
+	if (warned)
+		return;
+	warned = 1;
+	fflush(stdout);
+	fprintf(stderr, "libcob: warning: COB_DISPLAY_PUNCH_FILE is invalid, "
+	                "output to SYSPUNCH skipped\n");
 }
 
 static int disp_digits(const cob_field *f)

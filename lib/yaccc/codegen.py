@@ -3448,7 +3448,28 @@ class CodeGen(ReportWriterGen, DebugGen):
             k = {'ENVIRONMENT-NAME': 0, 'ENVIRONMENT-VALUE': 1, 'ARGUMENT-NUMBER': 2}[upon]
             em(f"cob_display_env({k}, {self.field(s.items[0])});")
             return
-        dev = 1 if upon in ('SYSERR', 'STDERR') else 0
+        # UPON selects the device: CONSOLE (also the default) is stdout, SYSERR
+        # is stderr, PRINTER and SYSPUNCH are files the environment names --
+        # COB_DISPLAY_PRINT_FILE / COB_DISPLAY_PRINT_PIPE and
+        # COB_DISPLAY_PUNCH_FILE. Without one, SYSPUNCH is skipped and its
+        # ON EXCEPTION runs.
+        DEV = {'SYSERR': 1, 'STDERR': 1, 'CONSOLE': 0, 'PRINTER': 2,
+               'SYSPUNCH': 3, 'SYSPCH': 3}
+        dev = DEV.get(upon, 0)
+        if dev == 3 and s.on_exc is not None:
+            # SYSPUNCH with no COB_DISPLAY_PUNCH_FILE: warn, skip, ON EXCEPTION
+            em("{")
+            em.ind += 1
+            em(f"if (!cob_display_ok(3)) {{ cob_display_warn_punch({self.locstr()});")
+            self.stmts(s.on_exc)
+            em("} else {")
+            em.ind += 1
+        elif dev == 3:
+            em("{")
+            em.ind += 1
+            em(f"if (!cob_display_ok(3)) cob_display_warn_punch({self.locstr()});")
+            em("else {")
+            em.ind += 1
         # operands that can fail (subscripts, reference modification) are all
         # evaluated before anything is displayed
         early = len(s.items) > 1 and any(
@@ -3492,7 +3513,13 @@ class CodeGen(ReportWriterGen, DebugGen):
             else:
                 em(f"cob_display({dev}, {self.field(it)});")
         em(f"cob_display_end({dev}, {0 if s.no_advancing else 1});")
+        if dev == 3:
+            em.ind -= 1
+            em("}")
         if early:
+            em.ind -= 1
+            em("}")
+        if dev == 3:
             em.ind -= 1
             em("}")
         if s.not_on_exc:
