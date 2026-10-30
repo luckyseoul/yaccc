@@ -112,7 +112,7 @@ status, standard output and the files the test checks.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   483    12              0      198
+  693   484    11              0      198
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -127,17 +127,17 @@ longer passes. `make gctest-update` records a new baseline.
   SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
   tests gated on those now run.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
-- **The 13 failures** are:
-  - 6 Report Writer tests whose output differs in where pages break or in how
-    a group indicate is repeated. `cobc` reaches a page break through several
-    different branches of `reportio.c` and does not place it consistently:
-    measuring a dozen PAGE clause shapes against a live 3.1.2 shows a page
-    ending one line short in some shapes and at its full `PAGE LIMIT` in
-    others. YACCC uses the rule that fits the majority -- a page with a LAST
-    DETAIL boundary is `PAGE LIMIT - 1` lines, one without is `PAGE LIMIT`
-    lines, the last page is always `PAGE LIMIT` lines with its page footing
-    one line below its declared line -- and 13 of the 19 runnable Report Writer
-    tests now match `cobc` byte for byte, up from 1.
+- **The 11 failures** are:
+  - 4 Report Writer tests whose output differs in where a page break lands.
+    `cobc` reaches a page break through several branches of `reportio.c` and
+    does not place it consistently: measuring a dozen PAGE clause shapes
+    against a live 3.1.2 shows a page ending one line short in some shapes and
+    at its full `PAGE LIMIT` in others. YACCC uses the rule that fits the
+    majority -- `PAGE LIMIT - 1` lines when the report declares a LAST DETAIL,
+    a FOOTING or a page footing group (and not when the page starts with its
+    first detail line), with the last page always `PAGE LIMIT` lines -- and 14
+    of the 19 runnable Report Writer tests match `cobc` byte for byte, up
+    from 1.
   - `Sample REPORT with RIGHT/CENTER`, a dialect difference rather than an
     output difference: its first step expects `cobc` to reject the program in
     its default dialect, and YACCC compiles it, as GnuCOBOL itself does with
@@ -145,12 +145,13 @@ longer passes. `make gctest-update` records a new baseline.
   - `FLOAT-DECIMAL` (decimal64/decimal128, 16 and 34 digits): YACCC maps
     FLOAT-DECIMAL to a double, so it prints double precision where GnuCOBOL
     prints the decimal's.
-  - `FUNCTION BYTE-LENGTH` on a NATIONAL item, `COMP-4 No Truncate` (GnuCOBOL's
-    own `-fnotrunc` treats a scaled PICTURE differently), `Binary COMP-1 (2)`
-    (`$SET COMP-1(BINARY)`), `CALL BY VALUE ... WITH SIZE` (GnuCOBOL's own
-    documentation calls its parameter passing there unfinished),
-    `CBL_GC_GETOPT` and `CBL_ERROR_PROC (1)` (library routines YACCC does not
-    provide; the second also wants GnuCOBOL's EXCEPTION-LOCATION text).
+  - `FUNCTION BYTE-LENGTH` on a NATIONAL item (YACCC stores `PIC N` one byte
+    per character, GnuCOBOL two), and `COMP-4 No Truncate` (GnuCOBOL's own
+    `-fnotrunc` treats a scaled PICTURE differently).
+  - `CALL BY VALUE ... WITH SIZE` (GnuCOBOL's own documentation calls its
+    parameter passing there unfinished), and `CBL_GC_GETOPT` and
+    `CBL_ERROR_PROC (1)`, library routines YACCC does not provide (the second
+    also wants GnuCOBOL's EXCEPTION-LOCATION text).
 
 ### Performance
 

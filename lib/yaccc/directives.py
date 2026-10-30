@@ -29,6 +29,7 @@ class Directives:
         # conditional state: list of [active, taken, kind] per open >>IF / >>EVALUATE
         self.stack = []
         self.dpc_in_data = None
+        self.comp1_binary = False   # $SET COMP-1(BINARY): COMP-1 is a binary integer
         self.check = None      # None: unchanged
         self.check_changes = []   # (file, line, on) in source order
 
@@ -164,6 +165,23 @@ class Directives:
         if parts and parts[0].upper() == 'CONSTANT' and len(parts) > 1:
             self._define(parts[1], loc)
             return True
+        if parts and parts[0].upper().split('(')[0].replace('_', '-') in ('COMP-1', 'COMP1'):
+            # $SET COMP-1(BINARY) / $SET COMP1 "float": what COMP-1 means from
+            # here on (Micro Focus; GnuCOBOL honours it too). The argument comes
+            # either in parentheses or as a quoted word after a space.
+            word = parts[0]
+            if '(' in word:
+                arg = word[word.index('(') + 1:].rstrip(')')
+            else:
+                arg = parts[1].strip() if len(parts) > 1 else ''
+            arg = arg.strip().strip('"\'').upper()
+            if arg == 'BINARY':
+                self.comp1_binary = True
+                return True
+            if arg == 'FLOAT':
+                self.comp1_binary = False
+                return True
+            return False
         if parts and parts[0].upper() == 'DPC-IN-DATA':
             # $SET DPC-IN-DATA "JSON": the decimal comma inside JSON numbers
             val = parts[1].strip().strip('"\'').lower() if len(parts) > 1 else 'all'
@@ -195,6 +213,8 @@ class Directives:
                 print(rest.strip())
             return True
         if word == 'SET':
+            if not self.active:
+                return True             # $SET in skipped code takes no effect
             return self._set(rest, loc)
         return False
 

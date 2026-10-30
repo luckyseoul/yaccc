@@ -373,6 +373,15 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.type = T_GROUP
         return
     pic = item.pic
+    dirs = getattr(opts, 'directives', None)
+    if usage == 'FLOAT' and dirs is not None and getattr(dirs, 'comp1_binary', False):
+        # $SET COMP-1(BINARY): COMP-1 is a binary integer (PIC S9(9) COMP)
+        item.type = T_NUM_BINARY
+        item.size = 4
+        item.digits = 9
+        item.scale = 0
+        item.flags = F_SIGNED | F_BINARY_TRUNC
+        return
     if usage in ('FLOAT', 'DOUBLE', 'FLOAT-DECIMAL-16', 'FLOAT-DECIMAL-34'):
         # FLOAT-DECIMAL-16/34 are IEEE 754 decimal floating point. yaccc has no
         # decimal-float type; the values the testsuite uses are small exact
