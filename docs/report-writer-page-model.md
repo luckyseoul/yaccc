@@ -51,9 +51,19 @@ the page in the same operation. There is no separate "finish the page" step.
   it — and the page rolls over;
 - otherwise reset `curr_line = 1`.
 
-The consequence worth noting: the page always ends on PAGE LIMIT, and the page
-footing does **not** shorten the page. `LAST DETAIL` moves the footing, it does
-not cap the page.
+~~The consequence worth noting: the page always ends on PAGE LIMIT, and the
+page footing does **not** shorten the page.~~
+
+**Corrected by measurement (see "Observing the real cursor" below):** that
+holds only while the footing leaves the cursor inside the page. Run against a
+live 3.1.2, `run_reportwriter.at:23` (`PAGE LIMIT 12`, `HEADING 1`,
+`FIRST DETAIL 4`, `LAST DETAIL 7`, page footing at `LINE 10`) writes 11 lines
+on page 1 -- the page-2 heading lands on output line 12 -- so the page ended at
+the footing's own line plus one, not at `PAGE LIMIT`. The same report's
+recorded fixture is what yaccc's current heuristic reproduces, and a port of the
+`write_to_line` model above regressed it. The footing rule therefore depends on
+where the cursor stands, and no single "page is N lines" statement covers both
+shapes.
 
 ## Where yaccc differs
 
@@ -82,3 +92,73 @@ data.
 It is not done here because the eight failing tests could not be reconciled with
 the recorded `rwlimit` baseline without running GnuCOBOL itself as an oracle,
 and installing it was outside what this session could verify.
+
+## Observing the real cursor
+
+Guessing at this from expected output has now failed twice, so the next attempt
+should watch the reference implementation instead. GnuCOBOL 3.1.2 can print
+every cursor decision it makes ("Line# 7 of Page# 2; PAGE FOOTING LINE 24"),
+which is enough to see the machine rather than infer it.
+
+Build a tracing `cobc` (this is a local oracle only; no GnuCOBOL code goes into
+this repository):
+
+```sh
+tar xJf gc.tar.xz && cd gnucobol-3.1.2
+./configure --enable-debuglog --prefix=/tmp/gctrace-inst --disable-nls \
+    --without-db --without-xml2 --with-json=no \
+    CFLAGS="-O1 -w -std=gnu17"
+make -j"$(nproc)" && make install
+```
+
+Two things bite here and are worth knowing before starting:
+
+- GCC 15 defaults to C23, where GnuCOBOL 3.1.2's `call.c` does not compile
+  (`-Wincompatible-pointer-types` is an error); `-std=gnu17` in `CFLAGS` is
+  what makes it build. `--without-xml2` is also needed, or `mlio.c` fails on
+  `implicit declaration of xmlCleanupParser`.
+- **`M=` does not work in 3.1.2.** `cob_debug_modules` is initialised to `""`
+  but the registration guard tests for `' '`, so the loop never runs, no module
+  is ever registered, and `DEBUG_ISON("rw")` is always false -- a `--enable-
+  debuglog` build still prints nothing until the guard is changed from
+  `== ' '` to `<= ' '` in `libcob/common.c`. That is why an earlier attempt at
+  this concluded the trace "never compiled in".
+
+Then run any report program with
+
+```sh
+COB_DEBUG_LOG="M=RW,L=A,O=/tmp/rw.log" ./prog
+```
+
+and read the trace. Useful lines are the `Line# n of Page# m;` events (each
+one is a print line being written), `Eject Page` (an overflow), `Present now`
+(PRESENT AFTER evaluation), and the rendered record that follows each event,
+which is what actually landed in the file.
+
+`docs/` also carries two throwaway helpers used for this: `tests/gnucobol/
+run_gc.py -k "<title>" --log` for a single test, and the trace decoder in this
+note's history, which matches each event's rendered record to its line in the
+output file and so recovers the page offsets directly.
+
+### What the trace has already shown
+
+- Page offsets are **not** a property of the report: `Sample Inventory Report`
+  (`PAGE LIMIT 25`, `FOOTING 20`, page footing at `LINE 24`) puts its page
+  footings at output lines 24, 49 and 73, i.e. pages of 24, 25 and 24 lines
+  within one report.
+- `Report Line Order` (`PAGE LIMIT 12`, footing at `LINE 10`) ends page 1 at
+  line 11.
+- Both are consistent with the footing/pad rules in this note, and not with a
+  constant page length; the drift comes from the cursor being able to sit on a
+  line the file has already passed.
+
+### What a third attempt should not repeat
+
+- Porting `write_to_line` alone is not enough: a version that made it the only
+  writer, with rollover inside it, scored 492 pass / 14 fail against the
+  current heuristic's 503 / 3, because the page-footing and page-heading pad
+  endpoints and the `incr_line = FALSE` case are what actually decide the
+  end of a page.
+- Treating `incr_line` as "the cursor does not advance on this write" makes
+  `seek`-style loops spin forever. In 3.1.2 `write_rec` never touches the
+  cursor at all; only the report-line writer advances it, unconditionally.

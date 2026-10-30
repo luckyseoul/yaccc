@@ -795,7 +795,12 @@ A page-cursor port was written and measured but not kept: `curr_line`/
 `curr_page` advance on every write, `write_at()` drops lines the cursor has
 passed, and the break path follows `do_page_footing`/`do_page_heading`. It
 scored 10 of 23 Report Writer tests against the heuristic's 18, so it is not in
-the tree and its branch is deleted. The pieces it got wrong were the pad
+the tree and its branch is deleted. A second, more careful port -- one
+`write_to_line` primitive for every record, per
+`docs/report-writer-page-model.md` -- scored 492 pass against this heuristic's
+503 and was reverted too. Before a third, read "Observing the real cursor" in
+that note: 3.1.2 can print its own cursor decisions, and doing so is how the
+page lengths below were measured rather than guessed. The pieces it got wrong were the pad
 endpoints inside `do_page_footing` and the report-footing placement at
 TERMINATE. Coming back to this means fixing those two first: the cursor itself
 (advance on write, drop past cursor) reproduced `Report Line Order`,
