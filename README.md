@@ -16,6 +16,36 @@ as a compatibility check too.
 $ ./yaccc examples/mandelbrot.cbl --run
 ```
 
+![The pipeline: COBOL source through five stages of Python, then a C compiler, to a native binary](docs/img/pipeline.svg)
+
+## By the numbers
+
+- **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
+  them. The suite dates from 1985 and is still the reference for COBOL 85.
+- **0** failures in GnuCOBOL 3.1.2's own testsuite too, out of **506** that
+  run; the other 187 are skipped because they need more than compiling and
+  running a program.
+- **63** differential test programs, compared with GnuCOBOL byte for byte:
+  standard output, and every file each program writes.
+- **527** Report Writer shapes from `tests/rw_oracle.py --full`, each built by
+  both compilers and diffed byte for byte.
+- **1** NIST test that cannot pass unattended. OBNC1M prints
+  `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
+- **0.42 s** to compile `examples/mandelbrot.cbl` into a 224 KB binary, which
+  then runs in 40 ms where GnuCOBOL takes 133 ms.
+- **13,247** lines of Python in the compiler, standard library only — no parser
+  generator, no code generator, no build step.
+- **0.69%** of the Report Writer's 12-token runs also occur in GnuCOBOL's
+  `libcob`. The build fails above 1.5%, so that number is a gate, not a boast.
+- **YACCC** is named after **YACC**, "Yet Another Compiler Compiler" — itself a
+  recursive joke, since yacc is a compiler-compiler. This is that joke one
+  level down: a compiler for a language nobody calls new.
+
+COBOL's standards, for orientation: CODASYL started the work in 1959, COBOL-60
+was published within the year, the first ANSI standard arrived in 1968, and the
+dialect this compiler targets — COBOL 85 — in 1985. ISO revisions in 2002, 2014
+and 2023 added the pieces labelled "COBOL 2014" and "COBOL 2023" below.
+
 ## Results
 
 ### NIST CCVS85 conformance suite
@@ -44,6 +74,8 @@ Total       387      387     0     0   9390    0      29     120  9539
 NC through IF match the reference summary line for line. "Deleted" tests are
 removed by the suite itself. "Inspect" tests have no automatic pass/fail check:
 their printed output has to be reviewed by eye, as for any compiler.
+
+![NIST CCVS85 results by module: every module at full width, split into pass, deleted and inspect, with zero failures throughout](docs/img/nist-results.svg)
 
 RW (Report Writer) and DB (Debug module) aren't part of the reference summary.
 GnuCOBOL 3.1.2 gets the same counts on both. The DB programs run with the
@@ -595,31 +627,34 @@ All of these were checked against GnuCOBOL 3.1.2:
 
 ## How it works
 
-```
-source ─► source.py ─► lexer.py ─► parser.py ─► codegen.py ─► C ─► gcc/clang ─► executable
-          formats,     tokens,     AST           C with             + runtime/libcobrt.a
-          continuation COPY/                     runtime calls
-                       REPLACE
-```
+The figure at the top is the whole design: five stages of Python, then a C
+compiler. Nothing is generated twice and there is no intermediate language —
+`codegen.py` writes C, and `cc` finishes the job.
+
+The compiler is 13,247 lines of Python across fourteen files; the runtime it
+links against is 11,266 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
-| `lib/yaccc/source.py` | 272 | reference formats, continuations, directives, comment-entries, debugging lines |
-| `lib/yaccc/lexer.py` | 515 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `lib/yaccc/parser.py` | 2,602 | recursive-descent parser to the AST (`nodes.py`, 638) |
-| `lib/yaccc/data.py` | 510 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 3,627 | name resolution, C generation, typed fast paths |
+| `lib/yaccc/source.py` | 344 | reference formats, continuations, directives, comment-entries, debugging lines |
+| `lib/yaccc/lexer.py` | 652 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
+| `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
+| `lib/yaccc/parser.py` | 3,571 | recursive-descent parser to the AST (`nodes.py`, 746) |
+| `lib/yaccc/data.py` | 653 | PICTURE analysis, USAGE resolution, storage layout |
+| `lib/yaccc/codegen.py` | 4,957 | name resolution, C generation, typed fast paths |
 | `lib/yaccc/rwgen.py` | 820 | REPORT SECTION analysis: print lines, report items, controls and SUM counters as tables, plus callbacks |
-| `lib/yaccc/dbggen.py` | 466 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 2,573 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
-| `runtime/cobrt_io.c` | 1,555 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
-| `runtime/cobrt_rw.c` | 856 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
-| `runtime/cobrt_str.c` | 424 | STRING, UNSTRING, INSPECT |
-| `runtime/cobrt_fn.c` | 678 | intrinsic functions |
-| `runtime/cobrt_math.c` | 728 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
-| `runtime/cobrt_dt.c` | 728 | FORMATTED-DATE/TIME/DATETIME and the other COBOL 2014 date functions, locale functions |
-| `runtime/cobrt_sys.c` | 653 | library routines (CBL_..., C$...) |
-| `runtime/cobrt.h` | 716 | runtime interface and inline fast paths |
+| `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
+| `runtime/cobrt_core.c` | 3,338 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_io.c` | 1,743 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_rw.c` | 906 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
+| `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
+| `runtime/cobrt_fn.c` | 679 | intrinsic functions |
+| `runtime/cobrt_math.c` | 729 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
+| `runtime/cobrt_dt.c` | 729 | FORMATTED-DATE/TIME/DATETIME and the other COBOL 2014 date functions, locale functions |
+| `runtime/cobrt_sys.c` | 917 | library routines (CBL_..., C$...) |
+| `runtime/cobrt_xml.c` | 518 | XML GENERATE |
+| `runtime/cobrt_json.c` | 233 | JSON GENERATE |
+| `runtime/cobrt.h` | 1,014 | runtime interface and inline fast paths |
 
 Design choices:
 
@@ -659,8 +694,10 @@ tests/nist/          NIST CCVS85 runner and the result logs of the runs above
 tests/gnucobol/      GnuCOBOL testsuite runner, comparison tool and recorded results
 tests/cli_test.py    compiler command-line tests
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
-                     file carries SPDX, README credits GnuCOBOL (make provenance)
-Makefile             make test | cli-test | provenance | test-ref | nist | nist-all | gctest | examples | clean
+                     file carries SPDX, README credits GnuCOBOL (make
+                     provenance; provenance-deep measures token overlap)
+docs/img/            the figures in this README, drawn from the numbers above
+Makefile             make test | cli-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
 ```
 
 ## Acknowledgements
@@ -694,6 +731,8 @@ stated plainly rather than implied.
   2.1% and was restructured until it did not. It reads `third_party/gnucobol`
   (fetched by `make gctest`) or whatever `GNUSRC` names, and skips when
   neither is present.
+
+![Token overlap of each runtime file with GnuCOBOL: all files under 0.8%, the gate at 1.5%, and the Report Writer's former 2.06% shown as a whisker](docs/img/provenance.svg)
 - **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
   the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
   zero tracked files (checked: `git ls-files third_party` is empty). That suite
@@ -758,6 +797,8 @@ cursor:
 - indexed SOURCE items are taken when the GENERATE starts, for every group.
 
 `docs/report-writer-page-model.md` describes the model in full.
+
+![A page as the Report Writer counts it: page heading, first detail, last detail, footing and page limit, beside the chain of print lines the compiler builds](docs/img/page-model.svg)
 
 ### 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34 *(fixed)*
 

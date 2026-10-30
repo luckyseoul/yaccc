@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="414" viewBox="0 0 880 414" role="img">
+<rect x="0" y="0" width="880" height="414" fill="#faf7ef"/>
+<text x="24" y="33" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6d655a" text-anchor="start" font-weight="600" letter-spacing="1.9">REPORT WRITER: A PAGE, AND THE CHAIN BEHIND IT</text>
+<text x="24" y="53" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" fill="#9a9184" text-anchor="start" font-weight="normal">The two things that decide where a page break lands</text>
+<text x="24" y="78" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.2" fill="#6d655a" text-anchor="start" font-weight="600">a page, as it is counted</text>
+<rect x="56" y="92" width="250" height="272" rx="2" fill="#fffdf8" stroke="#ddd5c3" stroke-width="1"/>
+<rect x="57" y="110.1" width="248" height="181.3" fill="#1f6f4a" opacity="0.09"/>
+<line x1="56" y1="92.0" x2="306" y2="92.0" stroke="#8d8474" stroke-width="1.1"/>
+<text x="48" y="95.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#9a9184" text-anchor="end" font-weight="normal">1</text>
+<text x="318" y="95.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#1b1916" text-anchor="start" font-weight="600">RH</text>
+<text x="338" y="95.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">PAGE HEADING</text>
+<line x1="56" y1="110.13333333333333" x2="306" y2="110.13333333333333" stroke="#8d8474" stroke-width="1.1"/>
+<text x="48" y="113.13333333333333" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#9a9184" text-anchor="end" font-weight="normal">5</text>
+<text x="318" y="113.13333333333333" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#1b1916" text-anchor="start" font-weight="600">FD</text>
+<text x="338" y="113.13333333333333" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">FIRST DETAIL</text>
+<line x1="56" y1="291.4666666666667" x2="306" y2="291.4666666666667" stroke="#8d8474" stroke-width="1.1"/>
+<text x="48" y="294.4666666666667" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#9a9184" text-anchor="end" font-weight="normal">45</text>
+<text x="318" y="294.4666666666667" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#1b1916" text-anchor="start" font-weight="600">LD</text>
+<text x="338" y="294.4666666666667" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">LAST DETAIL</text>
+<line x1="56" y1="323.2" x2="306" y2="323.2" stroke="#8d8474" stroke-width="1.1"/>
+<text x="48" y="326.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#9a9184" text-anchor="end" font-weight="normal">52</text>
+<text x="318" y="326.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#1b1916" text-anchor="start" font-weight="600">FT</text>
+<text x="338" y="326.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">FOOTING</text>
+<line x1="56" y1="359.46666666666664" x2="306" y2="359.46666666666664" stroke="#8d8474" stroke-width="1.1"/>
+<text x="48" y="362.46666666666664" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#9a9184" text-anchor="end" font-weight="normal">60</text>
+<text x="318" y="362.46666666666664" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#1b1916" text-anchor="start" font-weight="600">PL</text>
+<text x="338" y="362.46666666666664" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">PAGE LIMIT</text>
+<text x="181.0" y="203.8" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9" fill="#1f6f4a" text-anchor="middle" font-weight="600">detail area</text>
+<text x="181.0" y="382" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#9a9184" text-anchor="middle" font-weight="normal">every LINE, PLUS and NEXT GROUP is measured against these</text>
+<text x="500" y="78" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.2" fill="#6d655a" text-anchor="start" font-weight="600">the chain the compiler builds</text>
+<rect x="500" y="96" width="250" height="30" rx="4" fill="#fffdf8" stroke="#ddd5c3" stroke-width="1"/>
+<text x="510" y="115" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="start" font-weight="normal">01 CUSTOMER-REPORT</text>
+<text x="762" y="115" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.2" fill="#9a9184" text-anchor="start" font-weight="normal">group line</text>
+<rect x="500" y="172" width="250" height="30" rx="4" fill="#fffdf8" stroke="#ddd5c3" stroke-width="1"/>
+<text x="510" y="191" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="start" font-weight="normal">LINE 5  ·  page heading</text>
+<text x="762" y="191" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.2" fill="#9a9184" text-anchor="start" font-weight="normal">print line</text>
+<rect x="500" y="248" width="250" height="30" rx="4" fill="#fffdf8" stroke="#ddd5c3" stroke-width="1"/>
+<text x="510" y="267" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="start" font-weight="normal">LINE 7  ·  detail</text>
+<text x="762" y="267" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.2" fill="#9a9184" text-anchor="start" font-weight="normal">print line</text>
+<rect x="500" y="324" width="250" height="30" rx="4" fill="#fffdf8" stroke="#ddd5c3" stroke-width="1"/>
+<text x="510" y="343" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#1b1916" text-anchor="start" font-weight="normal">LINE 8  ·  detail</text>
+<text x="762" y="343" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.2" fill="#9a9184" text-anchor="start" font-weight="normal">print line</text>
+<line x1="534" y1="126" x2="534" y2="170" stroke="#9a9184" stroke-width="1"/>
+<path d="M 534 171 L 534 171 L 534 171" fill="none" stroke="#9a9184" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 530 166 L 534 171 L 538 166" fill="none" stroke="#9a9184" stroke-width="1.2" stroke-linecap="round"/>
+<text x="544" y="152.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="start" font-weight="normal">first_line</text>
+<line x1="534" y1="202" x2="534" y2="246" stroke="#9a9184" stroke-width="1"/>
+<path d="M 534 247 L 534 247 L 534 247" fill="none" stroke="#9a9184" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 530 242 L 534 247 L 538 242" fill="none" stroke="#9a9184" stroke-width="1.2" stroke-linecap="round"/>
+<text x="544" y="228.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="start" font-weight="normal">next_line</text>
+<line x1="534" y1="278" x2="534" y2="322" stroke="#9a9184" stroke-width="1"/>
+<path d="M 534 323 L 534 323 L 534 323" fill="none" stroke="#9a9184" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 530 318 L 534 323 L 538 318" fill="none" stroke="#9a9184" stroke-width="1.2" stroke-linecap="round"/>
+<text x="544" y="304.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="start" font-weight="normal">next_line</text>
+<text x="500" y="372" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">one chain per report; GENERATE walks it by group type, and the</text>
+<text x="500" y="386" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="start" font-weight="normal">cursor advances on entry and steps back on exit</text>
+<desc>Report Writer page geometry and print-line chain</desc>
+</svg>
