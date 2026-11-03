@@ -22,9 +22,10 @@ $ ./yaccc examples/mandelbrot.cbl --run
 
 - **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
   them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **506** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 187
-  are skipped because they need more than compiling and running a program.
-- **64** differential test programs, compared with GnuCOBOL byte for byte:
+- **534** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 159
+  are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
+  or a cobc option YACCC doesn't have.
+- **65** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes.
 - **527** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
   `cobc` byte for byte.
@@ -32,7 +33,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 224 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **13,178** lines of Python in the compiler, standard library only — no parser
+- **13,977** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -102,7 +103,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 64 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 65 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -125,10 +126,10 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 59 of the 64 run and all 59 pass; the five whose *test program*
+  3.1.2, 60 of the 65 run and all 60 pass; the five whose *test program*
   `cobc` itself rejects are skipped.
 
-All 64 pass, built with gcc.
+All 65 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -137,11 +138,13 @@ All 64 pass, built with gcc.
 `third_party/` with a sparse clone of the 3.1.2 release tag.
 `tests/gnucobol/run_gc.py` reads the autotest files directly and runs every
 test that is built from COBOL sources with plain compile steps, comparing exit
-status, standard output and the files the test checks.
+status, standard output and the files the test checks. Programs the tests
+compile as modules (`$COMPILE_MODULE`) are built as real loadable modules with
+`yaccc -m` and found by CALL at run time, and C files are compiled with them.
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   506     0              0      187
+  693   534     0              0      159
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -151,10 +154,13 @@ it was built or on the environment.
 The run fails if a test recorded as passing in `tests/gnucobol/results.txt` no
 longer passes. `make gctest-update` records a new baseline.
 
-- **Skipped** tests need things the harness can't provide: cobc dialect options
-  it has no equivalent for (`-fnotrunc` and so on), C code, a terminal (SCREEN
-  SECTION), XML support, or shell scripting. `-std=` and JSON are provided, so
-  tests gated on those now run.
+- **Skipped** tests need things the harness can't provide: a terminal and
+  someone to look at it (the 48 manual SCREEN SECTION tests), GnuCOBOL's own C
+  API (`cob_get_field_str`, `cob_global` and the like, 6 tests), shell
+  scripting, or a cobc option YACCC has no equivalent for (`-fbinary-byteorder`,
+  `-fcomplex-odo`, `-fperform-osvs` and about 30 more). One is a deliberate
+  difference: a COBOL program called from a C `main` starts the runtime itself
+  instead of failing with *cob_init() has not been called*.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
 - **Failures**: none. The last two, *Sample Payroll Report* and *Sample
   Inventory Report*, were Report Writer page placement and PRESENT WHEN; see
@@ -180,6 +186,11 @@ results.
 The runtime library is built automatically into `runtime/libcobrt.a` the first
 time you compile. `make` builds it ahead of time.
 
+To put `yaccc` on your `PATH`, `make install` copies the compiler and its
+runtime to `$(PREFIX)/lib/yaccc` and links `$(PREFIX)/bin/yaccc` to it
+(`PREFIX` is `/usr/local` unless you set it; `make install PREFIX=$HOME/.local`
+installs for one user, and `make uninstall` with the same `PREFIX` removes it).
+
 ## Usage
 
 ```
@@ -198,10 +209,29 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 ./yaccc examples/dayname.cbl examples/datefmt.cbl --run
 ```
 
+Programs can also be compiled separately, into object files or into modules
+that CALL loads when it first needs them, and C files, object files and
+libraries can go on the same command line (see *Calling C, and C calling
+COBOL* below):
+
+```
+./yaccc -c -x main.cbl                  # main.o, holding main()
+./yaccc -c sub.cbl                      # sub.o
+./yaccc main.o sub.o -o app             # link them
+./yaccc -m plugin.cbl                   # plugin.so, loaded by CALL "plugin"
+./yaccc main.cbl helpers.c -lm          # COBOL and C in one executable
+```
+
 | Option | Meaning |
 |---|---|
 | `-o FILE` | output file |
 | `-C` | write the generated C and stop |
+| `-c` | compile each source to an object file (`.o`) and don't link; with `-x` the object holds `main()` |
+| `-m` | build each source as a loadable module (`.so`) that CALL finds through `COB_LIBRARY_PATH` |
+| `-x` | build an executable (the default) |
+| `-E` | write the source as the parser sees it — copybooks expanded, REPLACE applied, directives evaluated — as free-format COBOL that compiles to the same program |
+| `-fsyntax-only` | check the program and report every error; write nothing |
+| `-l LIB`, `-L DIR` | link with a library, and where to find it |
 | `-free` / `-fixed` | source format; otherwise detected per file, and `>>SOURCE FORMAT` / `$SET SOURCEFORMAT` switch it |
 | `-I DIR` | copybook directory (also `$COBCPY`) |
 | `-D NAME[=VALUE]` | define a compilation variable for `>>IF` / `>>DEFINE ... AS PARAMETER` / `CONSTANT FROM` |
@@ -214,6 +244,14 @@ the others by PROGRAM-ID, whether the name is a literal or held in a data item:
 | `-fmissing-period` / `-fno-missing-period` | whether a statement may stand where a `.` is required |
 | `--debugging-mode` | compile as if `WITH DEBUGGING MODE` were specified: debugging lines and USE FOR DEBUGGING |
 | `--keep-c` | keep the generated C file next to the executable |
+| `-ftrace` / `-ftraceall` | trace program entry and exit, sections and paragraphs (`-ftraceall`: every statement too) while `READY TRACE` or `COB_SET_TRACE=Y` has tracing on |
+| `-fintrinsics=all` or `=NAME,...` | intrinsic functions that need no `FUNCTION` keyword, as `REPOSITORY. FUNCTION ALL INTRINSIC` allows |
+| `-fsign=ascii\|ebcdic` | how a signed DISPLAY item stores an embedded sign: `ascii` (negative digits are 0x70–0x79, the default) or the EBCDIC overpunch letters `{A`–`I` and `}J`–`R` |
+| `-fdefaultbyte=init\|C\|N` | what WORKING-STORAGE without a VALUE clause starts as: spaces and zeros by type (`init`, the default), a character, or a byte value |
+| `-fsticky-linkage` | a LINKAGE item keeps its address from one call to the next when the caller passes nothing for it |
+| `-fno-recursive-check` | allow a CALL of an active program that isn't RECURSIVE |
+| `-ffilename-mapping` / `-fno-filename-mapping` | map ASSIGN names at OPEN through the environment and `COB_FILE_PATH` (the default), or use them as they stand |
+| `-fimplicit-init`, `-fentry-statement=ok` | accepted for cobc command lines: a COBOL program called from C always starts the runtime itself, and ENTRY is always accepted |
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
 | `--run` | run the program after building; its arguments follow, and ones that begin with `-` go after `--` |
 
@@ -281,21 +319,65 @@ Runtime environment:
 
 | Variable | Meaning |
 |---|---|
-| `DD_name`, `dd_name`, `name` | file name for `ASSIGN TO name` when *name* is not a literal |
+| `DD_name`, `dd_name`, `name` | the file an `ASSIGN` name without a directory or extension opens; a leading `$VAR/` takes the directory from `VAR` |
+| `COB_FILE_PATH` | directory for a file whose (mapped) name has none |
 | `COB_SWITCH_n=ON\|OFF` | external switches (SPECIAL-NAMES `SWITCH-n`/`UPSI-n`) |
 | `COB_SET_DEBUG=Y` | object-time debugging switch: USE FOR DEBUGGING procedures run only when it's set (`Y`, `YES`, `ON`, `TRUE` or `1`), as in GnuCOBOL |
 | `COB_CURRENT_DATE` | fixed date and time for ACCEPT FROM DATE/DAY/TIME and the date functions, for reproducible test runs: `YYYY/MM/DD hh:mm:ss`, optionally followed by `+hhmm` (the time part is optional) |
+| `COB_SET_TRACE` | `Y`: start with tracing on in programs compiled with `-ftrace` or `-ftraceall` |
+| `COB_TRACE_FILE` | write the trace to this file instead of standard error (`+file` appends) |
+| `COB_TRACE_FORMAT` | the layout of a trace line: `%P` program, `%S` what is traced (`Paragraph: NAME`), `%L` line, `%F` source file; default `Program-Id:  %P%S Line: %L` |
+| `COB_LIBRARY_PATH` | directories, `:`-separated, where CALL looks for a module `NAME.so` before the current directory |
+| `COB_PRE_LOAD` | modules to load at start-up, `:`-separated, so CALL finds the programs and ENTRY points they hold |
 
-Compile errors name the file and line and print the offending source line:
+Compile errors name the file and line and print the offending source line.
+One run reports every error it can: the parser goes on at the next sentence
+or data entry, and code generation at the next statement, up to 20 errors. A
+misspelt verb, clause, function, data name or paragraph gets the nearest
+spelling that exists:
 
 ```
-tests/cases/copy1.cbl:12: error: statement expected, found 'DISPLY'
-  12 |            DISPLY "hi".
+errs.cbl:7: error: unexpected word in data description, found 'VALU'; did you mean 'VALUE'?
+  7 |        01 WS-BAD       PIC 9(3) VALU 0.
+errs.cbl:11: error: statement expected, found 'DISPLY'; did you mean 'DISPLAY'?
+  11 |            DISPLY "HELLO".
+errs.cbl:15: error: unknown intrinsic function 'SQRTT'; did you mean 'SQRT'?
+  15 |            COMPUTE WS-TOTAL = FUNCTION SQRTT(4).
+3 errors
 ```
+
+Two classic COBOL mistakes get named outright, because the error they cause
+says nothing about them:
+
+- **Code past column 72.** In fixed-format source everything after column 72
+  is ignored, so a statement that runs past the margin loses its end. An error
+  on such a line, or the line after it, says what was cut off, and a line that
+  runs past column 80 gets a warning even when it happens to compile.
+- **A missing period before a paragraph.** Without it the paragraph header
+  becomes an operand of the statement before it; the error says *it looks
+  like a paragraph header: is the period missing at the end of the statement
+  before it?*
+
+A bug in the compiler itself is reported as an internal error with the
+statement it was compiling, not as a Python traceback
+(`YACCC_TRACEBACK=1` shows the traceback).
 
 Runtime errors, such as a subscript out of range or an I/O error with no FILE
 STATUS or USE procedure, print `cobrt: runtime error: file:line: ...` and exit
-with status 1.
+with status 1. A file error names both the name the program gave and the file
+it became, when mapping changed it:
+`... for file TEST-FILE ('FILENAMEX' => ./nosubhere/FILENAMEX)`.
+
+With `-ftraceall` and `READY TRACE` (or `COB_SET_TRACE=Y`), a program reports
+where it goes, in GnuCOBOL's layout:
+
+```
+Source: 'tr.cbl'
+Program-Id:  TRDEMO
+Program-Id:  TRDEMO                      PERFORM                         Line:      9
+Program-Id:  TRDEMO           Paragraph: WORK-PARA                       Line:     13
+Program-Id:  TRDEMO                      ADD                             Line:     14
+```
 
 With `-g`, the generated C carries `#line` directives, so a debugger shows and
 steps the COBOL source rather than the generated C:
@@ -308,6 +390,43 @@ Breakpoint 1 at 0x2bea: file payroll.cbl, line 120.
 (gdb) run
 Breakpoint 1, prog_1 (...) at payroll.cbl:120
 120            DISPLAY "TOTAL: " WS-TOTAL.
+```
+
+## Calling C, and C calling COBOL
+
+COBOL and C call each other with no glue code and no runtime library to
+initialise:
+
+- **COBOL calls C.** `CALL "name"` reaches a C function linked into the
+  executable or loaded from a module. Arguments BY REFERENCE and BY CONTENT
+  arrive as addresses, BY VALUE ones as the value itself (`SIZE n` and
+  `UNSIGNED` choose the width), and a numeric literal or `LENGTH OF` passed by
+  reference goes as a native `int`, as GnuCOBOL and Micro Focus pass them. The
+  function's `int` result is RETURN-CODE, or the RETURNING item; RETURNING a
+  POINTER item takes a returned address. `CALL "strlen" USING Z"text"` works.
+- **C calls COBOL.** Every program compiled with `-c`, `-m`, or alongside C
+  files has a C entry point under its own name, `-` spelled `__` as cobc spells
+  it: `PROGRAM-ID. GREET-SUB` with `USING L-NAME BY VALUE L-NUM` is
+  `int GREET__SUB(void *l_name, intptr_t l_num)`. The first call starts the
+  runtime, and files the program left open are closed at exit, so a C `main`
+  needs nothing else. `runtime/libcob.h` declares `cob_init`, `cob_stop_run`,
+  `cob_tidy`, `cob_call` and `cob_call_params` for C code written for GnuCOBOL.
+- **Callbacks.** `SET ptr TO ENTRY "prog"` gives that program's C entry
+  point, so a C function handed the pointer can call the program, and CALL
+  of a PROGRAM-POINTER calls whatever it holds, COBOL or C.
+- **Modules.** `yaccc -m sub.cbl` builds `sub.so`. A CALL of a name no linked
+  program has loads `NAME.so` (as written, then lower and upper case) from
+  each directory of `COB_LIBRARY_PATH` and then the current directory, and
+  `COB_PRE_LOAD` loads modules at start-up. EXTERNAL items and files are
+  shared between the executable and every module that declares them.
+
+When a CALL finds nothing, the error says where it looked, and when a module
+was found but could not be loaded, it says why — the case behind most of
+GnuCOBOL's baffling *module not found* reports:
+
+```
+cobrt: runtime error: callbad.cob:4: module 'BAD' not found
+  note: ./BAD.so could not be loaded: ./BAD.so: undefined symbol: not_there
 ```
 
 ## Language coverage
@@ -332,6 +451,9 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   THRU/ALSO), switches with ON/OFF STATUS, mnemonic names.
 - OBJECT-COMPUTER PROGRAM COLLATING SEQUENCE.
 - OPTIONS paragraph: DEFAULT ROUNDED MODE.
+- REPOSITORY: `FUNCTION ALL INTRINSIC` and `FUNCTION name ... INTRINSIC` (the
+  intrinsic functions without the FUNCTION keyword), user-defined functions,
+  and program prototypes.
 - FILE-CONTROL: ASSIGN, OPTIONAL, ORGANIZATION, ACCESS MODE, RECORD KEY,
   ALTERNATE RECORD KEY [WITH DUPLICATES], RELATIVE KEY, FILE STATUS (other
   clauses such as RESERVE and PADDING are accepted and ignored).
@@ -402,8 +524,8 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   TOWARD-GREATER, TOWARD-LESSER, TRUNCATION and PROHIBITED.
 - Entry: PROCEDURE DIVISION CHAINING items receive the command-line arguments.
 - Control flow: IF, EVALUATE (ALSO, THRU, ANY, TRUE/FALSE), all PERFORM formats
-  (THRU, TIMES, UNTIL, UNTIL EXIT, FOREVER, VARYING/AFTER, WITH TEST AFTER,
-  inline), GO TO /
+  (THRU, TIMES, UNTIL, UNTIL EXIT, FOREVER, VARYING/AFTER with BY defaulting
+  to 1, WITH TEST AFTER, inline), GO TO /
   DEPENDING ON, ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH / SECTION /
   PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
   NORMAL STATUS], STOP literal, GOBACK [RETURNING].
@@ -416,8 +538,9 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   BEFORE/AFTER), SEARCH, SEARCH ALL.
 - Terminal I/O and program calls: DISPLAY, EXHIBIT (NAMED / CHANGED),
   ACCEPT (OMITTED, and incl. FROM DATE/DAY/TIME/DAY-OF-WEEK/ENVIRONMENT),
-  CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION, `CALL "SYSTEM"`,
-  OPTIONAL parameters with `IF item OMITTED`), CANCEL.
+  CALL (BY REFERENCE/CONTENT/VALUE, ON EXCEPTION, `CALL "SYSTEM"`, `CALL
+  STATIC`, RETURNING an item, a POINTER or NOTHING, OPTIONAL parameters with
+  `IF item OMITTED`), CANCEL, READY TRACE / RESET TRACE.
 - File I/O: OPEN, CLOSE (REEL/UNIT, NO REWIND, LOCK), READ (NEXT, PREVIOUS),
   WRITE (ADVANCING, END-OF-PAGE), REWRITE, DELETE, START (KEY, FIRST, LAST),
   WRITE FILE / REWRITE FILE, DELETE FILE.
@@ -434,7 +557,8 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - FILE STATUS codes follow the standard, including 04/05/07/14/24/35/38/41–49.
 
 **Programs.** Nested and contained programs (COMMON, INITIAL, GLOBAL names, USE
-GLOBAL, and the standard's scope rules for CALL), RECURSIVE (CALL of an active
+GLOBAL, and the standard's scope rules for CALL), ENTRY points with their own
+USING lists, RECURSIVE (CALL of an active
 program that isn't RECURSIVE raises EC-PROGRAM-RECURSIVE-CALL, CANCEL of one is
 an error), PROGRAM-ID ... AS "name", several source files and programs built
 into one executable. Special registers RETURN-CODE, TALLY, SORT-RETURN,
@@ -487,14 +611,14 @@ stored truncated and the exception is still raised, so `COMPUTE X = 10` on
 `PIC 9` sets X to 0 and EXCEPTION-STATUS to EC-SIZE-OVERFLOW. `SET LAST
 EXCEPTION TO OFF` clears the last condition.
 
-**Pointers, BASED items.** A `USAGE POINTER` item holds an address.
-`SET ADDRESS OF item TO <pointer>` rebinds a LINKAGE item to storage chosen at
+**Pointers.** A `USAGE POINTER` item holds an address.
+`SET ADDRESS OF item TO <pointer>` rebinds a LINKAGE or BASED item to storage chosen at
 run time, where the pointer is `ADDRESS OF x`, another POINTER item, or NULL;
 `SET pointer TO ...` does the same for the pointer itself, and `INITIALIZE`
 sets a pointer to NULL. Pointers compare against each other, against
 `ADDRESS OF`, and against NULL, and can be passed to a CALL.
 
-**Pointers, BASED items.** A level 01/77 item may be `BASED`: its storage is
+**BASED items.** A level 01/77 item may be `BASED`: its storage is
 allocated by `ALLOCATE item [INITIALIZED]` (the VALUE clauses apply when
 `INITIALIZED` is given) and released by `FREE item`, which also clears the
 pointer so `ADDRESS OF item = NULL` tests it. Using a BASED item before it is
@@ -547,7 +671,10 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
   the byte-stream files CBL_OPEN_FILE, CBL_CREATE_FILE, CBL_READ_FILE,
   CBL_WRITE_FILE, CBL_FLUSH_FILE, CBL_CLOSE_FILE;
 - calls and processes: C$NARG, C$PARAMSIZE, C$CALLEDBY, C$GETPID, C$SLEEP,
-  CBL_GC_NANOSLEEP, CBL_GC_FORK, CBL_GC_WAITPID, and `SYSTEM`.
+  CBL_GC_NANOSLEEP, CBL_GC_FORK, CBL_GC_WAITPID, CBL_ERROR_PROC, and `SYSTEM`;
+- the C runtime's own variables, for programs that hand them to C:
+  CBL_GC_HOSTED (stdin, stdout, stderr, argc, argv, errno, tzname, timezone,
+  daylight), and `EXTERNAL AS "errno"` for an item that is C's errno itself.
 
 ### Not implemented
 
@@ -556,12 +683,11 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
   either).
 - SYNCHRONIZED alignment: items are laid out packed, so a `POINTER, SYNC`
   item in a group is not aligned as it should be.
-- ANY LENGTH is implemented for LINKAGE items: the size comes from the
-  calling program's argument.
 - JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.
 - Split keys on indexed files (a key made of several SOURCE items).
-- Split keys, ENTRY, object-oriented COBOL, EXEC SQL/CICS.
-- Dynamic loading: a CALLed program must be compiled into the same executable.
+- Object-oriented COBOL.
+- GnuCOBOL's C API for fields (`cob_get_field_str` and the like): C code gets
+  addresses and values, not `cob_field` structures.
 - Relative and indexed files are held in memory while open and written back on
   CLOSE. That's fine for batch-sized files, but there's no record locking or
   sharing between processes, and the indexed format is YACCC's own (not
@@ -630,30 +756,31 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 13,247 lines of Python across fourteen files; the runtime it
-links against is 11,266 lines of C.
+The compiler is 13,977 lines of Python across fourteen files; the runtime it
+links against is 11,508 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
-| `lib/yaccc/source.py` | 344 | reference formats, continuations, directives, comment-entries, debugging lines |
+| `lib/yaccc/source.py` | 356 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 652 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 3,571 | recursive-descent parser to the AST (`nodes.py`, 746) |
+| `lib/yaccc/parser.py` | 3,709 | recursive-descent parser to the AST (`nodes.py`, 752) |
 | `lib/yaccc/data.py` | 653 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 4,957 | name resolution, C generation, typed fast paths |
+| `lib/yaccc/codegen.py` | 5,293 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 3,351 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, CALL, exceptions, DEBUG-ITEM |
-| `runtime/cobrt_io.c` | 1,743 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_core.c` | 3,314 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
+| `runtime/cobrt_io.c` | 1,765 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 679 | intrinsic functions |
 | `runtime/cobrt_math.c` | 729 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
 | `runtime/cobrt_dt.c` | 729 | FORMATTED-DATE/TIME/DATETIME and the other COBOL 2014 date functions, locale functions |
-| `runtime/cobrt_sys.c` | 917 | library routines (CBL_..., C$...) |
+| `runtime/cobrt_sys.c` | 1,056 | library routines (CBL_..., C$...), `-ftrace` output |
 | `runtime/cobrt_xml.c` | 518 | XML GENERATE |
 | `runtime/cobrt_json.c` | 233 | JSON GENERATE |
-| `runtime/cobrt.h` | 1,014 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,023 | runtime interface and inline fast paths |
 
 Design choices:
 

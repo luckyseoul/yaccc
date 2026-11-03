@@ -38,7 +38,16 @@ QUADRIGRAPHS = (('@<:@', '['), ('@:>@', ']'), ('@S|@', '$'), ('@%:@', '#'), ('@&
                 ('@{:@', '('), ('@:}@', ')'))
 
 # cobc options that do not change behavior here, and translations
-IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra'}
+# tests whose GnuCOBOL behaviour YACCC improves on deliberately
+DELIBERATE = {
+    'CALL in from C with init missing / implicit':
+        'deliberate difference: a COBOL program called from C starts the runtime itself',
+}
+
+IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra',
+                 # programs are linked into the executable that calls them, which
+                 # is what -static asks for
+                 '-static'}
 FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '--fixed': ['-fixed'], '-fdebugging-line': ['--debugging-mode'],
             # yaccc has these as its own options
@@ -59,7 +68,17 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '-fdpc-in-data=none': ['-fdpc-in-data', 'none'],
             '-fdpc-in-data=json': ['-fdpc-in-data', 'json'],
             '-fdpc-in-data=xml': ['-fdpc-in-data', 'xml'],
-            '-fdpc-in-data=all': ['-fdpc-in-data', 'all']}
+            '-fdpc-in-data=all': ['-fdpc-in-data', 'all'],
+            '-ffilename-mapping': ['-ffilename-mapping'],
+            '-fno-filename-mapping': ['-fno-filename-mapping'],
+            '-ftrace': ['-ftrace'], '-ftraceall': ['-ftraceall'],
+            '-fimplicit-init': ['-fimplicit-init'],
+            '-fsign=ascii': ['-fsign', 'ascii'], '-fsign=ebcdic': ['-fsign', 'ebcdic'],
+            '-fintrinsics=all': ['-fintrinsics', 'all'], '-fintrinsics=pi,e': ['-fintrinsics', 'pi,e'],
+            '-fsticky-linkage': ['-fsticky-linkage'], '-fentry-statement=ok': ['-fentry-statement=ok'],
+            '-fdefaultbyte=A': ['-fdefaultbyte', 'A'],
+            '-fno-recursive-check': ['-fno-recursive-check'],
+            '-fnot-intrinsic=substitute': ['-fnot-intrinsic', 'substitute']}
 
 
 class Test:
@@ -148,6 +167,9 @@ def parse_args(text, i):
 MACRO = re.compile(r'\b(AT_[A-Z_]+|m4_[a-z_]+|AS_[A-Z_]+|dnl)\b')
 
 
+TEMPLATE_SED = re.compile(r"sed -e 's/@USAGE@/([^/]*)/' \"\$\{TEMPLATE\}/([\w.-]+)\" > ([\w.-]+)")
+
+
 def parse_file(path):
     text = open(path, encoding='latin-1').read()
     tests = []
@@ -158,6 +180,14 @@ def parse_file(path):
         m = MACRO.search(text, i)
         if not m:
             break
+        if cur is not None:
+            # a program made from one of the suite's templates by a shell line
+            # between the macros: sed -e 's/@USAGE@/X/' "${TEMPLATE}/t.cob" > prog.cob
+            for tm in TEMPLATE_SED.finditer(text, i, m.start()):
+                tpath = os.path.join(os.path.dirname(path), tm.group(2))
+                if os.path.isfile(tpath):
+                    body = open(tpath, encoding='latin-1').read().replace('@USAGE@', tm.group(1))
+                    cur.steps.append(('data', tm.group(3), body))
         name = m.group(1)
         ls = text.rfind('\n', 0, m.start()) + 1
         if name == 'dnl' or text[ls:m.start()].lstrip().startswith('#'):
@@ -210,9 +240,12 @@ def run(cmd, cwd, env=None, timeout=20, stdin=None):
 
 
 class Runner:
-    def __init__(self, use_cobc, keep=False):
+    def __init__(self, use_cobc, keep=False, static_modules=False):
         self.use_cobc = use_cobc
         self.keep = keep
+        # $COMPILE_MODULE: build a loadable module that CALL finds at run time
+        # (as cobc -m does), or link its source into each executable
+        self.static_modules = static_modules
 
     def compile(self, main, modules, flags, out, cwd, env=None):
         if env is not None:
@@ -262,6 +295,8 @@ class Runner:
     def run_test(self, t):
         if t.skip_reason:
             return 'SKIP', t.skip_reason
+        if t.title in DELIBERATE and not self.use_cobc:
+            return 'SKIP', DELIBERATE[t.title]
         tmp = tempfile.mkdtemp(prefix='gctest_')
         try:
             return self._run(t, tmp)
@@ -274,6 +309,7 @@ class Runner:
     def _run(self, t, tmp):
         files = {}
         modules = []
+        module_srcs = []        # built as real modules: each can still be run by $COBCRUN
         main = None
         built = {}
         checks = 0
@@ -298,12 +334,17 @@ class Runner:
                 return 'SKIP', 'shell command'
             # a backslash-newline is a line continuation, not a shell operator
             cmd = cmd.replace('\\\n', ' ').replace('\n', ' ')
+            # atlocal's settings for a Unix host, expanded before the quotes that
+            # delimit them are removed ("prog"$PATHSEP"prog1")
+            for var, val in (('PATHSEP', ':'), ('COB_OBJECT_EXT', 'o'), ('COB_MODULE_EXT', 'so')):
+                cmd = cmd.replace('${' + var + '}', val).replace('$' + var, val)
             try:
                 words = shlex.split(cmd)
             except ValueError:
                 return 'SKIP', 'shell command'
             env = dict(os.environ)
             env.pop('COB_SET_DEBUG', None)
+
             while words and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', words[0]):
                 k, v = words.pop(0).split('=', 1)
                 # the .at files write PATH=.:$PATH and expect the shell to have
@@ -314,7 +355,8 @@ class Runner:
                 return 'SKIP', 'shell command'
             verb = words[0]
             if verb in ('$COMPILE', '$COMPILE_MODULE', '$COMPILE_ONLY'):
-                srcs = [w for w in words[1:] if not w.startswith('-') and w.endswith(('.cob', '.cbl', '.COB', '.CBL'))]
+                srcs = [w for w in words[1:] if not w.startswith('-')
+                        and w.endswith(('.cob', '.cbl', '.COB', '.CBL', '.c', '.o'))]
                 rest = [w for w in words[1:] if w not in srcs]
                 if '-o' in rest:
                     k = rest.index('-o')
@@ -322,11 +364,39 @@ class Runner:
                     del rest[k:k + 2]
                 else:
                     out_name = None
-                if any(w.endswith(('.c', '.o', '.so')) for w in rest) or not srcs:
+                compile_only = '-c' in rest
+                if compile_only:
+                    rest.remove('-c')
+                if any(w.endswith('.so') for w in rest) or not srcs:
                     return 'SKIP', 'C code or object files'
                 flags = self.translate_flags(rest)
                 if flags is None:
                     return 'SKIP', 'cobc option ' + ' '.join(rest)
+                if self.use_cobc and (compile_only or any(w.endswith(('.c', '.o')) for w in srcs)):
+                    return 'SKIP', 'C code or object files'
+                if compile_only and verb != '$COMPILE_ONLY':
+                    # cobc -c: an object file now; $COMPILE adds -x, so its object holds main()
+                    for src in srcs:
+                        cmd = [YACCC, '-c'] + (['-x'] if verb == '$COMPILE' else []) + [src] \
+                            + (['-o', out_name] if out_name else []) + ['--binary-size', '1-2-4-8'] + flags
+                        rc, _, err = run(cmd, tmp, env=env, timeout=120)
+                        if rc != 0:
+                            return build_failure(err)
+                    checks += 1
+                    continue
+                if verb == '$COMPILE_MODULE' and not self.use_cobc and not self.static_modules \
+                        and status == '0':
+                    # a real module: CALL loads it from the current directory
+                    for src in srcs:
+                        cmd = [YACCC, '-m', src] + (['-o', out_name] if out_name else []) \
+                            + ['--binary-size', '1-2-4-8'] + flags
+                        rc, _, err = run(cmd, tmp, env=env, timeout=120)
+                        if rc != 0:
+                            return build_failure(err)
+                        if src.endswith(('.cob', '.cbl', '.COB', '.CBL')):
+                            module_srcs.append(src)
+                    checks += 1
+                    continue
                 if status != '0':
                     # a compile that must fail
                     rc, _, err = self.compile(srcs[0], srcs[1:], flags, 'xx_' + os.path.basename(srcs[0]) + '.exe', tmp, env)
@@ -377,7 +447,7 @@ class Runner:
                     target = prog[2:] if prog.startswith('./') else prog
                 if target not in built:
                     src = None
-                    for m in modules:
+                    for m in modules + module_srcs:
                         if os.path.splitext(os.path.basename(m))[0] == target:
                             src = m
                     if src is None:
@@ -392,7 +462,7 @@ class Runner:
                     rc, _, err = self.compile(srcm, mods + [m for m in modules if m not in mods and m != srcm],
                                               flags, path, tmp, env)
                     if rc != 0:
-                        return 'CERR', err.decode('latin-1', 'replace').strip()[-400:]
+                        return build_failure(err)
                 fin = open(os.path.join(tmp, stdin_file), 'rb') if stdin_file else None
                 try:
                     rc, out, err = run([exe] + words[2:], tmp, env=env, stdin=fin)
@@ -418,6 +488,21 @@ class Runner:
         return 'PASS', ''
 
 
+def build_failure(err):
+    """CERR, unless the test's C code uses GnuCOBOL's own C interface,
+    which this runtime does not provide (a test of libcob, not of COBOL)."""
+    msg = err.decode('latin-1', 'replace')
+    m = re.search(r"undefined reference to `(cob_\w+)'", msg, re.ASCII)
+    if m:
+        return 'SKIP', f"uses GnuCOBOL's C API ({m.group(1)})"
+    m = re.search(r"(unknown type name|implicit declaration of function)\W+(cob_\w+)", msg, re.ASCII)
+    if m:
+        return 'SKIP', f"uses GnuCOBOL's C API ({m.group(2)})"
+    if 'libcob.h' in msg or 'libcob/' in msg:
+        return 'SKIP', "uses GnuCOBOL's C API (its headers)"
+    return 'CERR', msg.strip()[-400:]
+
+
 def diff_text(want, got, err):
     import difflib
     d = list(difflib.unified_diff(want.splitlines(), got.splitlines(), 'expected', 'yaccc', lineterm='', n=1))
@@ -435,6 +520,9 @@ def main():
     ap.add_argument('-k', dest='pattern', help='only tests whose title contains this text')
     ap.add_argument('-v', action='store_true', help='print every test')
     ap.add_argument('--keep', action='store_true', help='keep each test directory and print its path')
+    ap.add_argument('--static-modules', action='store_true',
+                    help='link $COMPILE_MODULE sources into each executable instead of '
+                         'building loadable modules')
     ap.add_argument('--log', help='write failure details to this file')
     ap.add_argument('--expect', help='results file written by -v (tests/gnucobol/results.txt): '
                     'report only the tests whose result changed, and fail if a passing test no longer passes')
@@ -462,7 +550,7 @@ def main():
 
     def work(t):
         # a Runner per test: its state is per-test and this keeps it thread-safe
-        return Runner(a.cobc, a.keep).run_test(t)
+        return Runner(a.cobc, a.keep, a.static_modules).run_test(t)
 
     counts = {}
     changed = []

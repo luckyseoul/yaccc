@@ -95,6 +95,10 @@ void cob_io_unhandled(cob_file *f, int rc, const char *loc)
 		return;
 	if (f->status)
 		return;
+	if (f->path[0] && f->given[0] && strcmp(f->given, f->path) != 0)
+		/* the name the program gave and the file it became */
+		cob_fatal("%s: %s (status = %c%c) for file %s ('%s' => %s)", loc, status_msg(f->stat),
+			  f->stat[0], f->stat[1], f->select_name, f->given, f->path);
 	cob_fatal("%s: %s (status = %c%c) for file %s%s%s%s", loc, status_msg(f->stat), f->stat[0], f->stat[1],
 		  f->select_name, f->path[0] ? " ('" : "", f->path, f->path[0] ? "')" : "");
 }
@@ -124,6 +128,17 @@ static void resolve_path(cob_file *f)
 		snprintf(name, sizeof name, "%s", f->assign_name);
 	else
 		snprintf(name, sizeof name, "%s", f->select_name);
+	snprintf(f->given, sizeof f->given, "%s", name);
+	if (f->no_mapping) {
+		snprintf(f->path, sizeof f->path, "%s", name);
+		return;
+	}
+	/* $VAR/rest: the directory from the environment */
+	if (name[0] == '$') {
+		char mapped[1024];
+		cob_map_filename(name, mapped, sizeof mapped);
+		snprintf(name, sizeof name, "%s", mapped);
+	}
 	/* DD_<name> overrides the name, whatever form ASSIGN took (GnuCOBOL does
 	   the same for a literal and for a data item), unless the name is a path */
 	if (!strchr(name, '/') && !strchr(name, '.')) {
@@ -139,6 +154,13 @@ static void resolve_path(cob_file *f)
 			v = getenv(name);
 		if (v && *v)
 			snprintf(name, sizeof name, "%s", v);
+	}
+	/* COB_FILE_PATH: the directory for a name that names none */
+	const char *dir = getenv("COB_FILE_PATH");
+	if (dir && *dir && name[0] && !strchr(name, '/')) {
+		size_t dl = strlen(dir);
+		snprintf(f->path, sizeof f->path, "%s%s%s", dir, dir[dl - 1] == '/' ? "" : "/", name);
+		return;
 	}
 	snprintf(f->path, sizeof f->path, "%s", name);
 }

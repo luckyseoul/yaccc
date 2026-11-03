@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
 
 typedef __int128 cob_s128;
 typedef unsigned __int128 cob_u128;
@@ -205,12 +206,25 @@ static inline void cob_disp_set(unsigned char *p, int n, cob_u64 u)
 	}
 }
 
+/* -fsign=ebcdic: an embedded sign is written as the EBCDIC overpunch letters
+ * ({ A-I positive, } J-R negative) instead of 0x70-0x79 for negatives */
+extern int cob_sign_ebcdic;
+static inline unsigned char cob_overpunch(unsigned char digit, int neg)
+{
+	if (!cob_sign_ebcdic)
+		return neg ? (unsigned char)(digit + 0x40) : digit;
+	int d = digit - '0';
+	if (neg)
+		return d ? (unsigned char)('J' + d - 1) : '}';
+	return d ? (unsigned char)('A' + d - 1) : '{';
+}
+
 static inline void cob_disps_set(unsigned char *p, int n, cob_s64 v)
 {
 	int neg = v < 0;
 	cob_disp_set(p, n, neg ? (cob_u64)(-v) : (cob_u64)v);
-	if (neg)
-		p[n - 1] = (unsigned char)(p[n - 1] + 0x40);
+	if (neg || cob_sign_ebcdic)
+		p[n - 1] = cob_overpunch(p[n - 1], neg);
 }
 
 /* packed decimal (COMP-3), up to 18 digits */
@@ -289,6 +303,9 @@ const char *cob_arg_value(int i);       /* argument i, NULL if out of range */
 void cob_getopt_reset(void);            /* start CBL_GC_GETOPT over from argv[1] */
 void cob_stop_run(int rc) __attribute__((noreturn));
 void cob_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 2)));
+/* a second line for the next cob_fatal, saying why (kept out of the message
+ * itself, which error procedures and tests compare) */
+void cob_fatal_note(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void cob_perform_overflow(const char *loc) __attribute__((noreturn));
 cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *name, const char *loc);
 cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64 dmax,
@@ -508,6 +525,32 @@ void cob_cancel(const cob_field *name);
 void cob_cancel_name(const char *name);
 cob_prog_fn cob_resolve(const cob_field *name);
 cob_prog_fn cob_resolve_name(const char *name);
+/* a reference to a C symbol under another C name: a weak reference to a
+ * function that a CALL literal may name, without clashing with a header's
+ * declaration of it */
+#define COB_STR2_(x) #x
+#define COB_STR_(x) COB_STR2_(x)
+#define COB_ASM_NAME(n) __asm__(COB_STR_(__USER_LABEL_PREFIX__) n)
+/* what a CALL by name reaches: a COBOL program, or else a C function (cobrt_call.c) */
+typedef struct {
+	cob_prog_fn fn;
+	void *cfn;
+} cob_callee;
+cob_callee cob_lookup_name(const char *name, void *weak);
+void cob_register_entry(const char *name, cob_prog_fn fn, cob_cancel_fn cancel, void *cw);
+void *cob_entry_address(const char *name, void *weak);
+cob_callee cob_lookup(const cob_field *name);
+cob_s64 cob_call_c(void *fn, int n, unsigned char **av);
+extern const signed char *cob_call_modes;
+extern int cob_call_params;
+int cob_c_name(const char *name, char *out, size_t sz);
+void cob_call_not_found(const char *where, const char *name) __attribute__((noreturn));
+void cob_call_not_found_field(const char *where, const cob_field *name) __attribute__((noreturn));
+extern int cob_initialized;
+void cob_ensure_init(void);
+int cob_c_argc(int declared);
+void cob_call_init(void);
+void cob_close_all_files(void);
 void cob_call_system(const cob_field *cmd);
 int cob_switch_get(int n);
 void cob_switch_set(int n, int v);
@@ -737,6 +780,10 @@ size_t cob_xml_mark(xmlw *w);
 void cob_xml_rollback_if_empty(xmlw *w, size_t mark);
 extern cob_field cob_xml_code_reg;       /* XML-CODE */
 
+/* -ftrace / -ftraceall: READY TRACE, RESET TRACE, COB_SET_TRACE, COB_TRACE_FILE */
+extern int cob_trace_on;
+void cob_trace_point(const char *src, const char *prog, const char *label, const char *name, int line);
+
 /* calling chain for MODULE-ID / MODULE-CALLER-ID */
 void cob_module_push(const char *name, int argc);
 void cob_module_pop(void);
@@ -756,6 +803,8 @@ cob_field *cob_fn_text(const char *s);
 
 /* library routines called by name (cobrt_sys.c) */
 int cob_sys_cbl_and(int n, cob_field **a);
+int cob_sys_cbl_gc_hosted(int n, cob_field **a);
+char **cob_arg_vector(void);
 int cob_sys_cbl_or(int n, cob_field **a);
 int cob_sys_cbl_nor(int n, cob_field **a);
 int cob_sys_cbl_xor(int n, cob_field **a);
@@ -867,6 +916,8 @@ typedef struct cob_file {
 	int eop;                  /* end-of-page condition raised by last WRITE */
 	int locked;               /* CLOSE WITH LOCK */
 	const unsigned short *sort_coll;  /* SORT/MERGE COLLATING SEQUENCE */
+	int no_mapping;           /* -fno-filename-mapping: the name is used as it stands */
+	char given[256];          /* the name ASSIGN gave, before mapping (for messages) */
 } cob_file;
 
 void cob_exc_io(cob_file *f, const char *status);

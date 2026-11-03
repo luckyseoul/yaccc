@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Semantic analysis and C code generation."""
 import datetime
+import re
 
 from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve_types,
                    T_GROUP, T_ALNUM, T_ALPHA, T_ALNUM_EDITED, T_NUM_DISPLAY, T_NUM_PACKED,
@@ -8,7 +9,8 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    T_INDEX, T_ALL, T_POINTER, T_NUM_DEC_FLOAT, TYPE_NAMES, NUMERIC_TYPES,
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
                    F_BINARY_TRUNC, F_UNSIGNED_PACKED)
-from .errors import CompileError, DIAG
+from . import errors
+from .errors import CompileError, DIAG, ErrorsReported, did_you_mean, source_line
 from .nodes import *
 from .dbggen import DebugGen
 from .rwgen import ReportWriterGen
@@ -88,6 +90,46 @@ class Options:
         self.debugging = False
         self.line_map = False        # #line directives, so a debugger shows COBOL
         self.directives = None       # for >>TURN / $SET SSRANGE
+        self.trace = 0               # -ftrace 1 (procedures), -ftraceall 2 (and statements)
+        self.filename_mapping = True # DD_name / $VAR / COB_FILE_PATH applied to ASSIGN names
+        self.sign = 'ascii'          # -fsign: embedded signs as ASCII (0x70-0x79) or EBCDIC overpunch
+        self.sticky_linkage = False  # LINKAGE items keep their addresses between calls
+        self.defaultbyte = None      # -fdefaultbyte: WORKING-STORAGE without VALUE starts as this byte
+        self.recursive_check = True  # EC-PROGRAM-RECURSIVE-CALL for a program that isn't RECURSIVE
+        self.emit_main = True        # an executable's main(); not for -c or -m
+        self.export_c = False        # C entry points, for C code that calls COBOL
+
+
+# C library names a COBOL program is not exported under: defining one in an
+# executable would replace the library function for the whole program
+C_LIBRARY_NAMES = frozenset('''
+    main exit _exit abort atexit open close read write creat lseek time clock sleep
+    usleep alarm pause system printf fprintf sprintf snprintf puts putchar getchar gets
+    fgets fputs fopen fclose fread fwrite fflush fseek ftell scanf sscanf perror malloc
+    calloc realloc free select poll signal raise kill link unlink remove rename sync wait
+    waitpid fork pipe dup dup2 stat fstat lstat access chdir mkdir rmdir chmod chown
+    umask getpid getenv setenv putenv strlen strcpy strncpy strcat strcmp strncmp
+    strchr strrchr strstr memcpy memmove memset memcmp atoi atol strtol qsort bsearch
+    exp log sin cos tan sqrt pow abs labs div random rand srand ctime localtime gmtime
+    mktime strftime index send recv connect accept bind listen socket ioctl fcntl
+    truncate environ errno
+'''.split())
+
+
+def c_identifier(name):
+    """The C name for a COBOL program name, as cobc spells it ('-' becomes
+    '__', a leading digit gets '_'), or None when there is none."""
+    if not name:
+        return None
+    out = '_' if name[0].isdigit() else ''
+    for ch in name:
+        if ch == '-':
+            out += '__'
+        elif ch.isalnum() and ch.isascii() or ch == '_':
+            out += ch
+        else:
+            return None
+    return out
 
 
 class FileInfo:
@@ -141,6 +183,7 @@ class ProgCtx:
         self.local_blocks = []      # (sym, size) LOCAL-STORAGE
         self.link_blocks = []       # (sym, size, item)
         self.class_tables = {}
+        self.ptr_inits = []         # storage addresses known only at run time
 
 
 # library routines called by name: name -> (minimum, maximum) number of arguments
@@ -159,8 +202,10 @@ SYSTEM_ROUTINES = {
     'CBL_GC_GETOPT': (6, 6), 'CBL_ERROR_PROC': (2, 2),
     'CBL_OPEN_FILE': (5, 5), 'CBL_CREATE_FILE': (5, 5), 'CBL_READ_FILE': (5, 5),
     'CBL_WRITE_FILE': (5, 5), 'CBL_CLOSE_FILE': (1, 1), 'CBL_FLUSH_FILE': (1, 1),
+    'CBL_GC_HOSTED': (2, 2), 'CBL_OC_HOSTED': (2, 2),
 }
-SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_GC_NANOSLEEP'}
+SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_GC_NANOSLEEP',
+                         'CBL_OC_HOSTED': 'CBL_GC_HOSTED'}
 
 
 class CodeGen(ReportWriterGen, DebugGen):
@@ -225,15 +270,33 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.prog_syms[id(p)] = self.sym('prog_')
         for p in self.all_progs:
             self.protos.append(f"static int {self.prog_syms[id(p)]}(int cob_argc, unsigned char **cob_argv);")
+            # its C-convention entry (see c_entry_points), which a PROGRAM-POINTER holds
+            self.protos.append(f"static int cob_cw_{self.prog_syms[id(p)]}();")
             flag = self.sym('cob_inited_')
             self.init_flags[id(p)] = flag
             self.protos.append(f"static int {flag};")
+        failed = set()
         for p in self.all_progs:
-            self.gen_program(p)
+            q = p.parent
+            while q is not None and id(q) not in failed:
+                q = q.parent
+            if q is not None:
+                failed.add(id(p))       # its container's errors would only repeat here
+                continue
+            try:
+                self.gen_program(p)
+            except ErrorsReported:
+                raise
+            except CompileError as e:
+                DIAG.error(e)
+                failed.add(id(p))
+        DIAG.check()
         for name, (fsym, buf, size) in self.ext_files.items():
-            self.protos.append(f"static unsigned char {buf}[{size}] __attribute__((aligned(16)));")
-            self.protos.append(f"static cob_file {fsym};")
-            self.protos.append(f"static int {fsym}_inited;")
+            # weak global definitions: every object file and loaded module that
+            # declares the EXTERNAL file binds to the same one
+            self.protos.append(f"unsigned char {buf}[{size}] __attribute__((weak, aligned(16)));")
+            self.protos.append(f"cob_file {fsym} __attribute__((weak));")
+            self.protos.append(f"int {fsym}_inited __attribute__((weak));")
         # CANCEL support: reset to initial state, close open files, cancel contained programs
         for p in self.all_progs:
             cs = self.sym('cancel_')
@@ -300,17 +363,24 @@ class CodeGen(ReportWriterGen, DebugGen):
         out.append('')
         out.extend(self.funcs)
         out.append('')
-        out.append('static void cob_register_all(void)')
+        out.extend(self.c_entry_points(aliases, counts))
+        # a constructor, so that the programs of an object file or a loaded
+        # module are known to CALL by name as soon as it is loaded
+        out.append('__attribute__((constructor)) static void cob_register_all(void)')
         out.append('{')
         # CALL by data name finds separately compiled programs, and contained
         # programs whose names are unique in the executable
         for p in self.all_progs:
             if p.parent is None or counts[p.ext_name] == 1:
-                out.append(f'\tcob_register_program({c_string(p.ext_name)}, {self.prog_syms[id(p)]}, {p._cancel_sym});')
+                sym = self.prog_syms[id(p)]
+                out.append(f'\tcob_register_entry({c_string(p.ext_name)}, {sym}, {p._cancel_sym}, '
+                           f'(void *)cob_cw_{sym});')
         for p, nm, alias in aliases:
-            out.append(f'\tcob_register_program({c_string(nm)}, {alias}, {p._cancel_sym});')
+            out.append(f'\tcob_register_entry({c_string(nm)}, {alias}, {p._cancel_sym}, (void *)cob_cw_{alias});')
         out.append('}')
         out.append('')
+        if not self.opts.emit_main:
+            return '\n'.join(out) + '\n'
         out.append('int main(int argc, char **argv)')
         out.append('{')
         out.append('\tcob_init(argc, argv);')
@@ -318,13 +388,80 @@ class CodeGen(ReportWriterGen, DebugGen):
             out.append('\tcob_host_sign = 1;')
         if not getattr(self.opts, 'pretty_display', True):
             out.append('\tcob_pretty_display = 0;')
+        if getattr(self.opts, 'sign', 'ascii') == 'ebcdic':
+            out.append('\tcob_sign_ebcdic = 1;')
         out.append(f'\tcob_when_compiled = {c_string(wc)};')
-        out.append('\tcob_register_all();')
         out.append(f'\tint rc = {self.prog_syms[id(main)]}(-1, NULL);')
         out.append('\tcob_stop_run(rc);')
         out.append('\treturn rc;')
         out.append('}')
         return '\n'.join(out) + '\n'
+
+    def c_entry_points(self, aliases, counts):
+        """The C calling convention for the programs of this compile: a static
+        wrapper per program and ENTRY name, taking an address for each USING
+        item and the value itself for a BY VALUE one. A PROGRAM-POINTER holds
+        one of these, so C code can call back a program it was handed; with
+        export_c each also gets an external name C code can call it by."""
+        out = []
+        targets = []
+        for p in self.all_progs:
+            targets.append((p, p.ext_name, self.prog_syms[id(p)], [m for m, _ in p.using]))
+        for p, nm, alias in aliases:
+            st = next((e for e in getattr(p, '_entries', []) if getattr(e, 'name', None) == nm), None)
+            n = len(getattr(st, 'using', []) or []) if st is not None else 0
+            targets.append((p, nm, alias, ['REFERENCE'] * n))
+        seen = set()
+        for p, nm, fn, modes in targets:
+            n = len(modes)
+            params = ', '.join(f"intptr_t v{i}" if m == 'VALUE' else f"void *a{i}"
+                               for i, m in enumerate(modes)) or 'void'
+            args = ', '.join(f"v{i}" if m == 'VALUE' else f"a{i}" for i, m in enumerate(modes))
+            out.append(f"static int cob_cw_{fn}({params})")
+            out.append('{')
+            out.append('\tcob_ensure_init();')
+            if n:
+                out.append(f"\tunsigned char *av[{n}];")
+                sizes = []
+                for i, m in enumerate(modes):
+                    if m == 'VALUE':
+                        out.append(f"\tunsigned char vb{i}[8];")
+                        out.append(f"\tcob_put_value(8, vb{i}, (cob_s64)v{i});")
+                        out.append(f"\tav[{i}] = vb{i};")
+                        sizes.append('8')
+                    else:
+                        out.append(f"\tav[{i}] = (unsigned char *)a{i};")
+                        sizes.append('0')
+                out.append(f"\tstatic const int sizes[{n}] = {{{', '.join(sizes)}}};")
+                out.append(f'\tint argc = cob_c_argc({n});')
+                out.append('\tcob_call_sizes = sizes;')
+                out.append('\tcob_call_arg_omitted = NULL;')
+                out.append(f'\treturn {fn}(argc, av);')
+            else:
+                out.append('\tcob_c_argc(0);')
+                out.append('\tcob_call_sizes = NULL;')
+                out.append('\tcob_call_arg_omitted = NULL;')
+                out.append(f'\treturn {fn}(0, NULL);')
+            out.append('}')
+            out.append('')
+            if not self.opts.export_c or (p.parent is not None and nm == p.ext_name) \
+                    or getattr(p, 'is_function', False) or counts.get(p.ext_name, 1) != 1 and p.parent is not None:
+                continue
+            cname = c_identifier(nm)
+            if cname is None or cname in seen:
+                continue
+            if cname in C_LIBRARY_NAMES or cname.startswith('cob_'):
+                DIAG.warn(f"program '{nm}' is not callable from C under the name '{cname}', "
+                          f"which belongs to the C library", p.loc)
+                continue
+            seen.add(cname)
+            out.append(f"int {cname}({params});")
+            out.append(f"int {cname}({params})")
+            out.append('{')
+            out.append(f'\treturn cob_cw_{fn}({args});')
+            out.append('}')
+            out.append('')
+        return out
 
     # ================================================================ attributes / literals
     def attr(self, typ, digits=0, scale=0, flags=0, pic=None, currency=0, pdigits=0):
@@ -582,7 +719,16 @@ class CodeGen(ReportWriterGen, DebugGen):
                     continue
                 # a section root may itself have OCCURS: allocate every occurrence
                 size = max([r.total_size()] + [x.total_size() for x in r.redefined_by])
-                if getattr(r, 'based', False):
+                if sec == 'WS' and r.external and (r.external_name or r.name) == 'errno':
+                    # EXTERNAL AS "errno": the C library's errno itself, which
+                    # lives at an address known only at run time
+                    sym = self.sym('bas_')
+                    self.glob.append(f"static unsigned char *{sym}; /* errno */")
+                    r.based = True
+                    r.based_sym = sym
+                    r.errno_alias = True
+                    ctx.ptr_inits.append(f"{sym} = (unsigned char *)&errno;")
+                elif getattr(r, 'based', False):
                     # storage allocated by ALLOCATE at run time, in any section
                     sym = self.sym('bas_')
                     self.glob.append(f"static unsigned char *{sym}; /* BASED {r.name} */")
@@ -597,7 +743,11 @@ class CodeGen(ReportWriterGen, DebugGen):
                             # programs that share it share the storage
                             sym = 'cobext_' + ''.join(ch if ch.isalnum() else '_' for ch in key)
                             self.externals[key] = sym
-                            self.glob.append(f"static unsigned char {sym}[{size}] __attribute__((aligned(16)));")
+                            # a weak global definition: separately compiled
+                            # objects and loaded modules share one copy, and one
+                            # flag that says its VALUEs have been set
+                            self.glob.append(f"unsigned char {sym}[{size}] __attribute__((weak, aligned(16)));")
+                            self.glob.append(f"unsigned char {sym}_init __attribute__((weak));")
                     else:
                         sym = self.sym('b_')
                         self.glob.append(f"static unsigned char {sym}[{size}] __attribute__((aligned(16))); /* {r.name or 'FILLER'} */")
@@ -765,6 +915,25 @@ class CodeGen(ReportWriterGen, DebugGen):
         item.section = ia.section
         item.children = []
 
+    def name_hint(self, name, loc=None):
+        """Why a data name might not be found: it names a paragraph (a period
+        missing before a paragraph header makes the header an operand of the
+        statement before it), or it is a misspelling of a name in scope."""
+        ctx = self.ctx
+        if name in getattr(ctx, 'paras_by_name', {}) or name in getattr(ctx, 'secs_by_name', {}):
+            return f"; '{name}' is a procedure name: is the period before it missing?"
+        if loc is not None:
+            text = (source_line(loc.file, loc.line) or '').strip().upper()
+            if re.match(re.escape(name) + r'(\s+SECTION)?\s*\.', text):
+                return (f"; it looks like a paragraph header: is the period missing "
+                        f"at the end of the statement before it?")
+        pool = set(ctx.names)
+        pc = self.prog.parent if self.prog is not None else None
+        while pc is not None:
+            pool.update(self.global_items(pc))
+            pc = pc.parent
+        return did_you_mean(name, pool)
+
     def register_tree(self, root):
         ctx = self.ctx
         for it in root.walk():
@@ -801,7 +970,7 @@ class CodeGen(ReportWriterGen, DebugGen):
         if not cands:
             if ref.quals:
                 raise CompileError(f"'{ref.name}' in '{' OF '.join(ref.quals)}' is not defined", ref.loc)
-            raise CompileError(f"'{ref.name}' is not defined", ref.loc)
+            raise CompileError(f"'{ref.name}' is not defined{self.name_hint(ref.name, ref.loc)}", ref.loc)
         if len(cands) > 1:
             raise CompileError(f"'{ref.name}' is ambiguous; it needs qualification", ref.loc)
         it = cands[0]
@@ -914,7 +1083,8 @@ class CodeGen(ReportWriterGen, DebugGen):
         if sec is not None:
             pr.target = sec
             return sec
-        raise CompileError(f"procedure '{pr.name}' is not defined", pr.loc)
+        pool = set(ctx.paras_by_name) | set(ctx.secs_by_name)
+        raise CompileError(f"procedure '{pr.name}' is not defined{did_you_mean(pr.name, pool)}", pr.loc)
 
     # ================================================================ program emission
     def all_stmts(self, prog):
@@ -1024,8 +1194,21 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em("}")
             else:
                 self.emit_file_init(fi)
+        for line in ctx.ptr_inits:
+            em(line)
         for r in self.ws_roots(prog):
-            self.init_tree(r, mode='init')
+            if getattr(r, 'errno_alias', False):
+                continue
+            if r.external:
+                flag = self.externals[r.external_name or r.name] + '_init'
+                em(f"if (!{flag}) {{")
+                em.ind += 1
+                self.init_tree(r, mode='init')
+                em(f"{flag} = 1;")
+                em.ind -= 1
+                em("}")
+            else:
+                self.init_tree(r, mode='init')
         for fi in ctx.files.values():
             if fi.external:
                 continue
@@ -1060,12 +1243,16 @@ class CodeGen(ReportWriterGen, DebugGen):
         active = self.sym('cob_active_')
         self.protos.append(f"static int {active};")
         prog._active_sym = active
-        if not prog.is_recursive:
+        if not prog.is_recursive and getattr(self.opts, 'recursive_check', True):
             # a program that isn't RECURSIVE can't be called while it is active
             em(f"if ({active} && !cob_entry_reentry) {{ cob_call_rejected = 1; return 0; }}")
             em("cob_entry_reentry = 0;")
         em(f"{active}++;")
         em(f"cob_module_push({c_string(prog.ext_name)}, cob_argc);")
+        if self.opts.trace:
+            pd = getattr(prog, 'proc_loc', None) or prog.loc
+            em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Entry", '
+               f'{c_string(prog.ext_name)}, {pd.line});')
         em(f"cob_set_collating({ctx.coll or 'NULL'});")
         if prog.parent is None:
             # each outermost program has its own RETURN-CODE, zero on entry;
@@ -1101,16 +1288,23 @@ class CodeGen(ReportWriterGen, DebugGen):
                    f"CF({it.storage}, {it.size}, &{self.item_attr(it)}));")
             else:
                 # an argument left out binds NULL, as in GnuCOBOL: ADDRESS OF
-                # the item is then NULL, which is how a program tests OMITTED
-                em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : NULL;")
+                # the item is then NULL, which is how a program tests OMITTED;
+                # with -fsticky-linkage it keeps the last call's argument
+                if getattr(self.opts, 'sticky_linkage', False):
+                    em(f"if (cob_argc > {i}) {it.storage} = cob_argv[{i}];")
+                else:
+                    em(f"{it.storage} = (cob_argc > {i} && cob_argv[{i}]) ? cob_argv[{i}] : NULL;")
             using_items.append(it.storage)
         ret_item = None
         if getattr(prog, 'is_function', False) and prog.returning is not None:
             ret_item = self.resolve(prog.returning)
+        sticky = getattr(self.opts, 'sticky_linkage', False)
         for sym, size, r in ctx.link_blocks:
             self.glob.append(f"static unsigned char {sym}_dummy[{size}];")
             if sym not in using_items:
-                em(f"{sym} = {sym}_dummy;")
+                # -fsticky-linkage: an item keeps the address it was given
+                # (SET ADDRESS OF) from one call to the next
+                em(f"if (!{sym}) {sym} = {sym}_dummy;" if sticky else f"{sym} = {sym}_dummy;")
         if entries:
             # A CALL to an ENTRY point asked to start there. This has to come
             # after the program's own initialisation: jumping to the label
@@ -1127,6 +1321,11 @@ class CodeGen(ReportWriterGen, DebugGen):
             # the caller passes the result storage as the last argument
             nuse = len(prog.using)
             em(f"if (cob_argc > {nuse} && cob_argv[{nuse}]) {ret_item.storage} = cob_argv[{nuse}];")
+        if getattr(prog, 'chaining', None):
+            # CHAINING takes the command line: such a program is a main
+            # program only, never the target of a CALL
+            em(f'if (cob_argc >= 0) cob_fatal("CALL of program with CHAINING clause (%s)", '
+               f'{c_string(prog.ext_name)});')
         for i, ref in enumerate(getattr(prog, 'chaining', []) or []):
             it = self.resolve(ref)
             if it.section not in ('WS', 'LS'):
@@ -1144,6 +1343,9 @@ class CodeGen(ReportWriterGen, DebugGen):
             self.gen_section(sec)
         em("goto L_exit;")
         em.label("L_exit")
+        if self.opts.trace:
+            em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Exit", '
+               f'{c_string(prog.ext_name)}, -1);')
         em("cob_module_pop();")
         em(f"{prog._active_sym}--;")
         for sym, size, r in ctx.local_blocks:
@@ -1292,6 +1494,8 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em(f"{f}.assign_field = {self.static_field(a)};")
             else:
                 em(f"{f}.assign_name = {c_string(a.name)};")
+        if not getattr(self.opts, 'filename_mapping', True):
+            em(f"{f}.no_mapping = 1;")
         em(f"{f}.record = {fi.buf};")
         em(f"{f}.record_max = {fi.size};")
         rmin = fi.fd.rec_min or min([r.size for r in fi.fd.records] or [fi.size])
@@ -2524,6 +2728,9 @@ class CodeGen(ReportWriterGen, DebugGen):
         em.label(sec.label)
         self.seg_enter(sec)
         self.dbg_label(sec)
+        if self.opts.trace and sec.name:
+            em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Section", '
+               f'{c_string(sec.name)}, {sec.loc.line});')
         for para in sec.paragraphs:
             self.cur_para = para
             para.end_label = f"{para.label}_end"
@@ -2531,6 +2738,9 @@ class CodeGen(ReportWriterGen, DebugGen):
             em.label(para.label)
             self.seg_enter(sec)
             self.dbg_label(para)
+            if self.opts.trace and para.name:
+                em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Paragraph", '
+                   f'{c_string(para.name)}, {para.loc.line});')
             for sent in para.sentences:
                 end = self.new_label('E')
                 self.cur_sentence_end = end
@@ -2550,6 +2760,14 @@ class CodeGen(ReportWriterGen, DebugGen):
     STMT_NAMES = {'STOPRUN': 'STOP RUN', 'GOTO': 'GO TO', 'GOBACK': 'GOBACK', 'STOPLIT': 'STOP',
                   'EXITPROGRAM': 'EXIT', 'DELETEFILE': 'DELETE', 'SETCOND': 'SET'}
 
+    def trace_args(self):
+        """The source file and program a trace line names."""
+        return f"{c_string(self.prog.loc.file)}, {c_string(self.prog.ext_name)}"
+
+    def g_TraceStmt(self, s):
+        # READY TRACE / RESET TRACE: switch the -ftrace output on and off
+        self.em(f"cob_trace_on = {1 if s.on else 0};")
+
     def loc_sym(self, s):
         """Static cob_loc describing statement s (for EXCEPTION-LOCATION and -STATEMENT)."""
         kind = type(s).__name__.upper()
@@ -2568,6 +2786,7 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def stmt(self, s):
         self.cur_loc = s.loc
+        errors.WHERE = s.loc
         self.cur_stmt = s
         fn = getattr(self, 'g_' + type(s).__name__, None)
         if fn is None:
@@ -2575,16 +2794,33 @@ class CodeGen(ReportWriterGen, DebugGen):
         self.em(f"/* line {s.loc.line}: {type(s).__name__.upper()} */")
         if self.opts.line_map and s.loc is not None:
             self.em.line_map(s.loc.file, s.loc.line)
+        if self.opts.trace >= 2:
+            verb = getattr(s, 'verb', None) or self.STMT_NAMES.get(type(s).__name__.upper(),
+                                                                   type(s).__name__.upper())
+            self.em(f"if (cob_trace_on) cob_trace_point({self.trace_args()}, NULL, "
+                    f"{c_string(verb)}, {s.loc.line});")
         start = len(self.em.lines)
         ind = self.em.ind
-        if self.dbg is not None and self.dbg_watching():
-            saved = self.dbg_pending
-            self.dbg_pending = self.dbg_plan(s)
-            fn(s)
-            self.dbg_flush()
-            self.dbg_pending = saved
-        else:
-            fn(s)
+        try:
+            if self.dbg is not None and self.dbg_watching():
+                saved = self.dbg_pending
+                self.dbg_pending = self.dbg_plan(s)
+                try:
+                    fn(s)
+                    self.dbg_flush()
+                finally:
+                    self.dbg_pending = saved
+            else:
+                fn(s)
+        except ErrorsReported:
+            raise
+        except CompileError as e:
+            # report it and go on with the next statement, so that one compile
+            # finds every error; nothing is written while errors are pending
+            DIAG.error(e)
+            del self.em.lines[start:]
+            self.em.ind = ind
+            return
         # statements that call intrinsic functions say where they are, for the
         # exceptions those functions raise (EXCEPTION-LOCATION)
         for line in self.em.lines[start:]:
@@ -3255,6 +3491,9 @@ class CodeGen(ReportWriterGen, DebugGen):
         k = getattr(s, '_entry_no', None)
         if k:
             self.em.label(f"L_entry_{k}")
+        if self.opts.trace and getattr(s, 'name', None):
+            self.em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Entry", '
+                    f'{c_string(s.name)}, -1);')
         # ENTRY ... USING: this entry point's own parameters, bound from the
         # caller's argument list
         for i, ref in enumerate(getattr(s, 'using', []) or []):
@@ -4190,6 +4429,10 @@ class CodeGen(ReportWriterGen, DebugGen):
             if it.value is not None:
                 em(self.value_move(it.value, f, it))
                 return
+            if getattr(self.opts, 'defaultbyte', None) is not None and it.section == 'WS':
+                # -fdefaultbyte: storage without a VALUE starts as this byte
+                em(f"memset({base} + {off}, {self.opts.defaultbyte}, {it.size});")
+                return
         elif spec is not None:
             if spec.to_value and it.value is not None:
                 em(f"cob_move({self.field(it.value)}, {f});")
@@ -4239,7 +4482,13 @@ class CodeGen(ReportWriterGen, DebugGen):
             name = s.value.value.decode('latin-1')
             for t in s.targets:
                 it = self.check_receiving(t)
-                em(f"cob_pointer_set({self.field(t)}, (void *)cob_resolve_name({c_string(name)}));")
+                sym = self.find_program(name.strip())
+                if sym and sym != 'NULL':
+                    # a program of this compile: its C-convention entry
+                    em(f"cob_pointer_set({self.field(t)}, (void *)cob_cw_{sym});")
+                else:
+                    em(f"cob_pointer_set({self.field(t)}, cob_entry_address({c_string(name.strip())}, "
+                       f"{self.weak_symbol(name.strip())}));")
             return
         if s.kind == 'ENVIRONMENT':
             em(f"cob_set_env({self.field(s.addr_ref)}, {self.field(s.value)});")
@@ -4247,9 +4496,10 @@ class CodeGen(ReportWriterGen, DebugGen):
         if s.kind == 'ADDRESS':
             # SET ADDRESS OF item TO <pointer>: rebind a LINKAGE item's storage
             it = self.resolve(s.addr_ref)
-            if it.section != 'LK':
-                raise CompileError(f"SET ADDRESS OF needs a LINKAGE item; "
-                                   f"'{s.addr_ref.name}' is not one", s.loc)
+            based = getattr(getattr(it, 'record', None), 'based', False)
+            if it.section != 'LK' and not based:
+                raise CompileError(f"SET ADDRESS OF needs a LINKAGE or BASED item; "
+                                   f"'{s.addr_ref.name}' is neither", s.loc)
             em(f"{it.storage} = (unsigned char *){self.pointer_value(s.value)};")
             return
         if s.kind == 'SWITCH':
@@ -4426,6 +4676,7 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     # ---------------------------------------------------------------- CALL
     def g_Call(self, s):
+        it = None
         if isinstance(s.prog, StrLit):
             name = s.prog.value.decode('latin-1').strip()
             if name in SYSTEM_ROUTINES:
@@ -4449,12 +4700,33 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em(f"const cob_field *cob_cf{i} = {self.field(v)};")
                 em(f"cob_av[{i}] = cob_cf{i}->data;")
                 sizes.append(f"(int)cob_cf{i}->size")
+            elif a.mode == 'VALUE' and isinstance(v, DataRef) and self.pointer_call(self.ref_item(v)):
+                # a POINTER or PROGRAM-POINTER BY VALUE: the address itself
+                em(f"unsigned char cob_vi{i}[8];")
+                em(f"cob_put_value(8, cob_vi{i}, (cob_s64)(intptr_t)cob_pointer_get({self.field(v)}));")
+                em(f"cob_av[{i}] = cob_vi{i};")
+                sizes.append('8')
             elif a.mode == 'VALUE' and self.is_numeric(v):
                 nbytes = getattr(a, 'size', None) or 4
                 em(f"unsigned char cob_vi{i}[{nbytes}] = {{0}};")
                 em(f"cob_put_value({nbytes}, cob_vi{i}, (cob_s64){self.int_expr(v)});")
                 em(f"cob_av[{i}] = cob_vi{i};")
                 sizes.append(str(nbytes))
+            elif isinstance(v, NumLit) and v.float_text is None and a.mode in ('REFERENCE', 'CONTENT'):
+                # a numeric literal goes as a native binary integer of its
+                # digits (scale dropped), 4 bytes when it fits and 8 otherwise,
+                # as GnuCOBOL and Micro Focus pass one: what a C function
+                # taking an int * expects
+                val = int(v.digits or '0') * (-1 if v.neg else 1)
+                ctype, nb = ('int32_t', 4) if -2**31 <= val < 2**31 else ('int64_t', 8)
+                em(f"{ctype} cob_li{i} = {val}{'LL' if nb == 8 else ''};")
+                em(f"cob_av[{i}] = (unsigned char *)&cob_li{i};")
+                sizes.append(str(nb))
+            elif isinstance(v, LengthOf) and a.mode in ('REFERENCE', 'CONTENT'):
+                # LENGTH OF goes the same way, as a native int
+                em(f"int32_t cob_li{i} = (int32_t)({self.int_expr(v)});")
+                em(f"cob_av[{i}] = (unsigned char *)&cob_li{i};")
+                sizes.append('4')
             else:
                 f = self.field(v)
                 em(f"const cob_field *cob_cf{i} = {f};")
@@ -4476,41 +4748,76 @@ class CodeGen(ReportWriterGen, DebugGen):
                 em("}")
                 return
             sym = self.find_program(name)
-            fn = sym if sym else f"cob_resolve_name({c_string(name)})"
+            dynamic = not sym
+            fn = sym
             if sym == 'NULL':
                 fn = "(cob_prog_fn)NULL"
+            if dynamic:
+                # not in this compile: another object, a module, or C
+                em(f"cob_callee cob_ce = cob_lookup_name({c_string(name)}, {self.weak_symbol(name)});")
         else:
             it = None
             try:
                 it = self.resolve(s.prog)
             except Exception:
                 it = None
+            dynamic = True
             if self.pointer_call(it):
-                # CALL of a PROGRAM-POINTER item invokes the address it holds
-                fn = f"((cob_prog_fn)cob_pointer_get({self.field(s.prog)}))"
+                # CALL of a PROGRAM-POINTER item invokes the address it holds,
+                # with the C convention: a program's pointer is its C entry
+                em(f"cob_callee cob_ce = {{ NULL, (void *)cob_pointer_get({self.field(s.prog)}) }};")
             else:
-                fn = f"cob_resolve({self.field(s.prog)})"
-        em(f"cob_prog_fn cob_fn = {fn};")
-        em("if (!cob_fn) {")
+                em(f"cob_callee cob_ce = cob_lookup({self.field(s.prog)});")
+        if dynamic:
+            em("if (!cob_ce.fn && !cob_ce.cfn) {")
+        else:
+            em(f"cob_prog_fn cob_fn = {fn};")
+            em("if (!cob_fn) {")
         em(f"\tcob_exc_where(&{self.loc_sym(s)});")
         em("\tcob_set_exception(\"EC-PROGRAM-NOT-FOUND\");")
         if s.on_exc is not None:
             self.block(s.on_exc)
         else:
             if isinstance(s.prog, StrLit):
-                em(f"\tcob_fatal(\"%s: module '%s' not found\", {self.locstr()}, {c_string(s.prog.value)});")
+                em(f"\tcob_call_not_found({self.locstr()}, {c_string(s.prog.value)});")
+            elif self.pointer_call(it):
+                em(f"\tcob_fatal(\"%s: CALL of a NULL program pointer\", {self.locstr()});")
             else:
-                em(f"\tcob_fatal(\"%s: called program not found\", {self.locstr()});")
+                em(f"\tcob_call_not_found_field({self.locstr()}, {self.field(s.prog)});")
         em("} else {")
         em.ind += 1
         em("cob_call_rejected = 0;")
+        keep_rc = getattr(s, 'returning_omitted', False) or s.returning is not None
+        if keep_rc:
+            # RETURNING item / NOTHING: the callee's result goes to the item (or
+            # nowhere), and the caller's RETURN-CODE stays as it was
+            em("cob_s64 cob_rc_kept = cob_get_int(&cob_return_code);")
         if sizes:
             em(f"cob_call_sizes = (const int[]){{{', '.join(sizes)}}};")
         em("cob_call_arg_omitted = NULL;")
         if omitted:
             flags = ', '.join('1' if k in omitted else '0' for k in range(n))
             em(f"cob_call_arg_omitted = (const unsigned char[]){{{flags}}};")
-        em(f"int cob_rc = cob_fn({n}, cob_av);")
+        if dynamic:
+            # a C function gets each BY VALUE number as the value itself
+            modes = []
+            for a in s.args:
+                if a.value != 'OMITTED' and a.mode == 'VALUE' and isinstance(a.value, DataRef) \
+                        and self.pointer_call(self.ref_item(a.value)):
+                    modes.append('8')
+                elif a.value != 'OMITTED' and a.mode == 'VALUE' and self.is_numeric(a.value):
+                    nb = getattr(a, 'size', None) or 4
+                    modes.append(str(-nb if getattr(a, 'unsigned', False) else nb))
+                else:
+                    modes.append('0')
+            if any(m != '0' for m in modes):
+                em(f"cob_call_modes = (const signed char[]){{{', '.join(modes)}}};")
+            else:
+                em("cob_call_modes = NULL;")
+            em(f"cob_s64 cob_rc64 = cob_ce.fn ? (cob_s64)cob_ce.fn({n}, cob_av) : cob_call_c(cob_ce.cfn, {n}, cob_av);")
+            em("int cob_rc = (int)cob_rc64;")
+        else:
+            em(f"int cob_rc = cob_fn({n}, cob_av);")
         em("if (cob_call_rejected) {")
         em.ind += 1
         em(f"cob_exc_where(&{self.loc_sym(s)});")
@@ -4523,9 +4830,21 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("} else {")
         em.ind += 1
         em(f"cob_set_collating({self.ctx.coll or 'NULL'});")
+        rit = None
         if s.returning is not None:
+            try:
+                rit = self.resolve(s.returning)
+            except CompileError:
+                rit = None
+        if keep_rc:
+            em("cob_set_int(&cob_return_code, cob_rc_kept);")
+        if rit is not None and getattr(rit, 'type', None) == T_POINTER:
+            # a C function that returns an address
+            em(f"cob_pointer_set({self.field(s.returning)}, (void *)(intptr_t)"
+               f"{'cob_rc64' if dynamic else 'cob_rc'});")
+        elif s.returning is not None:
             em(f"cob_set_int({self.field(s.returning)}, cob_rc);")
-        else:
+        elif not keep_rc:
             em("cob_set_int(&cob_return_code, cob_rc);")
         for fr in frees:
             em(fr)
@@ -4538,6 +4857,27 @@ class CodeGen(ReportWriterGen, DebugGen):
         em("}")
         em.ind -= 1
         em("}")
+
+    def ref_item(self, ref):
+        try:
+            return self.resolve(ref)
+        except CompileError:
+            return None
+
+    def weak_symbol(self, name):
+        """A weak reference to the C function a CALL literal may name: the
+        address when one is linked in, NULL otherwise."""
+        cname = c_identifier(name)
+        if cname is None:
+            return 'NULL'
+        if not hasattr(self, 'weak_syms'):
+            self.weak_syms = {}
+        sym = self.weak_syms.get(cname)
+        if sym is None:
+            sym = self.sym('cob_weak_')
+            self.protos.append(f'extern void {sym}(void) COB_ASM_NAME("{cname}") __attribute__((weak));')
+            self.weak_syms[cname] = sym
+        return f"(void *){sym}"
 
     def call_system_routine(self, s, name):
         """CALL of a library routine (CBL_AND, C$JUSTIFY, ...): a direct call

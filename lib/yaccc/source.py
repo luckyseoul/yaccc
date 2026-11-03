@@ -3,7 +3,7 @@
 floating comments, compiler directives and comment-entries."""
 import re
 
-from .errors import CompileError, DIAG
+from .errors import CompileError, DIAG, note_cut
 from .nodes import Loc
 
 ID_COMMENT_PARAS = {'AUTHOR', 'INSTALLATION', 'DATE-WRITTEN', 'DATE-COMPILED',
@@ -168,6 +168,7 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
                     regions.append((sub, repl))
                 return
         out.append(ll)
+    overlong = []
     for idx, raw in enumerate(lines):
         loc = Loc(path, idx + 1)
         if mode in ('fixed', 'variable'):
@@ -177,6 +178,13 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
             text = raw[7:72] if mode == 'fixed' else raw[7:]
             if ind in '*/':
                 continue
+            if mode == 'fixed' and len(raw) > 72 and raw[72:].strip():
+                # columns 73-80 hold sequence or identification text; code
+                # that runs past column 72 is silently cut, which makes for
+                # baffling errors, so an error there says so
+                note_cut(path, idx + 1, raw[72:])
+                if len(raw.rstrip()) > 80 and not raw[72:].lstrip().startswith('*>'):
+                    overlong.append(idx + 1)
             st = raw[6:].lstrip() if ind == '>' else text.lstrip()
             if st.startswith('>>') or (ind == '>' and raw[6:8] == '>>'):
                 mode = _directive(st, mode, loc, dirs)
@@ -251,6 +259,10 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
                 prev.text = prev.text.rstrip() + s
                 continue
             emit(LogicalLine(text, loc, not raw[:1].isspace() and raw != '', len(text)))
+    if overlong:
+        more = f" (and {len(overlong) - 1} more line{'s' if len(overlong) > 2 else ''})" if len(overlong) > 1 else ''
+        DIAG.warn(f"text runs past column 80{more}; in fixed-format source everything after "
+                  f"column 72 is ignored (-free selects free format)", Loc(path, overlong[0]))
     _join_trailing_hyphen(out)
     _strip_comment_entries(out, fmt)
     return out, regions

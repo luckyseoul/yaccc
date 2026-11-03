@@ -915,3 +915,142 @@ int cob_sys_cbl_error_proc(int n, cob_field **a)
 	cob_error_proc_set(fn);
 	return 0;
 }
+
+/* ================================================================ -ftrace
+ *
+ * One line per traced point, in the layout GnuCOBOL 3 uses:
+ *
+ *   Source: 'prog.cob'
+ *   Program-Id:  prog
+ *   Program-Id:  prog                 Entry: prog                            Line:      4
+ *   Program-Id:  prog             Paragraph: MAIN-PARA                       Line:      6
+ *   Program-Id:  prog                        MOVE                            Line:      7
+ *
+ * The Source and Program-Id lines come whenever the program changes. The
+ * output goes to standard error, or to the file COB_TRACE_FILE names (a
+ * leading '+' appends). COB_TRACE_FORMAT changes the layout of a line: %P is
+ * the program (17 wide), %S the kind and name of what is traced (an
+ * 11-character label such as "Paragraph: ", then the name, 31 wide), %L the
+ * line (6 wide) and %F the source file; trailing spaces are dropped. */
+int cob_trace_on;
+static FILE *trace_fp;
+static const char *trace_src;
+static const char *trace_prog;
+static int trace_line;
+
+static FILE *trace_out(void)
+{
+	if (!trace_fp) {
+		const char *f = getenv("COB_TRACE_FILE");
+		if (f && *f)
+			trace_fp = f[0] == '+' ? fopen(f + 1, "a") : fopen(f, "w");
+		if (!trace_fp)
+			trace_fp = stderr;
+	}
+	return trace_fp;
+}
+
+void cob_trace_point(const char *src, const char *prog, const char *label, const char *name, int line)
+{
+	FILE *fp = trace_out();
+	if (!trace_prog || strcmp(trace_prog, prog) != 0 || strcmp(trace_src, src) != 0) {
+		fprintf(fp, "Source: '%s'\n", src);
+		fprintf(fp, "Program-Id:  %s\n", prog);
+		trace_src = src;
+		trace_prog = prog;
+	}
+	if (line < 0)
+		line = trace_line;
+	trace_line = line;
+	const char *fmt = getenv("COB_TRACE_FORMAT");
+	if (!fmt || !*fmt)
+		fmt = "Program-Id:  %P%S Line: %L";
+	char out[1024];
+	size_t o = 0;
+	for (const char *p = fmt; *p && o < sizeof out - 200; p++) {
+		if (*p != '%' || !p[1]) {
+			out[o++] = *p;
+			continue;
+		}
+		p++;
+		char lab[24] = "";
+		if (label)
+			snprintf(lab, sizeof lab, "%s: ", label);
+		switch (*p) {
+		case 'P':
+			o += (size_t)snprintf(out + o, sizeof out - o, "%-17s", prog);
+			break;
+		case 'S':
+			o += (size_t)snprintf(out + o, sizeof out - o, "%11s%-31s", lab, name);
+			break;
+		case 'L':
+			o += (size_t)snprintf(out + o, sizeof out - o, "%6d", line);
+			break;
+		case 'F':
+			o += (size_t)snprintf(out + o, sizeof out - o, "%s", src);
+			break;
+		case '%':
+			out[o++] = '%';
+			break;
+		default:
+			out[o++] = '%';
+			out[o++] = *p;
+			break;
+		}
+		if (o > sizeof out - 1)
+			o = sizeof out - 1;
+	}
+	while (o && out[o - 1] == ' ')
+		o--;
+	out[o] = 0;
+	fprintf(fp, "%s\n", out);
+	if (fp != stderr)
+		fflush(fp);
+}
+
+/* ================================================================ CBL_GC_HOSTED
+ *
+ * CALL "CBL_GC_HOSTED" USING item "name": the C runtime's own variables, for
+ * a program that hands them to C functions -- stdin, stdout and stderr (FILE
+ * pointers), argc and argv, errno (its address), tzname (its address),
+ * timezone and daylight. Returns 1 for a name it does not know. */
+int cob_sys_cbl_gc_hosted(int n, cob_field **a)
+{
+	if (n < 2 || !a[0] || !a[0]->data || a[0] == &cob_fig_null)
+		return 0;
+	char name[32];
+	text_of(a[1], name, sizeof name);
+	void *p = NULL;
+	cob_s64 v = 0;
+	int is_ptr = 1;
+	if (strcmp(name, "stdin") == 0)
+		p = stdin;
+	else if (strcmp(name, "stdout") == 0)
+		p = stdout;
+	else if (strcmp(name, "stderr") == 0)
+		p = stderr;
+	else if (strcmp(name, "argv") == 0)
+		p = cob_arg_vector();
+	else if (strcmp(name, "errno") == 0)
+		p = &errno;
+	else if (strcmp(name, "tzname") == 0)
+		p = tzname;
+	else {
+		is_ptr = 0;
+		if (strcmp(name, "argc") == 0)
+			v = cob_arg_count();
+		else if (strcmp(name, "cell") == 0)
+			v = (cob_s64)sizeof(void *);
+		else if (strcmp(name, "timezone") == 0)
+			v = (cob_s64)timezone;
+		else if (strcmp(name, "daylight") == 0)
+			v = daylight;
+		else
+			return 1;
+	}
+	if (is_ptr)
+		memcpy(a[0]->data, &p, a[0]->size < sizeof p ? a[0]->size : sizeof p);
+	else
+		cob_set_int(a[0], v);
+	return 0;
+}

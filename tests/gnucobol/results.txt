@@ -10,11 +10,11 @@ PASS  data_binary.at:1210          BINARY: 64bit unsigned arithmetic notrunc
 PASS  data_binary.at:1240          BINARY: 64bit signed negative constant range
 PASS  data_binary.at:1261          COMP-4 Truncate
 PASS  data_binary.at:1322          COMP-4 No Truncate
-SKIP  data_display.at:21           DISPLAY: Sign ASCII
-SKIP  data_display.at:80           DISPLAY: Sign ASCII (2)
-SKIP  data_display.at:126          DISPLAY: Sign EBCDIC
+PASS  data_display.at:21           DISPLAY: Sign ASCII
+PASS  data_display.at:80           DISPLAY: Sign ASCII (2)
+PASS  data_display.at:126          DISPLAY: Sign EBCDIC
 PASS  data_display.at:171          DISPLAY: unsigned
-SKIP  data_packed.at:25            PACKED-DECIMAL dump
+PASS  data_packed.at:25            PACKED-DECIMAL dump
 PASS  data_packed.at:161           PACKED-DECIMAL used with DISPLAY
 PASS  data_packed.at:216           PACKED-DECIMAL used with MOVE
 PASS  data_packed.at:273           PACKED-DECIMAL used with INITIALIZE
@@ -32,7 +32,7 @@ PASS  run_accept.at:117            ACCEPT FROM TIME / DATE / DAY / DAY-OF-WEEK (
 PASS  run_accept.at:200            ACCEPT DATE / DAY and intrinsic functions (1)
 PASS  run_accept.at:237            ACCEPT DATE / DAY and intrinsic functions (2)
 SKIP  run_accept.at:284            ACCEPT OMITTED (SCREEN)
-SKIP  run_extensions.at:25         CALL BY CONTENT binary and literal
+PASS  run_extensions.at:25         CALL BY CONTENT binary and literal
 PASS  run_extensions.at:72         Numeric Boolean literals
 SKIP  run_extensions.at:101        ACUCOBOL literals
 SKIP  run_extensions.at:127        HP COBOL octal literals
@@ -68,10 +68,10 @@ PASS  run_extensions.at:2064       NUMBER-OF-CALL-PARAMETERS
 SKIP  run_extensions.at:2119       TALLY register
 SKIP  run_extensions.at:2153       Redefining TALLY
 PASS  run_extensions.at:2189       PROCEDURE DIVISION USING BY ...
-SKIP  run_extensions.at:2242       PROCEDURE DIVISION CHAINING
+PASS  run_extensions.at:2242       PROCEDURE DIVISION CHAINING
 PASS  run_extensions.at:2365       STOP RUN RETURNING/GIVING
 PASS  run_extensions.at:2421       GOBACK/EXIT PROGRAM RETURNING/GIVING
-SKIP  run_extensions.at:2471       ENTRY
+PASS  run_extensions.at:2471       ENTRY
 PASS  run_extensions.at:2517       LINE SEQUENTIAL write
 PASS  run_extensions.at:2563       LINE SEQUENTIAL read
 SKIP  run_extensions.at:2630       ASSIGN to KEYBOARD/DISPLAY
@@ -105,7 +105,7 @@ PASS  run_extensions.at:3668       System routine CBL_EQ
 PASS  run_extensions.at:3695       System routine CBL_GC_GETOPT
 PASS  run_extensions.at:4132       System routine CBL_GC_FORK
 PASS  run_extensions.at:4200       System routine CBL_GC_WAITPID
-SKIP  run_extensions.at:4252       System routine CBL_GC_HOSTED
+PASS  run_extensions.at:4252       System routine CBL_GC_HOSTED
 PASS  run_extensions.at:4382       System routine SYSTEM, parameter handling
 SKIP  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
 PASS  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
@@ -320,15 +320,15 @@ PASS  run_functions.at:3885        FUNCTION WHEN-COMPILED
 PASS  run_functions.at:3939        FUNCTION YEAR-TO-YYYY
 PASS  run_functions.at:3963        Formatted funcs w/ invalid variable format
 PASS  run_functions.at:4044        FORMATTED-(DATE)TIME with SYSTEM-OFFSET
-SKIP  run_functions.at:4082        Intrinsics without FUNCTION keyword (1)
-SKIP  run_functions.at:4103        Intrinsics without FUNCTION keyword (2)
+PASS  run_functions.at:4082        Intrinsics without FUNCTION keyword (1)
+PASS  run_functions.at:4103        Intrinsics without FUNCTION keyword (2)
 PASS  run_functions.at:4126        User-Defined FUNCTION with/without parameter
 PASS  run_functions.at:4177        UDF in COMPUTE
-SKIP  run_functions.at:4220        UDF replacing intrinsic function
+PASS  run_functions.at:4220        UDF replacing intrinsic function
 SKIP  run_functions.at:4263        UDF with recursion
 PASS  run_fundamental.at:24        DISPLAY literals
 PASS  run_fundamental.at:86        DISPLAY literals, DECIMAL-POINT is COMMA
-SKIP  run_fundamental.at:125       Hexadecimal literal
+PASS  run_fundamental.at:125       Hexadecimal literal
 PASS  run_fundamental.at:166       DISPLAY data items with VALUE clause
 PASS  run_fundamental.at:213       DISPLAY data items with MOVE statement
 PASS  run_fundamental.at:267       MOVE to edited item (1)
@@ -350,7 +350,7 @@ PASS  run_fundamental.at:1022      GLOBAL CONSTANT
 PASS  run_fundamental.at:1106      GLOBAL identifiers from ENVIRONMENT DIVISION
 SKIP  run_fundamental.at:1187      function with variable-length RETURNING item
 PASS  run_fundamental.at:1270      Entry point visibility (1)
-SKIP  run_fundamental.at:1302      Entry point visibility (2)
+PASS  run_fundamental.at:1302      Entry point visibility (2)
 PASS  run_fundamental.at:1336      Contained program visibility (1)
 PASS  run_fundamental.at:1391      Contained program visibility (2)
 PASS  run_fundamental.at:1444      Contained program visibility (3)
@@ -385,7 +385,7 @@ PASS  run_fundamental.at:2670      Numeric operations (2)
 PASS  run_fundamental.at:2976      Numeric operations (3)
 PASS  run_fundamental.at:3282      Numeric operations (4)
 PASS  run_fundamental.at:3588      Numeric operations (5)
-SKIP  run_fundamental.at:3894      Numeric operations (6)
+PASS  run_fundamental.at:3894      Numeric operations (6)
 PASS  run_fundamental.at:3963      Numeric operations (7)
 PASS  run_fundamental.at:4255      Numeric operations (8)
 PASS  run_fundamental.at:4305      ADD CORRESPONDING
@@ -491,7 +491,7 @@ PASS  run_misc.at:554              MOVE with refmod
 PASS  run_misc.at:578              MOVE with refmod (variable)
 PASS  run_misc.at:604              MOVE with group refmod
 PASS  run_misc.at:629              MOVE indexes
-SKIP  run_misc.at:655              MOVE X'00'
+PASS  run_misc.at:655              MOVE X'00'
 PASS  run_misc.at:690              MOVE Z'literal'
 PASS  run_misc.at:732              Floating continuation indicator
 PASS  run_misc.at:754              Fixed continuation indicator
@@ -503,14 +503,14 @@ PASS  run_misc.at:919              Class check with reference modification
 PASS  run_misc.at:943              Index and parenthesized expression
 PASS  run_misc.at:967              Alphanumeric and binary numeric
 SKIP  run_misc.at:992              Non-numeric data in numeric items
-SKIP  run_misc.at:1066             Dynamic call with static linking
-SKIP  run_misc.at:1095             Static call with static linking
+PASS  run_misc.at:1066             Dynamic call with static linking
+PASS  run_misc.at:1095             Static call with static linking
 PASS  run_misc.at:1126             Dynamic CALL with ON EXCEPTION
-SKIP  run_misc.at:1158             Static CALL with ON EXCEPTION
+PASS  run_misc.at:1158             Static CALL with ON EXCEPTION
 PASS  run_misc.at:1198             CALL m1. CALL m2. CALL m1.
 PASS  run_misc.at:1253             Recursive CALL of RECURSIVE program
 PASS  run_misc.at:1311             Recursive CALL of INITIAL program
-SKIP  run_misc.at:1362             Recursive CALL with RECURSIVE assumed
+PASS  run_misc.at:1362             Recursive CALL with RECURSIVE assumed
 PASS  run_misc.at:1408             Recursive CALL with ON EXCEPTION
 PASS  run_misc.at:1465             Multiple calls of INITIAL program
 SKIP  run_misc.at:1522             CALL binary literal parameter/LENGTH OF
@@ -551,7 +551,7 @@ PASS  run_misc.at:2887             SORT: table sort (3)
 PASS  run_misc.at:2980             SORT: EBCDIC table sort
 PASS  run_misc.at:3047             PIC ZZZ-, ZZZ+
 SKIP  run_misc.at:3100             PERFORM type OSVS
-SKIP  run_misc.at:3137             Sticky LINKAGE
+PASS  run_misc.at:3137             Sticky LINKAGE
 PASS  run_misc.at:3184             COB_PRE_LOAD
 PASS  run_misc.at:3210             COB_PRE_LOAD with entry points
 PASS  run_misc.at:3281             Lookup ENTRY from main executable
@@ -559,14 +559,14 @@ PASS  run_misc.at:3322             COB_LOAD_CASE=UPPER test
 PASS  run_misc.at:3348             ALLOCATE / FREE with BASED item (1)
 PASS  run_misc.at:3375             ALLOCATE / FREE with BASED item (2)
 PASS  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
-SKIP  run_misc.at:3463             Initialized value with defaultbyte
+PASS  run_misc.at:3463             Initialized value with defaultbyte
 PASS  run_misc.at:3488             CALL with OMITTED parameter
 SKIP  run_misc.at:3527             CALL in from C, cob_call_params explicitly set
-SKIP  run_misc.at:3588             CALL in from C, cob_call_params unknown
-SKIP  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTERN
-SKIP  run_misc.at:3713             CALL C with callback, ENTRY-CONVENTION EXTERN
+PASS  run_misc.at:3588             CALL in from C, cob_call_params unknown
+PASS  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTERN
+PASS  run_misc.at:3713             CALL C with callback, ENTRY-CONVENTION EXTERN
 SKIP  run_misc.at:3864             CALL in from C with init missing / implicit
-SKIP  run_misc.at:3916             CALL STATIC C from COBOL
+PASS  run_misc.at:3916             CALL STATIC C from COBOL
 PASS  run_misc.at:3972             ANY LENGTH (1)
 PASS  run_misc.at:4015             ANY LENGTH (2)
 PASS  run_misc.at:4059             ANY LENGTH (3)
@@ -588,10 +588,10 @@ PASS  run_misc.at:6210             SET LAST EXCEPTION TO OFF
 PASS  run_misc.at:6246             void PROCEDURE
 PASS  run_misc.at:6275             Figurative constants to numeric field
 SKIP  run_misc.at:6337             MF FIGURATIVE to NUMERIC
-SKIP  run_misc.at:6472             CALL RETURNING
-SKIP  run_misc.at:6511             void PROCEDURE, NOTHING return
+PASS  run_misc.at:6472             CALL RETURNING
+PASS  run_misc.at:6511             void PROCEDURE, NOTHING return
 SKIP  run_misc.at:6546             READY TRACE / RESET TRACE
-SKIP  run_misc.at:6908             Trace feature with subroutine
+PASS  run_misc.at:6908             Trace feature with subroutine
 SKIP  run_misc.at:8977             stack and dump feature
 SKIP  run_misc.at:9700             Test dump feature (2)
 PASS  run_misc.at:9965             CALL with program prototypes
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 506  FAIL 0  CERR 0  XERR 0  SKIP 187
+PASS 534  FAIL 0  CERR 0  XERR 0  SKIP 159

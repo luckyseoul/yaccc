@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /* cobrt_core.c - core runtime: decimal arithmetic, field access, MOVE,
- * comparison, editing, DISPLAY/ACCEPT, CALL registry. */
+ * comparison, editing, DISPLAY/ACCEPT, CALL "SYSTEM". */
 #include "cobrt.h"
 #include <float.h>
 #include <stdarg.h>
@@ -41,7 +41,6 @@ static char **g_argv;
 static int g_arg_index = 1;
 static cob_s128 P10[40];
 
-extern void cob_close_all_files(void);
 
 __attribute__((constructor)) static void init_pow10(void)
 {
@@ -51,17 +50,32 @@ __attribute__((constructor)) static void init_pow10(void)
 	P10[39] = P10[38];   /* sentinel, never used for arithmetic */
 }
 
+int cob_initialized;
+int cob_sign_ebcdic;
+
 void cob_init(int argc, char **argv)
 {
 	g_argc = argc;
 	g_argv = argv;
+	if (cob_initialized)
+		return;
+	cob_initialized = 1;
 	if (!isatty(1))
 		setvbuf(stdout, NULL, _IOFBF, 1 << 16);
+	const char *tr = getenv("COB_SET_TRACE");
+	if (tr && strchr("YyTt1", tr[0]))
+		cob_trace_on = 1;
+	cob_call_init();
 }
 
 int cob_arg_count(void)
 {
 	return g_argc;
+}
+
+char **cob_arg_vector(void)
+{
+	return g_argv;
 }
 
 const char *cob_arg_value(int i)
@@ -88,7 +102,8 @@ void cob_stop_run(int rc)
  * the procedures run most-recently-registered first.
  */
 #define COB_MAX_ERR_PROCS 8
-static int (*err_procs[COB_MAX_ERR_PROCS])(int, unsigned char **);
+/* program pointers: C-convention entries, called with the message's address */
+static void *err_procs[COB_MAX_ERR_PROCS];
 static int n_err_procs;
 static int in_error_proc;
 
@@ -97,7 +112,7 @@ void cob_error_proc_set(void *fn)
 	if (!fn)
 		return;
 	for (int i = 0; i < n_err_procs; i++)
-		if ((void *)err_procs[i] == fn)
+		if (err_procs[i] == fn)
 			return;                         /* already registered */
 	if (n_err_procs == COB_MAX_ERR_PROCS) {
 		memmove(&err_procs[1], &err_procs[0],
@@ -105,8 +120,25 @@ void cob_error_proc_set(void *fn)
 		n_err_procs--;
 	}
 	memmove(&err_procs[1], &err_procs[0], (size_t)n_err_procs * sizeof err_procs[0]);
-	err_procs[0] = (int (*)(int, unsigned char **))fn;
+	err_procs[0] = fn;
 	n_err_procs++;
+}
+
+static char fatal_note[1024];
+
+void cob_fatal_note(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(fatal_note, sizeof fatal_note, fmt, ap);
+	va_end(ap);
+}
+
+static void print_fatal_note(void)
+{
+	if (fatal_note[0])
+		fprintf(stderr, "  note: %s\n", fatal_note);
+	fatal_note[0] = 0;
 }
 
 void cob_fatal(const char *fmt, ...)
@@ -133,11 +165,13 @@ void cob_fatal(const char *fmt, ...)
 		int more = 1;
 		for (int i = 0; i < n_err_procs && more; i++)
 			if (err_procs[i])
-				more = err_procs[i](1, av);
+				more = ((int (*)(void *))err_procs[i])(av[0]);
 		in_error_proc = 0;
 		n_err_procs = 0;
-		if (more)
+		if (more) {
 			fprintf(stderr, "libcob: error: %s\n", msg);
+			print_fatal_note();
+		}
 		cob_close_all_files();
 		fflush(stdout);
 		exit(1);
@@ -145,6 +179,7 @@ void cob_fatal(const char *fmt, ...)
 	fprintf(stderr, "cobrt: runtime error: ");
 	fputs(msg, stderr);
 	fputc('\n', stderr);
+	print_fatal_note();
 	cob_close_all_files();
 	fflush(stdout);
 	exit(1);
@@ -1126,6 +1161,12 @@ cob_s64 cob_d_to_int(cob_dec d)
 
 void cob_set_int(cob_field *f, cob_s64 v)
 {
+	if (f->attr->type == COB_POINTER) {
+		/* a pointer received BY VALUE, or returned by a C function */
+		void *p = (void *)(intptr_t)v;
+		memcpy(f->data, &p, f->size < sizeof p ? f->size : sizeof p);
+		return;
+	}
 	if (f->attr->type == COB_INDEX) {
 		int32_t x = (int32_t)v;
 		memcpy(f->data, &x, 4);
@@ -1162,9 +1203,9 @@ static void put_display(cob_field *f, cob_s128 v)
 				p[0] = neg ? '-' : '+';
 			else
 				p[n - 1] = neg ? '-' : '+';
-		} else if (neg) {
+		} else if (neg || cob_sign_ebcdic) {
 			size_t spos = lead ? 0 : n - 1;
-			p[spos] = (unsigned char)(p[spos] + 0x40);
+			p[spos] = cob_overpunch(p[spos], neg);
 		}
 	}
 }
@@ -3248,87 +3289,9 @@ void cob_dbg_data(unsigned char *di, int dilen, int line, const char *name,
 		dbg_contents(di, dilen, data, size);
 }
 
-/* ================================================================ CALL registry */
+/* ================================================================ CALL */
 
-#define MAX_PROGS 512
-static struct {
-	const char *name;
-	cob_prog_fn fn;
-	cob_cancel_fn cancel;
-} progs[MAX_PROGS];
-static int nprogs;
 int cob_decl_which;
-
-
-void cob_register_program(const char *name, cob_prog_fn fn, cob_cancel_fn cancel)
-{
-	for (int i = 0; i < nprogs; i++) {
-		/* the first program or entry point with a name owns it: GnuCOBOL's
-		 * loader keeps the earlier definition when two loaded modules define
-		 * the same ENTRY name (COB_PRE_LOAD with entry points) */
-		if (strcasecmp(progs[i].name, name) == 0)
-			return;
-	}
-	if (nprogs < MAX_PROGS) {
-		progs[nprogs].name = name;
-		progs[nprogs].fn = fn;
-		progs[nprogs].cancel = cancel;
-		nprogs++;
-	}
-}
-
-void cob_cancel_name(const char *name)
-{
-	int k = -1;
-	for (int i = 0; i < nprogs && k < 0; i++)
-		if (strcmp(progs[i].name, name) == 0)
-			k = i;
-	for (int i = 0; i < nprogs && k < 0; i++)
-		if (strcasecmp(progs[i].name, name) == 0)
-			k = i;
-	if (k >= 0 && progs[k].cancel)
-		progs[k].cancel();
-}
-
-void cob_cancel(const cob_field *name)
-{
-	char nm[256];
-	size_t n = name->size < 255 ? name->size : 255;
-	memcpy(nm, name->data, n);
-	while (n && (nm[n - 1] == ' ' || nm[n - 1] == 0))
-		n--;
-	size_t s = 0;
-	while (s < n && nm[s] == ' ')
-		s++;
-	nm[n] = 0;
-	cob_cancel_name(nm + s);
-}
-
-cob_prog_fn cob_resolve_name(const char *name)
-{
-	/* the exact name first: literal PROGRAM-IDs are case-sensitive */
-	for (int i = 0; i < nprogs; i++)
-		if (strcmp(progs[i].name, name) == 0)
-			return progs[i].fn;
-	for (int i = 0; i < nprogs; i++)
-		if (strcasecmp(progs[i].name, name) == 0)
-			return progs[i].fn;
-	return NULL;
-}
-
-cob_prog_fn cob_resolve(const cob_field *name)
-{
-	char nm[256];
-	size_t n = name->size < 255 ? name->size : 255;
-	memcpy(nm, name->data, n);
-	while (n && (nm[n - 1] == ' ' || nm[n - 1] == 0))
-		n--;
-	size_t s = 0;
-	while (s < n && nm[s] == ' ')
-		s++;
-	nm[n] = 0;
-	return cob_resolve_name(nm + s);
-}
 
 void cob_call_system(const cob_field *cmdf)
 {

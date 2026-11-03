@@ -371,6 +371,11 @@ class Exit(Stmt):
 
 
 @dataclass(eq=False)
+class TraceStmt(Stmt):
+    on: bool = True                 # READY TRACE / RESET TRACE
+
+
+@dataclass(eq=False)
 class Continue(Stmt):
     pass
 
@@ -468,6 +473,7 @@ class CallArg:
     mode: str                       # REFERENCE CONTENT VALUE
     value: Any                      # DataRef / literal / 'OMITTED'
     size: Any = None                # BY VALUE ... SIZE n: bytes passed
+    unsigned: bool = False          # BY VALUE ... UNSIGNED
 
 
 @dataclass(eq=False)

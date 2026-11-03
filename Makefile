@@ -11,7 +11,14 @@ GCTAG   ?= gnucobol-3.1.2
 GNUSRC  ?= third_party/gnucobol
 OUT    ?= build/examples
 
-.PHONY: all runtime test cli-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples clean
+# make install: the compiler and its runtime under $(PREFIX)/lib/yaccc, and the
+# command as $(PREFIX)/bin/yaccc. PREFIX=$$HOME/.local installs for one user.
+PREFIX ?= /usr/local
+DESTDIR ?=
+INSTDIR = $(DESTDIR)$(PREFIX)/lib/yaccc
+BINDIR  = $(DESTDIR)$(PREFIX)/bin
+
+.PHONY: all runtime test cli-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples install uninstall clean
 
 all: runtime
 
@@ -80,6 +87,20 @@ examples: runtime
 	cd $(OUT) && ./wordfreq
 	cd $(OUT) && ./mandelbrot
 	cd $(OUT) && ./dayname
+
+install: runtime
+	mkdir -p $(INSTDIR)/lib/yaccc $(INSTDIR)/runtime $(BINDIR)
+	install -m 644 lib/yaccc/*.py $(INSTDIR)/lib/yaccc/
+	install -m 644 runtime/*.c runtime/*.h $(INSTDIR)/runtime/
+	# the library last, so that it is newer than the sources it was built from
+	install -m 644 runtime/libcobrt.a $(INSTDIR)/runtime/
+	install -m 755 yaccc $(INSTDIR)/yaccc
+	ln -sf $(PREFIX)/lib/yaccc/yaccc $(BINDIR)/yaccc
+	@echo "installed: $(BINDIR)/yaccc"
+
+uninstall:
+	rm -f $(BINDIR)/yaccc
+	rm -rf $(INSTDIR)
 
 clean:
 	rm -rf build runtime/*.o runtime/libcobrt.a

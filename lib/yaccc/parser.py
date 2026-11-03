@@ -4,7 +4,8 @@ import re
 from decimal import Decimal
 
 from .data import DataItem, Occurs, Picture
-from .errors import CompileError, DIAG
+from . import errors
+from .errors import CompileError, DIAG, ErrorsReported, did_you_mean
 from .nodes import *
 from .words import (FIGURATIVES, FIG_BYTES, FUNCTIONS, RESERVED, USAGES, VERBS,
                     CONTEXT_WORDS)
@@ -27,6 +28,16 @@ SIGN_WORDS = {'POSITIVE': 'POSITIVE', 'NEGATIVE': 'NEGATIVE', 'ZERO': 'ZERO',
               'ZEROS': 'ZERO', 'ZEROES': 'ZERO'}
 
 DIVISION_STARTS = {'IDENTIFICATION', 'ID', 'ENVIRONMENT', 'DATA', 'PROCEDURE'}
+
+
+# the words that start a data description clause, for spelling suggestions
+DATA_CLAUSE_WORDS = {
+    'PIC', 'PICTURE', 'VALUE', 'VALUES', 'USAGE', 'OCCURS', 'REDEFINES', 'RENAMES',
+    'SIGN', 'LEADING', 'TRAILING', 'SEPARATE', 'JUSTIFIED', 'JUST', 'BLANK', 'WHEN',
+    'ZERO', 'SYNCHRONIZED', 'SYNC', 'EXTERNAL', 'GLOBAL', 'BASED', 'ANY', 'LENGTH',
+    'INDEXED', 'ASCENDING', 'DESCENDING', 'KEY', 'DEPENDING', 'TIMES', 'TO', 'THRU',
+    'THROUGH', 'CONSTANT', 'TYPEDEF', 'FILLER', 'IS',
+}
 
 
 class ParseError(CompileError):
@@ -130,6 +141,9 @@ class Parser:
         self.relop = None
         self.class_names = set()
         self.mnemonics = {}
+        self.call_conventions = set()
+        self.bare_intrinsics = set()     # intrinsics that need no FUNCTION keyword
+        self.not_intrinsic = set()       # -fnot-intrinsic: names a user function may take
 
     # ---------------------------------------------------------- token helpers
     def peek(self, k=0):
@@ -198,9 +212,9 @@ class Parser:
             return '"' + t.val.decode('latin-1') + '"'
         return str(t.val)
 
-    def err(self, msg, t=None):
+    def err(self, msg, t=None, hint=''):
         t = t or self.peek()
-        return ParseError(f"{msg}, found '{self.desc(t)}'", t.loc)
+        return ParseError(f"{msg}, found '{self.desc(t)}'{hint}", t.loc)
 
     def is_user_word(self, k=0):
         t = self.peek(k)
@@ -217,6 +231,15 @@ class Parser:
         while self.peek().kind not in ('.', 'EOF'):
             self.next()
         self.accept_kind('.')
+
+    def recover(self, e, start):
+        """Record a syntax error and go on at the next sentence: the rest of
+        the sentence or entry is skipped, so one compile reports every error
+        that is not a consequence of an earlier one."""
+        DIAG.error(e)
+        if self.pos == start and self.peek().kind != 'EOF':
+            self.next()
+        self.skip_to_period()
 
     # ---------------------------------------------------------- program
     def parse_unit(self):
@@ -406,8 +429,19 @@ class Parser:
                     if self.is_word('FUNCTION', 'PROGRAM', 'CLASS'):
                         kind = self.next().up
                         if kind == 'FUNCTION':
-                            while self.is_user_word():
-                                self.udfs.add(self.next().up)
+                            names = []
+                            every = bool(self.accept('ALL'))
+                            while (self.is_user_word() or (self.peek().kind == 'WORD'
+                                                           and self.peek().up in FUNCTIONS)) \
+                                    and not self.is_word('INTRINSIC'):
+                                names.append(self.next().up)
+                            if self.accept('INTRINSIC'):
+                                # the intrinsic functions named (or all of
+                                # them) may be written without FUNCTION
+                                self.bare_intrinsics |= set(FUNCTIONS) if every else \
+                                    {n for n in names if n in FUNCTIONS}
+                            else:
+                                self.udfs.update(names)
                             continue
                         if kind == 'PROGRAM':
                             # REPOSITORY. PROGRAM p [AS "ext"]: a CALL p uses
@@ -452,7 +486,7 @@ class Parser:
                             'INPUT-OUTPUT', 'ENVIRONMENT', 'END') or self.peek().kind == 'EOF'
 
     # entries of SPECIAL-NAMES that may each end with a period
-    SN_ENTRIES = {'ALPHABET', 'CLASS', 'CURRENCY', 'DECIMAL-POINT', 'SYMBOLIC',
+    SN_ENTRIES = {'ALPHABET', 'CLASS', 'CURRENCY', 'DECIMAL-POINT', 'SYMBOLIC', 'CALL-CONVENTION',
                   'SWITCH', 'ALPHABETIC', 'MNEMONIC'}
 
     def parse_special_names(self, prog):
@@ -471,6 +505,13 @@ class Parser:
                 self.accept('IS')
                 self.expect('COMMA')
                 prog.decimal_comma = True
+            elif self.accept('CALL-CONVENTION'):
+                # CALL-CONVENTION n IS name: a calling convention by number
+                # (Micro Focus); every program here can be called from C, so
+                # the name only has to be recognised where it is used
+                self.expect_kind('NUM', 'convention number')
+                self.accept('IS')
+                self.call_conventions.add(self.user_word('convention name'))
             elif self.accept('CURRENCY'):
                 self.accept('SIGN')
                 self.accept('IS')
@@ -1120,7 +1161,13 @@ class Parser:
     def parse_entries(self):
         flat = []
         while self.peek().kind == 'NUM' and '.' not in self.peek().val and self.peek().val[0] not in '+-':
-            flat.append(self.parse_entry())
+            start = self.pos
+            try:
+                flat.append(self.parse_entry())
+            except ErrorsReported:
+                raise
+            except CompileError as e:
+                self.recover(e, start)
         for i, e in enumerate(flat):
             v = e.value
             if e.level == 78 and isinstance(v, PosOf) and v.pos_kind == 'NEXT':
@@ -1293,7 +1340,9 @@ class Parser:
                                        "PICTURE on a level 01 or 77 item", loc)
                 item.any_length = True
             else:
-                raise self.err("unexpected word in data description")
+                t = self.peek()
+                hint = did_you_mean(t.up, DATA_CLAUSE_WORDS | set(USAGES)) if t.kind == 'WORD' else ''
+                raise self.err("unexpected word in data description", hint=hint)
         if item.pic is not None and item.usage in (None, 'DISPLAY'):
             try:
                 item.decl_size = item.pic.size
@@ -1574,8 +1623,16 @@ class Parser:
 
     # ---------------------------------------------------------- procedure division
     def parse_procedure(self, prog):
+        prog.proc_loc = self.peek().loc
         self.expect('PROCEDURE')
         self.expect('DIVISION')
+        # the calling convention a program is entered with: WITH C LINKAGE
+        # (Micro Focus), EXTERN, or a CALL-CONVENTION name. Every program has
+        # a C-convention entry here, so they are accepted and change nothing
+        if self.is_word('WITH') and self.is_word('LINKAGE', k=2):
+            self.next(); self.next(); self.next()
+        elif self.is_word('EXTERN') or (self.is_word(*self.call_conventions) and self.call_conventions):
+            self.next()
         if self.accept('CHAINING'):
             # legacy entry: the items are WORKING-STORAGE items that receive
             # the command-line arguments, keeping their VALUE when there are
@@ -1750,32 +1807,63 @@ class Parser:
                 para = Paragraph(None, [], t.loc)
                 sec.paragraphs.append(para)
             loc = t.loc
-            stmts = self.parse_statements()
-            if not stmts:
-                raise self.err("statement expected")
-            if self.peek().kind != '.':
-                raise self.err("expected '.' or statement")
-            self.next()
-            para.sentences.append(Sentence(stmts, loc))
+            start = self.pos
+            try:
+                stmts = self.parse_statements()
+                if not stmts:
+                    hint = did_you_mean(t.up, VERBS) if t.kind == 'WORD' else ''
+                    raise self.err("statement expected", hint=hint)
+                if self.peek().kind != '.':
+                    nt = self.peek()
+                    hint = did_you_mean(nt.up, VERBS) if nt.kind == 'WORD' else ''
+                    raise self.err("expected '.' or statement", hint=hint)
+                self.next()
+                para.sentences.append(Sentence(stmts, loc))
+            except ErrorsReported:
+                raise
+            except CompileError as e:
+                self.recover(e, start)
 
     # ---------------------------------------------------------- statements
     def parse_statements(self):
         stmts = []
         while True:
             t = self.peek()
-            if t.kind != 'WORD' or t.up not in VERBS:
+            trace = t.kind == 'WORD' and t.up in ('READY', 'RESET') and self.is_word('TRACE', k=1)
+            if t.kind != 'WORD' or (t.up not in VERBS and not trace):
                 break
             if t.up == 'NEXT' and not self.is_word('SENTENCE', k=1):
                 break
             stmts.append(self.parse_statement())
         return stmts
 
+    # the second word of a statement's name, for -ftrace output
+    VERB_WORDS = {'EXIT': ('PROGRAM', 'PERFORM', 'PARAGRAPH', 'SECTION', 'FUNCTION', 'METHOD'),
+                  'STOP': ('RUN',), 'GO': ('TO',), 'READY': ('TRACE',), 'RESET': ('TRACE',)}
+
     def parse_statement(self):
         t = self.next()
+        errors.WHERE = t.loc
+        verb = t.up
+        if verb in self.VERB_WORDS and self.is_word(*self.VERB_WORDS[verb]):
+            verb += ' ' + self.peek().up
         fn = getattr(self, 'p_' + t.up.replace('-', '_'), None)
         if fn is None:
             raise ParseError(f"statement '{t.up}' is not supported", t.loc)
-        return fn(t.loc)
+        st = fn(t.loc)
+        try:
+            st.verb = verb
+        except AttributeError:
+            pass
+        return st
+
+    def p_READY(self, loc):
+        self.expect('TRACE')
+        return TraceStmt(loc, True)
+
+    def p_RESET(self, loc):
+        self.expect('TRACE')
+        return TraceStmt(loc, False)
 
     def _imperative_phrase(self, *words):
         """Parse 'stmts' after a phrase keyword sequence already consumed."""
@@ -2395,8 +2483,10 @@ class Parser:
                     var = self.parse_identifier()
                     self.expect('FROM')
                     frm = self.parse_expr()
-                    self.expect('BY')
-                    by = self.parse_expr()
+                    if self.accept('BY'):
+                        by = self.parse_expr()
+                    else:
+                        by = make_numlit('1')       # COBOL 2014: BY 1 when omitted
                     self.expect('UNTIL')
                     cond = self.parse_condition()
                     st.varying.append(Varying(var, frm, by, cond))
@@ -2812,6 +2902,11 @@ class Parser:
 
     # ---- CALL
     def p_CALL(self, loc):
+        # CALL STATIC "name": linked into the executable, which is how a
+        # literal CALL of a C function is resolved here anyway; STDCALL and
+        # the other conventions name Windows calling conventions
+        if self.is_word('STATIC', 'STDCALL') and self.peek(1).kind == 'STR':
+            self.next()
         t = self.peek()
         if t.kind == 'STR':
             self.next()
@@ -2839,9 +2934,11 @@ class Parser:
                     args.append(CallArg(mode, self.parse_operand()))
                     # BY VALUE 1 SIZE 1: the number of bytes passed, which is
                     # how a C function taking several small integers is called
-                    self.accept('UNSIGNED')     # BY VALUE 1 UNSIGNED SIZE 1
+                    if self.accept('UNSIGNED'):     # BY VALUE 1 UNSIGNED SIZE 1
+                        args[-1].unsigned = True
                     if self.accept('SIZE'):
-                        self.accept('UNSIGNED')
+                        if self.accept('UNSIGNED'):
+                            args[-1].unsigned = True
                         if self.accept('DEFAULT'):
                             args[-1].size = 8       # the platform's natural size
                         elif self.accept('AUTO'):
@@ -2854,7 +2951,7 @@ class Parser:
         ret = None
         omitted_ret = False
         if self.accept('RETURNING', 'GIVING'):
-            if self.accept('OMITTED'):          # CALL ... RETURNING OMITTED
+            if self.accept('OMITTED', 'NOTHING'):   # CALL ... RETURNING OMITTED / NOTHING
                 omitted_ret = True
             else:
                 ret = self.parse_identifier()
@@ -3145,6 +3242,8 @@ class Parser:
             u = t.up
             if u in FIGURATIVES or u == 'FUNCTION':
                 return True
+            if u in self.bare_intrinsics and not self.is_word('OF', k=k + 1):
+                return True
             if u in ('LENGTH', 'BYTE-LENGTH'):
                 if self.is_word('OF', k=k + 1) or self.is_operand_start(k + 1):
                     return True
@@ -3169,6 +3268,10 @@ class Parser:
             return make_numlit(t.val + n.val, n.loc)
         if t.kind == 'WORD':
             u = t.up
+            if u in self.bare_intrinsics and u not in self.udfs and not self.is_word('OF', k=1):
+                # REPOSITORY. FUNCTION ... INTRINSIC / -fintrinsics: the name
+                # alone calls the intrinsic function (LENGTH OF stays itself)
+                return self.parse_function(keyword=False)
             if u in self.udfs:
                 self.next()
                 args = []
@@ -3294,15 +3397,17 @@ class Parser:
             return 'ALL'
         return self.parse_expr(split_signed=False)
 
-    def parse_function(self):
-        ft = self.next()  # FUNCTION
+    def parse_function(self, keyword=True):
+        if keyword:
+            self.next()  # FUNCTION
         nt = self.next()
         if nt.kind != 'WORD':
             raise self.err("function name expected", nt)
         name = nt.up
         if name not in FUNCTIONS and name not in getattr(self, 'udfs', set()):
-            raise ParseError(f"unknown intrinsic function '{name}'", nt.loc)
-        if name in getattr(self, 'udfs', set()) and name not in FUNCTIONS:
+            hint = did_you_mean(name, list(FUNCTIONS) + list(getattr(self, 'udfs', set())))
+            raise ParseError(f"unknown intrinsic function '{name}'{hint}", nt.loc)
+        if name in getattr(self, 'udfs', set()) and (name not in FUNCTIONS or name in self.not_intrinsic):
             # a user-defined function: parsed like a call with arguments
             args = []
             if self.peek().kind == '(':
@@ -3408,6 +3513,9 @@ class Parser:
 
     def _primary(self):
         t = self.peek()
+        if t.kind == 'WORD' and t.up in self.bare_intrinsics and t.up not in self.udfs \
+                and not self.is_word('OF', k=1):
+            return self.parse_function(keyword=False)
         # a REPOSITORY-declared function may be called without the FUNCTION
         # keyword, with or without arguments
         if t.kind == 'WORD' and t.up in self.udfs:
