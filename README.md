@@ -31,9 +31,9 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `cobc` byte for byte.
 - **1** NIST test that cannot pass unattended. OBNC1M prints
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
-- **0.42 s** to compile `examples/mandelbrot.cbl` into a 224 KB binary, which
+- **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **13,977** lines of Python in the compiler, standard library only — no parser
+- **14,730** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -155,7 +155,8 @@ The run fails if a test recorded as passing in `tests/gnucobol/results.txt` no
 longer passes. `make gctest-update` records a new baseline.
 
 - **Skipped** tests need things the harness can't provide: a terminal and
-  someone to look at it (the 48 manual SCREEN SECTION tests), GnuCOBOL's own C
+  someone to look at it (the 48 manual SCREEN SECTION tests, checked by hand
+  instead; see *Screen I/O*), GnuCOBOL's own C
   API (`cob_get_field_str`, `cob_global` and the like, 6 tests), shell
   scripting, or a cobc option YACCC has no equivalent for (`-fbinary-byteorder`,
   `-fcomplex-odo`, `-fperform-osvs` and about 30 more). One is a deliberate
@@ -429,6 +430,78 @@ cobrt: runtime error: callbad.cob:4: module 'BAD' not found
   note: ./BAD.so could not be loaded: ./BAD.so: undefined symbol: not_there
 ```
 
+## Screen I/O
+
+SCREEN SECTION, and DISPLAY and ACCEPT at a position on the terminal, work
+with no curses library: the runtime writes ANSI escape sequences and reads
+the keyboard through termios, so a program needs nothing installed to run
+and nothing to configure.
+
+```cobol
+       SCREEN SECTION.
+       01 ENTRY-SCREEN BLANK SCREEN.
+          05 LINE 2 COL 5 VALUE "Customer" HIGHLIGHT.
+          05 LINE 4 COL 5 VALUE "Name:".
+          05 COL + 2 PIC X(30) USING CUST-NAME UNDERLINE.
+          05 LINE 5 COL 5 VALUE "Limit:".
+          05 COL + 2 PIC ZZ,ZZ9.99 USING CUST-LIMIT INITIAL.
+       PROCEDURE DIVISION.
+           DISPLAY ENTRY-SCREEN
+           ACCEPT ENTRY-SCREEN
+           DISPLAY "Saved " AT 0705 CUST-NAME HIGHLIGHT
+```
+
+- **Screens.** LINE and COLUMN, absolute or `PLUS`/`MINUS`/`+`/`-`
+  relative, from a literal or a data item; VALUE, FROM, TO and USING
+  fields, with editing pictures read back as numbers; BLANK SCREEN and LINE,
+  ERASE EOL and EOS, BELL, HIGHLIGHT, LOWLIGHT, BLINK, REVERSE-VIDEO,
+  UNDERLINE, OVERLINE, SECURE, AUTO, REQUIRED, FULL, UPDATE, INITIAL, PROMPT,
+  FOREGROUND-COLOR / BACKGROUND-COLOR 0–15 and ACUCOBOL's COLOR, from
+  literals or data items. A group passes its attributes down, and DISPLAY or
+  ACCEPT of any item of a screen places it where it is in the whole screen.
+  An item with OCCURS is repeated, and the FROM, TO and USING items in it
+  take the occurrence numbers as their subscripts (GnuCOBOL 3.1.2 rejects
+  OCCURS here). Positions follow GnuCOBOL's rules, quirks included: they
+  were measured against `cobc`.
+- **DISPLAY and ACCEPT of data items** `AT llcc`, `AT lllccc` or
+  `LINE n COLUMN n`, `UPON CRT`, with the attributes above, SIZE and
+  PROMPT. Each operand of a DISPLAY can have its own position, SIZE and
+  attributes — `DISPLAY "Name:" AT 0501 WS-NAME AT 0510 HIGHLIGHT` — and
+  one without a position follows the one before. LINE 0 and COLUMN 0 are
+  relative to the last DISPLAY, and text past the right margin goes on at
+  the start of the next line. As with Micro Focus, `DISPLAY LOW-VALUE`
+  only moves the cursor, `SPACE` erases to the end of the screen,
+  `ALL X"01"` to the end of the line, `ALL X"02"` the whole screen, and
+  `ALL X"07"` rings the bell; with SIZE, a figurative constant or ALL
+  literal is repeated.
+- **Keys.** Tab and Back-tab, the cursor keys, Home and End (to the first
+  or last character typed, then to the start or end of the field), Insert,
+  Delete, Backspace and Alt-Delete (to the end of the field) edit; Enter,
+  F1–F12, Shift-F1–F12 (F13–F24) and, as configured below, Page Up, Page
+  Down, Up on the first field, Down on the last and Escape end the ACCEPT.
+- **Status.** CRT STATUS (in SPECIAL-NAMES, or `IS SPECIAL-NAMES CRT STATUS`
+  on the item) and COB-CRT-STATUS: 0 Enter, 1001–1024 a function key,
+  2001/2002 Page Up/Down, 2003/2004 Up/Down, 2005 Escape, 8000 end of
+  input, 8001 TIMEOUT. `ACCEPT x FROM ESCAPE KEY` gives the same code, and
+  ON EXCEPTION runs for any key but Enter. CURSOR IS (or
+  `IS SPECIAL-NAMES CURSOR`) says where an ACCEPT starts and is set to
+  where it ended; `TIMEOUT n` ends an ACCEPT after n seconds without a key.
+
+Runtime variables: `COB_SCREEN_EXCEPTIONS=Y` lets Page Up, Page Down, Up
+on the first field, Down on the last and Escape end an ACCEPT;
+`COB_SCREEN_ESC=Y` lets Escape alone end it; `COB_INSERT_MODE=Y` makes
+typing insert rather than replace (the Insert key switches either way).
+
+`make screen-test` runs the programs in `tests/screen/` in a pseudo-terminal,
+types their keys and compares the screen they leave, character and
+attribute, with the expected one. GnuCOBOL's 48 manual SCREEN SECTION tests
+each ask a person to confirm what the screen shows. YACCC shows what 45 of
+them describe, six of which `cobc` 3.1.2 fails (DISPLAY of SPACE,
+ALL X"01", X"02" and X"07", OVERLINE, Alt-Delete). Of the other three, one
+is LEFTLINE, and two want Left on a field's first column, or Right on its
+last, to end a one-field ACCEPT: YACCC, like `cobc` 3.1.2, keeps the cursor
+in the field there.
+
 ## Language coverage
 
 **Source.** Fixed, free and variable reference formats, continuation lines,
@@ -678,7 +751,8 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
 
 ### Not implemented
 
-- SCREEN SECTION and COMMUNICATION SECTION.
+- COMMUNICATION SECTION; LEFTLINE and GRID in SCREEN SECTION are accepted
+  and not drawn (no terminal sequence draws a line beside a field).
 - Report Writer: VARYING in report groups (GnuCOBOL 3.1.2 doesn't have it
   either).
 - SYNCHRONIZED alignment: items are laid out packed, so a `POINTER, SYNC`
@@ -749,6 +823,17 @@ All of these were checked against GnuCOBOL 3.1.2:
    (4 digits for 2 bytes) and truncates values to them.
 8. **WHEN-COMPILED register** has IBM's `MM/DD/YYhh.mm.ss` format; GnuCOBOL
    puts the day first.
+9. **Screen I/O.** The phrases of a DISPLAY operand apply to that operand
+   alone, as Micro Focus documents. GnuCOBOL 3.1.2 carries an operand's
+   attributes on to the later ones that have a position of their own. The
+   screen is the terminal's own, in its own colours, and stays as it is when
+   the program ends; GnuCOBOL switches to an alternate screen in white on
+   black and restores the old one at the end, so the last screen vanishes.
+   An input field shows its PROMPT character in the blanks after what has
+   been typed, not over blanks within it, and is drawn without prompt
+   characters once the ACCEPT ends. A number of a USAGE other than DISPLAY
+   is typed as text, sign and decimal point included, and read back as
+   NUMVAL would read it.
 
 ## How it works
 
@@ -756,8 +841,8 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 13,977 lines of Python across fourteen files; the runtime it
-links against is 11,508 lines of C.
+The compiler is 14,730 lines of Python across fifteen files; the runtime it
+links against is 12,713 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
@@ -819,11 +904,13 @@ tests/difftest.py    differential test runner
 tests/nist/          NIST CCVS85 runner and the result logs of the runs above
 tests/gnucobol/      GnuCOBOL testsuite runner, comparison tool and recorded results
 tests/cli_test.py    compiler command-line tests
+tests/screen/        screen I/O programs, the keys typed and the screens expected
+tests/screen_test.py runs them in a pseudo-terminal through a small terminal emulator
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      file carries SPDX, README credits GnuCOBOL (make
                      provenance; provenance-deep measures token overlap)
 docs/img/            the figures in this README, drawn from the numbers above
-Makefile             make test | cli-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
+Makefile             make test | cli-test | screen-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
 ```
 
 ## Acknowledgements

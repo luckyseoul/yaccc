@@ -26,6 +26,10 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
         run: make cli-test
+      - name: Screen I/O in a pseudo-terminal
+        env:
+          CC: ${{ matrix.cc }}
+        run: make screen-test
       - name: Licence provenance (this tree stays MIT, no GPL code vendored)
         run: make provenance
       - name: Examples

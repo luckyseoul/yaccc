@@ -18,7 +18,7 @@ DESTDIR ?=
 INSTDIR = $(DESTDIR)$(PREFIX)/lib/yaccc
 BINDIR  = $(DESTDIR)$(PREFIX)/bin
 
-.PHONY: all runtime test cli-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples install uninstall clean
+.PHONY: all runtime test cli-test screen-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples install uninstall clean
 
 all: runtime
 
@@ -32,6 +32,10 @@ test: runtime
 # the compiler's own command line: options honoured, mistakes reported
 cli-test: runtime
 	$(PYTHON) tests/cli_test.py
+
+# SCREEN SECTION and DISPLAY / ACCEPT ... AT, run in a pseudo-terminal
+screen-test: runtime
+	$(PYTHON) tests/screen_test.py
 
 # this tree stays MIT: no GPL code, no vendored third-party suite
 provenance:

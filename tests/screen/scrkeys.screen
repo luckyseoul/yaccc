@@ -1,0 +1,24 @@
+Keys test                    key 2001 F=[   ] G=[    ]
+                             key 2002 F=[   ] G=[    ]
+Full: xbc                    key 2003 F=[   ] G=[    ]
+Prompt: zz                   key 2005 F=[abc] G=[    ]
+                             key 1010 F=[xbc] G=[    ]
+                             key 0000 F=[xbc] G=[zz  ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+line blanked
+
+erased fr
+@ 1 1-4 fg=6
+exit 0

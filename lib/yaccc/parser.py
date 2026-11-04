@@ -11,12 +11,50 @@ from .words import (FIGURATIVES, FIG_BYTES, FUNCTIONS, RESERVED, USAGES, VERBS,
                     CONTEXT_WORDS)
 
 SPECIAL_REGISTERS = {'RETURN-CODE', 'TALLY', 'SORT-RETURN', 'WHEN-COMPILED',
-                     'NUMBER-OF-CALL-PARAMETERS', 'LINE-COUNTER', 'PAGE-COUNTER'}
+                     'NUMBER-OF-CALL-PARAMETERS', 'LINE-COUNTER', 'PAGE-COUNTER',
+                     'COB-CRT-STATUS'}
 
 # words that begin a clause in a REPORT SECTION entry (never a data-name there)
 RW_CLAUSE_WORDS = {'LINE', 'LINES', 'NEXT', 'TYPE', 'COLUMN', 'COL', 'SOURCE', 'SUM', 'GROUP',
                    'RESET', 'UPON', 'PIC', 'PICTURE', 'VALUE', 'USAGE', 'SIGN', 'JUST',
                    'JUSTIFIED', 'BLANK', 'IS', 'DISPLAY', 'PRESENT'}
+# the words that start a SCREEN SECTION clause (so none is taken for a name)
+SCR_CLAUSE_WORDS = {'LINE', 'COLUMN', 'COL', 'VALUE', 'PIC', 'PICTURE', 'FROM', 'TO', 'USING',
+                    'BLANK', 'ERASE', 'BELL', 'BEEP', 'BLINK', 'HIGHLIGHT', 'LOWLIGHT',
+                    'REVERSE-VIDEO', 'REVERSE', 'UNDERLINE', 'SECURE', 'NO-ECHO', 'AUTO',
+                    'AUTO-SKIP', 'AUTOTERMINATE', 'REQUIRED', 'EMPTY-CHECK', 'FULL',
+                    'LENGTH-CHECK', 'FOREGROUND-COLOR', 'FOREGROUND-COLOUR', 'BACKGROUND-COLOR',
+                    'BACKGROUND-COLOUR', 'PROMPT', 'UPDATE', 'JUST', 'JUSTIFIED', 'SIGN',
+                    'LEFTLINE', 'OVERLINE', 'GRID', 'USAGE', 'IS', 'GLOBAL', 'COLOR', 'COLOUR'}
+SCR_ATTR_WORDS = {'BELL': 'BELL', 'BEEP': 'BELL', 'BLINK': 'BLINK', 'HIGHLIGHT': 'HIGHLIGHT',
+                  'LOWLIGHT': 'LOWLIGHT', 'REVERSE-VIDEO': 'REVERSE', 'UNDERLINE': 'UNDERLINE',
+                  'SECURE': 'SECURE', 'NO-ECHO': 'SECURE', 'AUTO': 'AUTO', 'AUTO-SKIP': 'AUTO',
+                  'AUTOTERMINATE': 'AUTO', 'REQUIRED': 'REQUIRED', 'EMPTY-CHECK': 'REQUIRED',
+                  'FULL': 'FULL', 'LENGTH-CHECK': 'FULL', 'UPDATE': 'UPDATE',
+                  'OVERLINE': 'OVERLINE',
+                  # no terminal sequence draws these: accepted and not shown
+                  'LEFTLINE': None, 'GRID': None}
+
+
+def acu_color(v):
+    """ACUCOBOL's COLOR value: foreground 1-8 (black, blue, green, cyan, red,
+    magenta, brown, white; 9-16 the same in high intensity), background 32
+    to 256 in steps of 32 in the same order, 1024 reverse video, 2048 low
+    and 4096 high intensity, 8192 underline, 16384 blink. The attributes,
+    foreground and background (None: not given) it stands for."""
+    attrs = set()
+    f, b = v & 0x1F, (v >> 5) & 0xF
+    fg = (f - 1) & 7 if 1 <= f <= 16 else None
+    if 9 <= f <= 16:
+        attrs.add('HIGHLIGHT')
+    bg = b - 1 if 1 <= b <= 8 else None
+    for bit, a in ((1024, 'REVERSE'), (2048, 'LOWLIGHT'), (4096, 'HIGHLIGHT'),
+                   (8192, 'UNDERLINE'), (16384, 'BLINK')):
+        if v & bit:
+            attrs.add(a)
+    return attrs, fg, bg
+
+
 RW_TYPES = {'RH': 'RH', 'PH': 'PH', 'CH': 'CH', 'DE': 'DE', 'CF': 'CF', 'PF': 'PF', 'RF': 'RF',
             'DETAIL': 'DE'}
 
@@ -578,7 +616,17 @@ class Parser:
                             group.append(self._alpha_val())
                         spec.append(('ALSO', group))
                 prog.alphabets[aname] = spec
-            elif self.is_word('CONSOLE', 'CRT', 'CURSOR'):
+            elif self.is_word('CRT') and self.is_word('STATUS', k=1):
+                # CRT STATUS IS item: the key that ended a screen ACCEPT
+                self.next(); self.next()
+                self.accept('IS')
+                prog.crt_status = self.parse_identifier()
+            elif self.is_word('CURSOR'):
+                # CURSOR IS item: where a screen ACCEPT starts and ends (LLCC)
+                self.next()
+                self.accept('IS')
+                prog.cursor = self.parse_identifier()
+            elif self.is_word('CONSOLE', 'CRT'):
                 self.next()
                 self.accept('IS')
                 self.accept('STATUS')
@@ -815,8 +863,15 @@ class Parser:
                 self.next(); self.next(); self.expect_period()
                 while self.is_word('RD'):
                     prog.reports.append(self.parse_rd())
-            elif self.is_word('SCREEN', 'COMMUNICATION') and self.is_word('SECTION', k=1):
-                raise self.err(f"{self.peek().up} SECTION is not supported")
+            elif self.is_word('SCREEN') and self.is_word('SECTION', k=1):
+                self.next(); self.next(); self.expect_period()
+                self.in_screen = True
+                try:
+                    prog.screens.extend(self.parse_entries())
+                finally:
+                    self.in_screen = False
+            elif self.is_word('COMMUNICATION') and self.is_word('SECTION', k=1):
+                raise self.err("COMMUNICATION SECTION is not supported")
             else:
                 break
 
@@ -1189,12 +1244,14 @@ class Parser:
         name = None
         src_name = None
         in_report = getattr(self, 'in_report', False)
+        in_screen = getattr(self, 'in_screen', False)
         if self.accept('FILLER'):
             name = None
         elif (self.is_user_word() or (self.peek().kind == 'WORD'
                                       and self.peek().up in CONTEXT_WORDS)) and \
                 self.peek().kind == 'WORD' and \
-                not (in_report and self.peek().up in RW_CLAUSE_WORDS):
+                not (in_report and self.peek().up in RW_CLAUSE_WORDS) and \
+                not (in_screen and self.peek().up in SCR_CLAUSE_WORDS):
             nt = self.next()
             name = nt.up
             src_name = nt.val          # as written: JSON GENERATE uses this case
@@ -1213,6 +1270,8 @@ class Parser:
             if in_report and w not in ('PIC', 'PICTURE', 'VALUE', 'VALUES', 'IS', 'USAGE') \
                     and self._rw_clause(item, w):
                 continue
+            if in_screen and self._scr_clause(item, w):
+                continue
             if w in ('PIC', 'PICTURE'):
                 self.next()
                 self.accept('IS')
@@ -1221,10 +1280,23 @@ class Parser:
             elif w == 'REDEFINES':
                 self.next()
                 item.redefines_name = self.user_word('data name')
-            elif w == 'IS':
-                self.next()
+            elif w == 'IS' or w == 'SPECIAL-NAMES':
+                self.accept('IS')
                 if self.accept('TYPEDEF'):
                     item.is_typedef = True
+                elif self.accept('SPECIAL-NAMES'):
+                    # 01 X IS SPECIAL-NAMES CURSOR / CRT STATUS: the item is
+                    # that register, as if named in SPECIAL-NAMES
+                    if name is None:
+                        raise CompileError("SPECIAL-NAMES needs a named item", loc)
+                    ref = DataRef(name, [], [], None, loc)
+                    if self.accept('CURSOR'):
+                        prog.cursor = ref
+                    elif self.is_word('CRT') and self.is_word('STATUS', k=1):
+                        self.next(); self.next()
+                        prog.crt_status = ref
+                    else:
+                        raise self.err("CURSOR or CRT STATUS expected")
             elif w == 'TYPEDEF':
                 # 77 X IS TYPEDEF BINARY-LONG: a template, not storage
                 self.next()
@@ -1361,6 +1433,113 @@ class Parser:
             if getattr(item, 'is_global', False):
                 prog.global_constants[item.name] = item.value
         return item
+
+    def _scr_number(self):
+        """An integer or a data name, for LINE / COLUMN / colours."""
+        t = self.peek()
+        if t.kind == 'NUM':
+            self.next()
+            return int(t.val.lstrip('+'))
+        return self.parse_identifier()
+
+    def _scr_pos(self):
+        """LINE / COLUMN [NUMBER] [IS] [PLUS | + | MINUS | -] n."""
+        self.accept('NUMBER')
+        self.accept('IS')
+        mode = 'ABS'
+        if self.accept('PLUS'):
+            mode = 'PLUS'
+        elif self.accept('MINUS'):
+            mode = 'MINUS'
+        elif self.peek().kind == 'OP' and self.peek().val in ('+', '-'):
+            mode = 'PLUS' if self.next().val == '+' else 'MINUS'
+        elif self.peek().kind == 'NUM' and self.peek().val[0] in '+-':
+            t = self.next()
+            return ('PLUS' if t.val[0] == '+' else 'MINUS', int(t.val[1:]))
+        return (mode, self._scr_number())
+
+    def _scr_clause(self, item, w):
+        """A SCREEN SECTION clause; False when w starts none (the ordinary
+        data description clauses -- PIC, VALUE, SIGN, JUSTIFIED -- follow)."""
+        attrs = item.scr_attrs
+        if w == 'LINE':
+            self.next()
+            item.scr_line = self._scr_pos()
+        elif w in ('COLUMN', 'COL'):
+            self.next()
+            item.scr_col = self._scr_pos()
+        elif w == 'BLANK' and self.is_word('SCREEN', 'LINE', k=1):
+            self.next()
+            attrs.add('BLANK-' + self.next().up)
+        elif w == 'ERASE':
+            self.next()
+            what = self.accept('EOL', 'EOS', 'SCREEN', 'LINE')
+            if what is None or what.up in ('EOL', 'LINE'):
+                attrs.add('ERASE-EOL')
+            elif what.up == 'EOS':
+                attrs.add('ERASE-EOS')
+            else:
+                attrs.add('BLANK-SCREEN')
+        elif w in SCR_ATTR_WORDS:
+            self.next()
+            if SCR_ATTR_WORDS[w]:
+                attrs.add(SCR_ATTR_WORDS[w])
+        elif w == 'REVERSE' and self.is_word('VIDEO', k=1):
+            self.next(); self.next()
+            attrs.add('REVERSE')
+        elif w == 'INITIAL':
+            # the field an ACCEPT of the screen starts in
+            self.next()
+            attrs.add('INITIAL')
+        elif w in ('COLOR', 'COLOUR'):
+            self.next()
+            self.accept('IS')
+            v = self._scr_number()
+            if isinstance(v, int):
+                a, fg, bg = acu_color(v)
+                attrs.update(a)
+                if fg is not None:
+                    item.scr_fg = fg
+                if bg is not None:
+                    item.scr_bg = bg
+            else:
+                item.scr_color = v
+        elif w in ('FOREGROUND-COLOR', 'FOREGROUND-COLOUR', 'BACKGROUND-COLOR', 'BACKGROUND-COLOUR'):
+            self.next()
+            self.accept('IS')
+            v = self._scr_number()
+            if w.startswith('FOREGROUND'):
+                item.scr_fg = v
+            else:
+                item.scr_bg = v
+        elif w in ('FROM', 'TO', 'USING'):
+            self.next()
+            t = self.peek()
+            if w == 'FROM' and t.kind in ('STR', 'NUM'):
+                src = self.parse_operand()
+            else:
+                src = self.parse_identifier()
+            if w == 'FROM':
+                item.scr_from = src
+            elif w == 'TO':
+                item.scr_to = src
+            else:
+                item.scr_from = item.scr_to = src
+        elif w == 'PROMPT':
+            self.next()
+            self.accept('CHARACTER')
+            self.accept('IS')
+            t = self.peek()
+            if t.kind == 'STR':
+                self.next()
+                item.scr_prompt = t.val[:1] or b'_'
+            else:
+                item.scr_prompt = b'_'
+        elif w == 'VALUE' and item.pic is None and not item.children:
+            return False                    # an ordinary VALUE clause
+        else:
+            return False
+        return True
 
     def _usage(self, item):
         w = self.next().up
@@ -2295,22 +2474,152 @@ class Parser:
             self.next()
         return st
 
+    # words of the screen phrases of DISPLAY and ACCEPT; one ends a DISPLAY's
+    # list of operands unless the program has a data item of that name
+    SCR_PHRASE_WORDS = {'AT', 'LINE', 'COLUMN', 'COL', 'POSITION', 'WITH', 'BLANK', 'ERASE',
+                        'FOREGROUND-COLOR', 'FOREGROUND-COLOUR', 'BACKGROUND-COLOR',
+                        'BACKGROUND-COLOUR', 'COLOR', 'COLOUR', 'PROMPT', 'TIMEOUT',
+                        'TIME-OUT', 'SIZE',
+                        'CONVERSION', 'NO'} | set(SCR_ATTR_WORDS)
+
+    def _declared(self, name):
+        """Whether the program declares a data item of this name so far."""
+        prog = self.prog
+        roots = list(prog.working) + list(prog.local) + list(prog.linkage)
+        for fd in prog.file_descs:
+            roots.extend(fd.records)
+        for r in roots:
+            for it in r.walk():
+                if it.name == name:
+                    return True
+        return False
+
+    def _screen_phrase_ahead(self):
+        t = self.peek()
+        if t.kind != 'WORD':
+            return False
+        if t.up == 'REVERSE':
+            return self.is_word('VIDEO', k=1)
+        return t.up in self.SCR_PHRASE_WORDS and t.up not in self.bare_intrinsics and \
+            not (t.up not in RESERVED and self._declared(t.up))
+
+    def _screen_phrases(self, st):
+        """AT / LINE / COLUMN and the attributes of an extended DISPLAY or
+        ACCEPT: whether there was one."""
+        found = False
+        while True:
+            t = self.peek()
+            if t.kind != 'WORD':
+                break
+            w = t.up
+            if w == 'WITH' and not self.is_word('NO', k=1):
+                self.next()
+                continue
+            if w == 'AT':
+                self.next()
+                if self.is_word('LINE', 'COLUMN', 'COL', 'POSITION'):
+                    continue
+                st.at = self.parse_operand()
+            elif w == 'LINE' and not self.is_word('SEQUENTIAL', k=1):
+                self.next()
+                self.accept('NUMBER')
+                self.accept('IS')
+                st.line = self.parse_operand()
+            elif w in ('COLUMN', 'COL', 'POSITION') and not self._declared(w):
+                self.next()
+                self.accept('NUMBER')
+                self.accept('IS')
+                st.col = self.parse_operand()
+            elif w == 'BLANK' and self.is_word('SCREEN', 'LINE', k=1):
+                self.next()
+                st.scr_attrs.add('BLANK-' + self.next().up)
+            elif w == 'ERASE':
+                self.next()
+                what = self.accept('EOL', 'EOS', 'SCREEN', 'LINE')
+                st.scr_attrs.add('ERASE-EOS' if what is not None and what.up == 'EOS' else
+                                 'BLANK-SCREEN' if what is not None and what.up == 'SCREEN' else 'ERASE-EOL')
+            elif w in ('FOREGROUND-COLOR', 'FOREGROUND-COLOUR', 'BACKGROUND-COLOR', 'BACKGROUND-COLOUR'):
+                self.next()
+                self.accept('IS')
+                v = self._scr_number()
+                if w.startswith('FOREGROUND'):
+                    st.scr_fg = v
+                else:
+                    st.scr_bg = v
+            elif w == 'REVERSE' and self.is_word('VIDEO', k=1):
+                self.next(); self.next()
+                st.scr_attrs.add('REVERSE')
+            elif w in ('COLOR', 'COLOUR') and not self._declared(w):
+                self.next()
+                self.accept('IS')
+                v = self._scr_number()
+                if isinstance(v, int):
+                    a, fg, bg = acu_color(v)
+                    st.scr_attrs.update(a)
+                    if fg is not None:
+                        st.scr_fg = fg
+                    if bg is not None:
+                        st.scr_bg = bg
+                else:
+                    st.scr_color = v
+            elif w in SCR_ATTR_WORDS and not self._declared(w):
+                self.next()
+                if SCR_ATTR_WORDS[w]:
+                    st.scr_attrs.add(SCR_ATTR_WORDS[w])
+            elif w == 'PROMPT':
+                self.next()
+                self.accept('CHARACTER')
+                self.accept('IS')
+                if self.peek().kind == 'STR':
+                    st.scr_prompt = self.next().val[:1] or b'_'
+                else:
+                    st.scr_prompt = b'_'
+            elif w in ('TIMEOUT', 'TIME-OUT'):
+                self.next()
+                self.accept('AFTER')
+                st.timeout = self.parse_operand()
+            elif w == 'SIZE':
+                self.next()
+                self.accept('IS')
+                st.scr_size = self.parse_operand()
+            elif w == 'CONVERSION':
+                self.next()
+            elif w == 'NO' and self.is_word('UPDATE', k=1):
+                self.next(); self.next()
+            else:
+                break
+            found = True
+        return found
+
     def p_DISPLAY(self, loc):
+        """DISPLAY operands [UPON ...] [WITH NO ADVANCING]; on the screen each
+        operand may have its own AT / LINE / COLUMN, SIZE and attributes:
+        DISPLAY 'Name:' AT 0501 WS-NAME AT 0510 HIGHLIGHT."""
         items = []
-        while self.is_operand_start() or self.is_word('ALL'):
-            items.append(self.parse_operand(allow_all=True))
         st = Display(loc, items)
         while True:
-            if self.accept('UPON'):
-                w = self.next().up
-                st.upon = self.mnemonics.get(w, w)
-            elif self.is_word('WITH') and self.is_word('NO', k=1):
-                self.next(); self.next(); self.expect('ADVANCING')
-                st.no_advancing = True
-            elif self.is_word('NO') and self.is_word('ADVANCING', k=1):
-                self.next(); self.next()
-                st.no_advancing = True
-            else:
+            while (self.is_operand_start() or self.is_word('ALL')) and not self._screen_phrase_ahead():
+                items.append(self.parse_operand(allow_all=True))
+                st.parts.append(ScrPhrases())
+            while True:
+                if self.accept('UPON'):
+                    w = self.next().up
+                    st.upon = self.mnemonics.get(w, w)
+                    if st.upon in ('CRT', 'CRT-UNDER'):
+                        st.screen = True
+                elif self.is_word('WITH') and self.is_word('NO', k=1) and \
+                        self.is_word('ADVANCING', k=2):
+                    self.next(); self.next(); self.next()
+                    st.no_advancing = True
+                elif self.is_word('NO') and self.is_word('ADVANCING', k=1):
+                    self.next(); self.next()
+                    st.no_advancing = True
+                elif self._screen_phrases(st.parts[-1] if st.parts else st):
+                    st.screen = True
+                else:
+                    break
+            # another operand after the phrases of one: the list goes on
+            if not (st.screen and items and (self.is_operand_start() or self.is_word('ALL'))):
                 break
         st.on_exc, st.not_on_exc = self._exception()
         self._end('END-DISPLAY')
@@ -2343,8 +2652,12 @@ class Parser:
                 st.arg = self.parse_operand()
             elif w in ('CONSOLE', 'SYSIN', 'KEYBOARD', 'STDIN'):
                 st.source = 'CONSOLE'
+            elif w in ('CRT', 'CRT-UNDER'):
+                st.screen = True
             else:
                 raise ParseError(f"unsupported ACCEPT source '{w}'", loc)
+        if self._screen_phrases(st):
+            st.screen = True
         st.on_exc, st.not_on_exc = self._exception()
         self._end('END-ACCEPT')
         return st

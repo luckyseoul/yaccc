@@ -14,6 +14,7 @@ from .errors import CompileError, DIAG, ErrorsReported, did_you_mean, source_lin
 from .nodes import *
 from .dbggen import DebugGen
 from .rwgen import ReportWriterGen
+from .scrgen import ScreenGen
 from .words import FIG_BYTES, FUNCTIONS
 
 CMP_OP = {'EQ': '==', 'NE': '!=', 'LT': '<', 'LE': '<=', 'GT': '>', 'GE': '>='}
@@ -208,7 +209,7 @@ SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_
                          'CBL_OC_HOSTED': 'CBL_GC_HOSTED'}
 
 
-class CodeGen(ReportWriterGen, DebugGen):
+class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
     def __init__(self, programs, opts):
         self.programs = programs
         self.udf_names = set()
@@ -769,6 +770,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 for c in list(r.children):
                     if c.level == 66:
                         self.resolve_renames(c, r)
+        # SCREEN SECTION: the fields' storage, then the tables drawn from
+        self.scr_layout(prog)
+        self.scr_tables(prog)
         # LINAGE-COUNTER, one per file with a LINAGE clause
         for fi in list(ctx.files.values()):
             if fi.fd.linage is None:
@@ -793,7 +797,9 @@ class CodeGen(ReportWriterGen, DebugGen):
                 ('WHEN-COMPILED', '&cob_wc_reg', T_ALNUM, 0, 0, 16),
                 ('NUMBER-OF-CALL-PARAMETERS', '&cob_ncp_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
                 ('JSON-CODE', '&cob_json_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
-                ('XML-CODE', '&cob_xml_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4)):
+                ('XML-CODE', '&cob_xml_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
+                # the key that ended the last screen ACCEPT, without a CRT STATUS clause
+                ('COB-CRT-STATUS', '&cob_crt_status_reg', T_NUM_DISPLAY, 4, 0, 4)):
             if nm not in ctx.names:
                 it = DataItem(1, nm, prog.loc)
                 it.special = expr
@@ -1214,6 +1220,7 @@ class CodeGen(ReportWriterGen, DebugGen):
                 continue
             for r in fi.fd.records[:1]:
                 em(f"memset({fi.buf}, ' ', {fi.size});")
+        self.scr_init(prog, em)
         # a new program starts its own CBL_GC_GETOPT scan over the arguments
         em("cob_getopt_reset();")
         init_body = em.lines
@@ -3790,6 +3797,10 @@ class CodeGen(ReportWriterGen, DebugGen):
 
     def g_Display(self, s):
         em = self.em
+        if len(s.items) == 1 and self.screen_item(s.items[0]) is not None:
+            return self.g_screen_display(s.parts[0] if s.parts else s, self.screen_item(s.items[0]))
+        if getattr(s, 'screen', False) or any(self.screen_item(i) is not None for i in s.items):
+            return self.g_display_at(s)
         upon = s.upon
         if upon in ('ENVIRONMENT-NAME', 'ENVIRONMENT-VALUE', 'ARGUMENT-NUMBER'):
             k = {'ENVIRONMENT-NAME': 0, 'ENVIRONMENT-VALUE': 1, 'ARGUMENT-NUMBER': 2}[upon]
@@ -3926,6 +3937,15 @@ class CodeGen(ReportWriterGen, DebugGen):
         if s.source == 'OMITTED':
             em("cob_accept_discard();")
             return
+        if self.screen_item(s.target) is not None:
+            return self.g_screen_accept(s, self.screen_item(s.target))
+        if s.source in ('ESCAPE', 'EXCEPTION'):
+            # ACCEPT ... FROM ESCAPE KEY: the key that ended the last screen ACCEPT
+            self.check_receiving(s.target)
+            em(f"cob_set_int({self.field(s.target)}, cob_scr_escape_key());")
+            return
+        if getattr(s, 'screen', False):
+            return self.g_accept_at(s)
         self.check_receiving(s.target)
         f = self.field(s.target)
         src = s.source

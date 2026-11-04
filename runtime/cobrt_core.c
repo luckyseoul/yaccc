@@ -2459,9 +2459,27 @@ static int disp_digits(const cob_field *f)
 	return a->digits;
 }
 
+static void display_fp(FILE *fp, const cob_field *f);
+
 void cob_display(int dev, const cob_field *f)
 {
-	FILE *fp = dev_fp(dev);
+	display_fp(dev_fp(dev), f);
+}
+
+/* the characters DISPLAY writes for an item, for the screen */
+size_t cob_display_text(const cob_field *f, char *buf, size_t sz)
+{
+	FILE *fp = fmemopen(buf, sz, "w");
+	if (!fp)
+		return 0;
+	display_fp(fp, f);
+	long n = ftell(fp);
+	fclose(fp);
+	return n < 0 ? 0 : (size_t)n < sz ? (size_t)n : sz - 1;
+}
+
+static void display_fp(FILE *fp, const cob_field *f)
+{
 	const cob_attr *a = f->attr;
 	char buf[128];
 	switch (a->type) {

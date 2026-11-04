@@ -1,0 +1,14 @@
+Item   Qty
+BOLT   125
+SCREW   10
+WASHER 100
+
+
+ abc
+ def
+
+
+BOLT  /125
+SCREW /010
+WASHER/100
+exit 0

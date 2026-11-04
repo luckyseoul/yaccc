@@ -1,0 +1,31 @@
+Title
+  Name:  ALICE
+  - 12.5
+  Bright NextSame                                minus2
+line5-nocol
+plus1                        col30  1,234.50
+
+
+
+          B-atB-next
+
+    line from item
+
+
+                   C1
+C2
+                   HELLO
+    LIT
+012u
+XXerase
+@ 1 1-5 reverse
+@ 2 3-7 fg=2
+@ 2 10-19 underline
+@ 3 3-8 bg=1
+@ 4 3-8 bold fg=3
+@ 4 50-55 blink
+@ 12 5-18 dim
+@ 15 20-21 bold
+@ 16 1-2 bold
+@ 18 5-7 bold
+exit 0

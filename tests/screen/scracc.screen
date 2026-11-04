@@ -1,0 +1,12 @@
+
+ A: xy
+ B: 7012
+ C: ****
+
+A=[xy    ] B=[7012] C=[Zb  ] CRT=0000 CURSOR=0406
+F-KEY 1003 C=[aQc ]
+
+DEF      DEF
+-17      -00017
+OK       OK
+exit 0

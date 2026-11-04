@@ -271,6 +271,16 @@ class DataItem:
         self.rw_reset = None        # control name or 'FINAL'
         self.rw_group_indicate = False
         self.sync = False               # SYNCHRONIZED: align to a natural boundary
+        # SCREEN SECTION entries
+        self.scr_line = None            # ('ABS'|'PLUS'|'MINUS', int | DataRef)
+        self.scr_col = None
+        self.scr_attrs = set()          # HIGHLIGHT, BLANK-SCREEN, AUTO, ...
+        self.scr_fg = None
+        self.scr_bg = None
+        self.scr_color = None           # COLOR IS a data item
+        self.scr_from = None            # FROM / USING source
+        self.scr_to = None              # TO / USING target
+        self.scr_prompt = None
         # computed
         self.type = None
         self.digits = 0

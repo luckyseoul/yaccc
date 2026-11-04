@@ -1,0 +1,16 @@
+
+A:
+B: xy
+kept     stays
+
+
+A=[     ] B=[xy   ] 0000 0306
+
+         timeout 8001
+
+ab
+C=[ab  efghij]
+
+
+key 1013
+exit 0

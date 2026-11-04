@@ -780,6 +780,63 @@ size_t cob_xml_mark(xmlw *w);
 void cob_xml_rollback_if_empty(xmlw *w, size_t mark);
 extern cob_field cob_xml_code_reg;       /* XML-CODE */
 
+/* SCREEN SECTION and DISPLAY / ACCEPT ... AT (cobrt_scr.c) */
+#define COB_SCR_HIGHLIGHT    0x00001
+#define COB_SCR_LOWLIGHT     0x00002
+#define COB_SCR_BLINK        0x00004
+#define COB_SCR_REVERSE      0x00008
+#define COB_SCR_UNDERLINE    0x00010
+#define COB_SCR_SECURE       0x00020
+#define COB_SCR_AUTO         0x00040
+#define COB_SCR_REQUIRED     0x00080
+#define COB_SCR_FULL         0x00100
+#define COB_SCR_BLANK_SCREEN 0x00200
+#define COB_SCR_BLANK_LINE   0x00400
+#define COB_SCR_ERASE_EOL    0x00800
+#define COB_SCR_ERASE_EOS    0x01000
+#define COB_SCR_BELL         0x02000
+#define COB_SCR_UPDATE       0x04000
+#define COB_SCR_INPUT        0x08000   /* TO or USING: takes input */
+#define COB_SCR_OUTPUT       0x10000   /* FROM, USING or VALUE: displayed */
+#define COB_SCR_INITIAL      0x20000   /* INITIAL: the field an ACCEPT starts in */
+#define COB_SCR_REPEAT       0x40000   /* DISPLAY of a figurative constant or ALL literal */
+#define COB_SCR_OVERLINE     0x80000
+/* DISPLAY of a figurative constant with an effect of its own (as Micro Focus) */
+enum { COB_SCR_SP_CURSOR,      /* LOW-VALUE: only the position */
+       COB_SCR_SP_EOS,         /* SPACE: erase to the end of the screen */
+       COB_SCR_SP_EOL,         /* ALL X'01': erase to the end of the line */
+       COB_SCR_SP_CLEAR,       /* ALL X'02': erase the screen */
+       COB_SCR_SP_BELL };      /* ALL X'07': the bell */
+enum { COB_SCR_GROUP, COB_SCR_LITERAL, COB_SCR_FIELD };
+enum { COB_SCR_NONE, COB_SCR_ABS, COB_SCR_PLUS, COB_SCR_MINUS };
+typedef struct {
+	unsigned char kind;               /* COB_SCR_GROUP / LITERAL / FIELD */
+	unsigned char line_mode, col_mode;
+	int line, col;
+	cob_field *line_f, *col_f;        /* LINE / COLUMN from a data item */
+	const unsigned char *value;       /* VALUE literal */
+	int vlen;
+	cob_field *field;                 /* the screen item's own storage */
+	int attrs;                        /* COB_SCR_* */
+	signed char fg, bg;               /* colour 0-15, -1 none */
+	unsigned char prompt;             /* PROMPT character, 0 for '_' */
+} cob_scr_item;
+void cob_scr_display(const cob_scr_item *items, int first, int n, int at_line, int at_col);
+int cob_scr_accept(const cob_scr_item *items, int first, int n, int at_line, int at_col);
+void cob_scr_at(const cob_field *at, int *line, int *col);
+void cob_scr_display_field(const cob_field *f, int line, int col, int attrs, int fg, int bg, int size);
+void cob_scr_display_special(int what, int line, int col, int fg, int bg);
+int cob_scr_accept_field(cob_field *f, int line, int col, int attrs, int fg, int bg, int prompt,
+			 int size);
+void cob_scr_set_timeout(int seconds);
+void cob_scr_color(int v, int *attrs, int *fg, int *bg);
+void cob_scr_color_item(cob_scr_item *it, int v);
+void cob_scr_set_crt_status(cob_field *f);
+void cob_scr_set_cursor(cob_field *f);
+int cob_scr_escape_key(void);
+extern cob_field cob_crt_status_reg;
+size_t cob_display_text(const cob_field *f, char *buf, size_t sz);
+
 /* -ftrace / -ftraceall: READY TRACE, RESET TRACE, COB_SET_TRACE, COB_TRACE_FILE */
 extern int cob_trace_on;
 void cob_trace_point(const char *src, const char *prog, const char *label, const char *name, int line);

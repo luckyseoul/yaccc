@@ -283,16 +283,42 @@ class JsonGenerate(Stmt):
 
 
 @dataclass(eq=False)
-class Display(Stmt):
+class ScreenPhrases:
+    """AT / LINE / COLUMN and the attributes of DISPLAY and ACCEPT on the screen."""
+    def __post_init__(self):
+        self.screen = False         # an extended DISPLAY / ACCEPT (AT, LINE, UPON CRT ...)
+        self.at = None
+        self.line = None
+        self.col = None
+        self.scr_attrs = set()
+        self.scr_fg = None
+        self.scr_bg = None
+        self.scr_prompt = None
+        self.scr_size = None
+        self.scr_color = None       # COLOR from a data item
+        self.timeout = None
+
+
+class ScrPhrases(ScreenPhrases):
+    """The phrases of one operand of a DISPLAY on the screen: as with Micro
+    Focus and GnuCOBOL, AT / LINE / COLUMN, SIZE and the attributes apply to
+    the operand they follow."""
+    def __init__(self):
+        self.__post_init__()
+
+
+@dataclass(eq=False)
+class Display(Stmt, ScreenPhrases):
     items: List[Any]
     upon: str = 'SYSOUT'
     no_advancing: bool = False
     on_exc: Optional[list] = None
     not_on_exc: Optional[list] = None
+    parts: List[Any] = field(default_factory=list)     # ScrPhrases of each item
 
 
 @dataclass(eq=False)
-class Accept(Stmt):
+class Accept(Stmt, ScreenPhrases):
     target: DataRef
     source: str = 'CONSOLE'
     arg: Any = None
@@ -698,6 +724,9 @@ class Program:
     working: list = field(default_factory=list)
     local: list = field(default_factory=list)
     linkage: list = field(default_factory=list)
+    screens: list = field(default_factory=list)     # SCREEN SECTION 01 entries
+    crt_status: Any = None                          # SPECIAL-NAMES CRT STATUS IS
+    cursor: Any = None                              # SPECIAL-NAMES CURSOR IS
     constants: dict = field(default_factory=dict)
     global_constants: dict = field(default_factory=dict)
     typedefs: dict = field(default_factory=dict)     # name -> template item
