@@ -7,6 +7,7 @@ from .data import DataItem, Occurs, Picture
 from . import errors
 from .errors import CompileError, DIAG, ErrorsReported, did_you_mean
 from .nodes import *
+from .esql import SqlParser
 from .words import (FIGURATIVES, FIG_BYTES, FUNCTIONS, RESERVED, USAGES, VERBS,
                     CONTEXT_WORDS)
 
@@ -167,7 +168,7 @@ ROUNDING_MODES = ('AWAY-FROM-ZERO', 'NEAREST-AWAY-FROM-ZERO', 'NEAREST-EVEN', 'N
                   'PROHIBITED', 'TOWARD-GREATER', 'TOWARD-LESSER', 'TRUNCATION')
 
 
-class Parser:
+class Parser(SqlParser):
     def __init__(self, toks, compile_vars=None):
         self.toks = toks
         self.compile_vars = compile_vars if compile_vars is not None else {}
@@ -353,6 +354,8 @@ class Parser:
         self.implicit_assign_items(prog)
         if self.is_word('PROCEDURE'):
             self.parse_procedure(prog)
+        if prog.sql_used or prog.sql_ca:
+            self.sql_add_sqlca(prog)
         # nested programs: only if our END PROGRAM appears later
         while self.is_word('IDENTIFICATION', 'ID', 'PROGRAM-ID', 'FUNCTION-ID') and \
                 self._end_program_ahead(name):
@@ -1217,7 +1220,13 @@ class Parser:
 
     def parse_entries(self):
         flat = []
-        while self.peek().kind == 'NUM' and '.' not in self.peek().val and self.peek().val[0] not in '+-':
+        while True:
+            if self.peek().kind == 'EXECSQL':
+                self.sql_data_entry()           # INCLUDE SQLCA, DECLARE CURSOR, ...
+                continue
+            if not (self.peek().kind == 'NUM' and '.' not in self.peek().val
+                    and self.peek().val[0] not in '+-'):
+                break
             start = self.pos
             try:
                 flat.append(self.parse_entry())
@@ -2010,6 +2019,10 @@ class Parser:
         stmts = []
         while True:
             t = self.peek()
+            if t.kind == 'EXECSQL':
+                errors.WHERE = t.loc
+                stmts.append(self.parse_exec_sql())
+                continue
             trace = t.kind == 'WORD' and t.up in ('READY', 'RESET') and self.is_word('TRACE', k=1)
             if t.kind != 'WORD' or (t.up not in VERBS and not trace):
                 break

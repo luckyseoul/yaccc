@@ -19,7 +19,7 @@ PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
 RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
                'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c', 'cobrt_xml.c',
-               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c']
+               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c']
 VERSION = '1.0'
 
 
@@ -134,6 +134,8 @@ def preprocess_sources(paths, fmt, include_dirs, debugging=False, defines=None):
                 cur = key
             if t.kind == 'STR':
                 text = _literal_text(t.val)
+            elif t.kind == 'EXECSQL':
+                text = f"EXEC SQL {t.val} END-EXEC"
             elif t.kind == 'NUM' and comma:
                 text = str(t.val).replace('.', ',')
             else:

@@ -1,0 +1,36 @@
+connect +0000000000
+create +0000000000
+insert +0000000000 rows +0000000001
+insert a null +0000000000
+duplicate key -0000000803 23505
+insert a structure +0000000000
+insert a VARCHAR +0000000000
+count +0000000000 +0000000004 +000007900.50
+select +0000000000 [Grace               ] ind -00001
+into a VARCHAR [Barbara ] +00007
+cut short +0000000000 [Bar] ind +00007 warn WW
+no row +0000000100 02000
+more than one row -0000000811 21000
+null, no indicator -0000000305 22002
+not a number -0000000420
+out of range -0000000304
+open +0000000000
+open again -0000000502
+  0001 Ada                      1,500.50  R&D  +00000
+  0003 Alan                     2,500.00  OPS  +00000
+  0004 Barbara                  3,000.00  R&D  +00000
+fetch end +0000000100
+fetch again +0000000100
+close again -0000000501
+update nothing +0000000100
+update +0000000000 rows +0000000002
+not null column -0000000407
+no such table -0000000204
+no such column -0000000206
+syntax error -0000000104
+still in the unit of work +0000000000 +0000000004
+FETCH FIRST +0000000000 0004
+CURRENT DATE +0000000000 --
+a minus, FOR UPDATE +0000000000 Alan                
+leading spaces kept +0000000000 +0000000001
+commit +0000000000

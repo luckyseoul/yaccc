@@ -285,6 +285,30 @@ class JsonParse(Stmt):
 
 
 @dataclass(eq=False)
+class HostVar:
+    """A host variable in an EXEC SQL statement, and its indicator variable."""
+    ref: Any
+    ind: Any = None
+
+
+@dataclass(eq=False)
+class ExecSql(Stmt):
+    """An EXEC SQL statement (esql.py): sql is the text the database runs,
+    with ? for each input host variable."""
+    kind: str = 'EXEC'
+    sql: str = ''
+    ins: list = field(default_factory=list)          # HostVar
+    outs: list = field(default_factory=list)         # HostVar: SELECT INTO, FETCH
+    cursor: Optional[str] = None
+    stmt: Optional[str] = None                       # a PREPAREd statement's name
+    text: Any = None                                 # PREPARE / EXECUTE IMMEDIATE
+    args: dict = field(default_factory=dict)         # CONNECT and the like
+    release: bool = False
+    all: bool = False
+    whenever: list = field(default_factory=list)     # (condition, Stmt)
+
+
+@dataclass(eq=False)
 class XmlParse(Stmt):
     """XML PARSE doc PROCESSING PROCEDURE proc [THRU proc2]."""
     doc: Any = None
@@ -774,6 +798,12 @@ class Program:
     debugging: bool = False
     ext_name: str = ''              # name CALL uses (PROGRAM-ID ... AS literal)
     default_rounded: str = 'NEAREST-AWAY-FROM-ZERO'
+    # embedded SQL (esql.py): cursors declared, those used WHERE CURRENT OF,
+    # whether SQL runs here, whether INCLUDE SQLCA was seen
+    sql_cursors: dict = field(default_factory=dict)
+    sql_keyed: set = field(default_factory=set)
+    sql_used: bool = False
+    sql_ca: bool = False
 
 
 @dataclass(eq=False)

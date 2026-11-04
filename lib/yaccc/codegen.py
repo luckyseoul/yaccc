@@ -15,6 +15,7 @@ from .nodes import *
 from .dbggen import DebugGen
 from .rwgen import ReportWriterGen
 from .scrgen import ScreenGen
+from .sqlgen import SqlGen
 from .words import FIG_BYTES, FUNCTIONS
 
 CMP_OP = {'EQ': '==', 'NE': '!=', 'LT': '<', 'LE': '<=', 'GT': '>', 'GE': '>='}
@@ -209,7 +210,7 @@ SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_
                          'CBL_OC_HOSTED': 'CBL_GC_HOSTED'}
 
 
-class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
+class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
     def __init__(self, programs, opts):
         self.programs = programs
         self.udf_names = set()

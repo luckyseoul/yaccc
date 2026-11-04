@@ -34,6 +34,10 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
         run: make files-test
+      - name: Embedded SQL on SQLite and PostgreSQL
+        env:
+          CC: ${{ matrix.cc }}
+        run: make sql-test
       - name: Licence provenance (this tree stays MIT, no GPL code vendored)
         run: make provenance
       - name: Examples

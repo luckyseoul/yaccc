@@ -1,0 +1,27 @@
+fetched +000000010 [emp-0001]
+fetched +000000020 [emp-0002]
+  updated where current +0000000000 +0000000001
+fetched +000000030 [emp-0003]
+  deleted where current +0000000000
+fetched +000000040 [emp-0004]
+the loop ended at +0000000100
+WHENEVER SQLERROR: -0000000501
+salary of 20: +0000000.00
+rows: +00003
+rows after ROLLBACK: +00004
+WITH HOLD after COMMIT: +0000000000 +0000000020
+without HOLD after COMMIT: -0000000501
+dynamic cursor +000000020 emp-0002
+dynamic cursor +000000030 emp-0003
+dynamic cursor +000000040 emp-0004
+dynamic cursor +0000000100
+dynamic cursor +0000000100
+EXECUTE +0000000000 +0000000001
+WHENEVER SQLERROR: -0000000514
+name of 40 [renamed             ] +0007
+SET +0000000000 abcdef    
+VALUES +00042
+a structure +000000010 emp-0001 indicators +00000 +00000 -00001
+WHENEVER SQLERROR: -0000000204
+after the error -0000000204
+after DISCONNECT +0000000000 00000

@@ -761,6 +761,40 @@ typedef struct {
 int cob_json_parse(cob_field *text, cob_field *into, const cob_jp_node *nodes, int detail);
 extern cob_field cob_json_status_reg;     /* JSON-STATUS */
 
+/* embedded SQL (cobrt_sql.c): a host variable, where a statement's outcome
+ * goes (the items of the program's SQLCA, or its SQLCODE and SQLSTATE; NULL
+ * for those it lacks), and the statements */
+typedef struct {
+	cob_field *f;              /* the host variable; a VARCHAR's text */
+	cob_field *ind;            /* its indicator variable, or NULL */
+	cob_field *len;            /* a VARCHAR's length item, or NULL */
+} cob_sql_hv;
+typedef struct {
+	cob_field *caid, *cabc, *code, *errml, *errmc, *errp;
+	cob_field *errd;           /* SQLERRD(1); the others follow it */
+	int nerrd;
+	cob_field *warn;           /* SQLWARN: SQLWARN0, SQLWARN1, ... */
+	cob_field *state;
+} cob_sql_ca;
+void cob_sql_connect(const cob_sql_ca *ca, cob_field *target, cob_field *user, cob_field *pass, cob_field *name);
+void cob_sql_disconnect(const cob_sql_ca *ca, cob_field *name, int all);
+void cob_sql_set_connection(const cob_sql_ca *ca, cob_field *name);
+void cob_sql_end_work(const cob_sql_ca *ca, int rollback, int release);
+void cob_sql_exec(const cob_sql_ca *ca, const char *sql, int nin, const cob_sql_hv *in, int nout,
+                  const cob_sql_hv *out);
+void cob_sql_current(const cob_sql_ca *ca, const char *sql, const char *cursor, int nin, const cob_sql_hv *in);
+void cob_sql_open(const cob_sql_ca *ca, const char *cursor, const char *sql, const char *prepared, int keyed,
+                  int hold, int nin, const cob_sql_hv *in);
+void cob_sql_fetch(const cob_sql_ca *ca, const char *cursor, int nout, const cob_sql_hv *out);
+void cob_sql_close(const cob_sql_ca *ca, const char *cursor);
+void cob_sql_prepare(const cob_sql_ca *ca, const char *name, const cob_sql_hv *text);
+void cob_sql_execute(const cob_sql_ca *ca, const char *name, int nin, const cob_sql_hv *in, int nout,
+                     const cob_sql_hv *out);
+void cob_sql_immediate(const cob_sql_ca *ca, const cob_sql_hv *text);
+int cob_sql_code(void);                 /* SQLCODE of the last statement, for WHENEVER */
+int cob_sql_warn(void);
+void cob_sql_end(int abnormal);
+
 /* XML GENERATE */
 typedef struct {
 	unsigned char *dst;

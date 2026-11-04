@@ -186,6 +186,8 @@ results.
 - A C compiler with GNU extensions: gcc (tested with 13.3) or clang. The
   generated code uses computed `goto`, `__int128` and statement expressions.
 - GnuCOBOL is **not** needed. It is used only as a reference by `make test-ref`.
+- For embedded SQL, at run time: libsqlite3 for SQLite, libpq for PostgreSQL
+  (loaded when a program connects; nothing is needed to compile).
 
 The runtime library is built automatically into `runtime/libcobrt.a` the first
 time you compile. `make` builds it ahead of time.
@@ -547,6 +549,110 @@ locking tests, ten of which 3.1.2 itself marks as expected failures,
 `run_gc.py --xfail` passes 11; the other two want status 61 for the READ of
 a locked record, where the standard has 51.
 
+## Embedded SQL
+
+`EXEC SQL ... END-EXEC` statements are compiled directly: there is no
+precompiler to run first. A program reaches SQLite or PostgreSQL, through the
+client library of each (libsqlite3, libpq), which is loaded when the program
+first connects, so a program that uses neither needs neither installed.
+
+```cobol
+       WORKING-STORAGE SECTION.
+           EXEC SQL INCLUDE SQLCA END-EXEC.
+       01 EMP-ID     PIC 9(4).
+       01 EMP-NAME   PIC X(20).
+       01 IND-NAME   PIC S9(4) COMP-5.
+           EXEC SQL DECLARE C1 CURSOR FOR
+               SELECT ID, NAME FROM EMP WHERE ID > :EMP-ID ORDER BY ID
+           END-EXEC.
+       PROCEDURE DIVISION.
+           EXEC SQL CONNECT TO 'payroll.db' END-EXEC
+           EXEC SQL WHENEVER NOT FOUND GO TO DONE END-EXEC
+           EXEC SQL OPEN C1 END-EXEC
+           PERFORM FOREVER
+               EXEC SQL FETCH C1 INTO :EMP-ID, :EMP-NAME:IND-NAME
+               END-EXEC
+               DISPLAY EMP-ID ' ' EMP-NAME
+           END-PERFORM.
+       DONE.
+           EXEC SQL CLOSE C1 END-EXEC
+           EXEC SQL COMMIT END-EXEC
+```
+
+**Connecting.** `CONNECT TO db [AS name] [USER u [USING password]]` (DB2 and
+the standard) or `CONNECT :user IDENTIFIED BY :password [AT name] [USING
+db]` (Oracle and OCESQL), with literals, names or host variables. The
+database is SQLite for a file name (`sqlite:name` and `:memory:` too), and
+PostgreSQL for a URI (`postgresql://...`), a libpq connection string
+(`host=... dbname=...`), `pg:name` or OCESQL's `name@host[:port]`. `SET
+CONNECTION`, `DISCONNECT [name | CURRENT | ALL]` and `CONNECT RESET` manage
+several. A program that runs SQL without connecting uses the database
+`COB_SQL_DATABASE` names (with `COB_SQL_USER` and `COB_SQL_PASSWORD`).
+`COB_SQLITE_LIBRARY` and `COB_PQ_LIBRARY` give a client library's path when it
+isn't found by its usual name.
+
+**Statements.** SELECT ... INTO (one row: SQLCODE 100 for none, -811 for
+more), INSERT, UPDATE, DELETE and any other statement the database knows,
+with host variables in it; DECLARE CURSOR (WITH HOLD, FOR UPDATE), OPEN [USING],
+FETCH [NEXT] ... INTO, CLOSE; UPDATE and DELETE ... WHERE CURRENT OF; COMMIT
+and ROLLBACK [WORK] [RELEASE]; PREPARE ... FROM, EXECUTE ... [USING] [INTO],
+EXECUTE IMMEDIATE (a text of several statements runs them all on SQLite), a
+cursor over a prepared statement; `SET :hv = expression` and `VALUES ... INTO`;
+WHENEVER SQLERROR / SQLWARNING / NOT FOUND with CONTINUE, GO TO, PERFORM or
+STOP; INCLUDE SQLCA, INCLUDE of a copybook (a DCLGEN member), BEGIN and END
+DECLARE SECTION, DECLARE TABLE. DB2's `CURRENT DATE` / `TIME` / `TIMESTAMP` and
+`FETCH FIRST n ROWS ONLY` are written as the two databases know them,
+`WITH UR`-style isolation and `OPTIMIZE FOR` clauses are dropped, and `FOR
+UPDATE OF columns` is `FOR UPDATE`: PostgreSQL locks the rows, SQLite (which
+locks the whole database while it writes) goes without.
+
+**Host variables** are any elementary item, numbers of every USAGE among them;
+a group is its elementary items in order (a host structure), and a group of
+two level-49 items, a binary length and its text, is a VARCHAR. An indicator
+variable follows its host variable (`:NAME:IND` or `:NAME INDICATOR :IND`; an
+indicator table for a structure): -1 sends a null, receives -1 for a null,
+and the original length when a string was cut short (SQLWARN1). Text goes to
+the database without its trailing spaces and comes back padded.
+
+**Units of work.** As in DB2, the statements after a COMMIT or ROLLBACK are one
+unit of work; COMMIT closes the cursors not declared WITH HOLD, ROLLBACK closes
+them all. A statement that fails is undone alone and the work before it stays
+(on PostgreSQL each statement runs under a savepoint, so an error doesn't
+spoil the transaction; `COB_SQL_SAVEPOINT=N` leaves the savepoints out, which
+saves two round trips a statement). STOP RUN, or the main program's end,
+commits; a runtime error or any other end rolls back.
+
+**SQLCA.** `EXEC SQL INCLUDE SQLCA` gives DB2's SQLCA (SQLCODE, SQLERRM,
+SQLERRD(3) for the rows a statement changed, SQLWARN, SQLSTATE); a program
+that runs SQL without one gets one, unless it declares SQLCODE and SQLSTATE of
+its own, which then receive the outcome. SQLCODE follows DB2 for the
+conditions programs test, whichever the database:
+
+| SQLCODE | SQLSTATE | |
+|---|---|---|
+| 100 | 02000 | no row: SELECT INTO, FETCH, an UPDATE or DELETE that changed nothing |
+| -104 | 42601 | syntax error |
+| -204 / -206 | 42704 / 42703 | no such table / column |
+| -302 / -304 | 22001 / 22003 | a value too long / out of range for its host variable |
+| -305 | 22002 | a null, and no indicator variable |
+| -407 / -530 / -545 / -803 | 23502 / 23503 / 23513 / 23505 | NOT NULL, foreign key, check, duplicate key |
+| -420 | 22018 | not a number, for a numeric host variable |
+| -501 / -502 / -508 | 24501 / 24502 / 24504 | cursor not open / already open / not on a row |
+| -514 | 26501 | statement not prepared |
+| -811 | 21000 | SELECT INTO found more than one row |
+| -911 | 40001 | deadlock or lock timeout |
+| -1024 | 08003 | no connection |
+
+Any other error is -1. SQLSTATE is the database's own (PostgreSQL says 42P01
+where DB2 says 42704), and SQLERRMC its message. `COB_SQL_TRACE=Y` writes
+each statement and its outcome to standard error.
+
+Not supported: SQL descriptors (SQLDA, `USING DESCRIPTOR`), FETCH other than
+NEXT, host variable arrays for multi-row FETCH and INSERT, and other
+databases (ODBC). `make sql-test` runs the programs in `tests/sql/` on SQLite
+and on PostgreSQL (a server it starts, or the one `YACCC_TEST_PG` names) and
+compares each with one expected output.
+
 ## Language coverage
 
 **Source.** Fixed, free and variable reference formats, continuation lines,
@@ -656,6 +762,8 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - XML: XML GENERATE (elements, attributes, content, tables, SUPPRESS,
   NAMESPACE) and XML PARSE with a PROCESSING PROCEDURE, XML-EVENT, XML-TEXT,
   XML-NAMESPACE, XML-NAMESPACE-PREFIX and XML-CODE.
+- Embedded SQL: EXEC SQL ... END-EXEC, on SQLite and PostgreSQL (see
+  *Embedded SQL*).
 - Strings and tables: STRING, UNSTRING (a literal or figurative constant is
   accepted as the sending item, as GnuCOBOL and Micro Focus do), INSPECT
   (TALLYING / REPLACING / CONVERTING, ALL / LEADING / FIRST / TRAILING,
@@ -853,7 +961,7 @@ literal.
   and not drawn (no terminal sequence draws a line beside a field).
 - Report Writer: VARYING in report groups (GnuCOBOL 3.1.2 doesn't have it
   either).
-- `EXEC SQL`/CICS.
+- `EXEC CICS` and other EXEC blocks than `EXEC SQL`.
 - Object-oriented COBOL.
 - GnuCOBOL's C API for fields (`cob_get_field_str` and the like): C code gets
   addresses and values, not `cob_field` structures.
@@ -950,21 +1058,23 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 15,128 lines of Python across fifteen files; the runtime it
-links against is 15,560 lines of C.
+The compiler is 16,063 lines of Python across seventeen files; the runtime it
+links against is 17,049 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
 | `lib/yaccc/source.py` | 356 | reference formats, continuations, directives, comment-entries, debugging lines |
-| `lib/yaccc/lexer.py` | 652 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
+| `lib/yaccc/lexer.py` | 728 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 4,181 | recursive-descent parser to the AST (`nodes.py`, 813) |
+| `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 843) |
 | `lib/yaccc/data.py` | 663 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,501 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,502 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 381 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
+| `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
+| `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 3,332 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,333 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 2,918 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,130 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
@@ -977,7 +1087,8 @@ links against is 15,560 lines of C.
 | `runtime/cobrt_xml.c` | 567 | XML GENERATE |
 | `runtime/cobrt_xmlp.c` | 901 | XML PARSE: the document read into events |
 | `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
-| `runtime/cobrt.h` | 1,124 | runtime interface and inline fast paths |
+| `runtime/cobrt_sql.c` | 1,454 | embedded SQL on SQLite and PostgreSQL, their client libraries loaded at run time |
+| `runtime/cobrt.h` | 1,158 | runtime interface and inline fast paths |
 
 Design choices:
 
@@ -1019,11 +1130,13 @@ tests/cli_test.py    compiler command-line tests
 tests/screen/        screen I/O programs, the keys typed and the screens expected
 tests/screen_test.py runs them in a pseudo-terminal through a small terminal emulator
 tests/files_test.py  files shared between programs and processes: sharing, locks, journal
+tests/sql/           embedded SQL programs and their expected output
+tests/sql_test.py    runs them on SQLite and on PostgreSQL
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      file carries SPDX, README credits GnuCOBOL (make
                      provenance; provenance-deep measures token overlap)
 docs/img/            the figures in this README, drawn from the numbers above
-Makefile             make test | cli-test | screen-test | files-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
+Makefile             make test | cli-test | screen-test | files-test | sql-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
 ```
 
 ## Acknowledgements

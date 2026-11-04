@@ -1,0 +1,14 @@
+connect +000000000 00000
+connect as SECOND +000000000
+SECOND reads T1 [one       ]
+set connection +000000000
+DEFAULT reads T2 [two       ]
+no such connection -000000843 08003
+disconnect SECOND +000000000
+again -000001024
+main fetched [one       ]
+called program fetched [two       ] +0000000000 00000
+main fetched +000000100
+inside IF 0001
+connect reset +000000000
+disconnect all +000000000

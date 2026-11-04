@@ -18,7 +18,7 @@ DESTDIR ?=
 INSTDIR = $(DESTDIR)$(PREFIX)/lib/yaccc
 BINDIR  = $(DESTDIR)$(PREFIX)/bin
 
-.PHONY: all runtime test cli-test screen-test files-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples install uninstall clean
+.PHONY: all runtime test cli-test screen-test files-test sql-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples install uninstall clean
 
 all: runtime
 
@@ -40,6 +40,11 @@ screen-test: runtime
 # files shared between programs and processes: sharing, record locks, journal
 files-test: runtime
 	$(PYTHON) tests/files_test.py
+
+# embedded SQL, against SQLite and against PostgreSQL (a server it starts,
+# or the one YACCC_TEST_PG names)
+sql-test: runtime
+	$(PYTHON) tests/sql_test.py
 
 # this tree stays MIT: no GPL code, no vendored third-party suite
 provenance:

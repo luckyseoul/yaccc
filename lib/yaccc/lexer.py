@@ -41,6 +41,8 @@ class Lexer:
         self.decimal_comma = decimal_comma
         self.pic_pending = False
         self.pseudo = None        # (raw text, loc) while inside multi-line pseudo text
+        self.sql = None           # ([text so far], loc) inside EXEC SQL ... END-EXEC
+        self.exec_at = None       # EXEC ended a line: SQL may begin the next one
 
     def lex_lines(self, lines):
         toks = []
@@ -48,12 +50,60 @@ class Lexer:
             self.lex_text(ll.text, ll.loc, toks)
         if self.pseudo is not None:
             raise CompileError("unterminated pseudo-text", self.pseudo[1])
+        self.check_closed()
         return toks
+
+    def check_closed(self):
+        if self.sql is not None:
+            raise CompileError("EXEC SQL without END-EXEC", self.sql[1])
+
+    def _sql_text(self, text, i, toks):
+        """Gather an EXEC SQL statement's text up to END-EXEC, which may be
+        lines away; the statement becomes one EXECSQL token. Returns where
+        lexing resumes on this line, or None when the line is used up."""
+        parts, loc = self.sql
+        n = len(text)
+        j = i
+        q = None
+        while j < n:
+            c = text[j]
+            if q:
+                if c == q:
+                    q = None
+                j += 1
+                continue
+            if c in '\'"':
+                q = c
+            elif c == '-' and text.startswith('--', j):
+                parts.append(text[i:j])          # an SQL comment: the rest of the line
+                return None
+            elif c in 'Ee' and text[j:j + 8].upper() == 'END-EXEC' and \
+                    (j == 0 or not (text[j - 1].isalnum() or text[j - 1] in '-_')) and \
+                    (j + 8 >= n or not (text[j + 8].isalnum() or text[j + 8] in '-_')):
+                parts.append(text[i:j])
+                body = ' '.join(p.strip() for p in parts if p.strip())
+                toks.append(Tok('EXECSQL', body, loc, 'EXECSQL'))
+                self.sql = None
+                return j + 8
+            j += 1
+        parts.append(text[i:])
+        return None
 
     def lex_text(self, text, loc, toks):
         n = len(text)
         i = 0
         dp = ',' if self.decimal_comma else '.'
+        if self.exec_at is not None:
+            m = re.match(r'\s*SQL(?=\s|$)', text, re.I)
+            if m:
+                toks.pop()                       # the EXEC that ended the last line
+                self.sql = ([], self.exec_at)
+                i = m.end()
+            self.exec_at = None
+        if self.sql is not None:
+            i = self._sql_text(text, i, toks)
+            if i is None:
+                return
         if self.pseudo is not None:
             end = text.find('==')
             if end < 0:
@@ -184,6 +234,19 @@ class Lexer:
                     k += 1
                 w = text[i:k]
                 up = w.upper()
+                if up == 'EXEC':
+                    m = re.match(r'\s+(SQL|CICS|DLI|SQLIMS|HTML|ADO|XML)(?=\s|$)', text[k:], re.I)
+                    if m and m.group(1).upper() == 'SQL':
+                        self.sql = ([], loc)
+                        i = self._sql_text(text, k + m.end(), toks)
+                        if i is None:
+                            return
+                        continue
+                    if m:
+                        raise CompileError(f"EXEC {m.group(1).upper()} is not supported; "
+                                           "only EXEC SQL is", loc)
+                    if not text[k:].strip():
+                        self.exec_at = loc           # SQL may begin the next line
                 toks.append(Tok('WORD', w, loc, up))
                 if up in ('PIC', 'PICTURE'):
                     self.pic_pending = True
@@ -328,6 +391,7 @@ class SourceSet:
         bounds.append(len(all_toks))
         if lx.pseudo is not None:
             raise CompileError("unterminated pseudo-text", lx.pseudo[1])
+        lx.check_closed()
         # lexing stays one stream (a separator on one line can affect the
         # next), but COPY REPLACING is applied per expanded copybook region
         line_toks = [all_toks[bounds[i]:bounds[i + 1]] for i in range(len(lines))]
@@ -388,6 +452,18 @@ class SourceSet:
         n = len(toks)
         while i < n:
             t = toks[i]
+            if t.kind == 'EXECSQL':
+                m = re.fullmatch(r"INCLUDE\s+(?:\"([^\"]+)\"|'([^']+)'|([\w$#@.-]+))\s*", t.val, re.I)
+                name = m and (m.group(1) or m.group(2) or m.group(3))
+                if name and name.upper() not in ('SQLCA', 'SQLDA'):
+                    # EXEC SQL INCLUDE name END-EXEC: the copybook, as COPY
+                    # would give it (DB2's DCLGEN members come this way)
+                    cpath = self._find(name, None, t.loc.file or path, t.loc)
+                    out.extend(self._tokenize(cpath, source.read_raw(cpath), depth + 1))
+                    i += 1
+                    if i < n and toks[i].kind == '.':
+                        i += 1
+                    continue
             if not (t.kind == 'WORD' and t.up == 'COPY'):
                 out.append(t)
                 i += 1

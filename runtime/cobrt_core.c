@@ -86,6 +86,7 @@ const char *cob_arg_value(int i)
 void cob_stop_run(int rc)
 {
 	fflush(stdout);
+	cob_sql_end(0);                 /* the run unit's normal end commits */
 	cob_close_all_files();
 	fflush(stdout);
 	fflush(stderr);

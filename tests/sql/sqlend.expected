@@ -1,0 +1,9 @@
+setup +0000000000
+exit 0
+normal +0000000000
+exit 0
+abend +0000000000
+exit 1
+rows 0001
+row normal    
+exit 0
