@@ -1,0 +1,8 @@
+short
+exactly-te
+0123456789
+this line
+tab	here
+padded
+ten-chars!
+last line

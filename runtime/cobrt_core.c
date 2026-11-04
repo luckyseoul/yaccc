@@ -63,7 +63,7 @@ void cob_init(int argc, char **argv)
 	if (!isatty(1))
 		setvbuf(stdout, NULL, _IOFBF, 1 << 16);
 	const char *tr = getenv("COB_SET_TRACE");
-	if (tr && strchr("YyTt1", tr[0]))
+	if (tr && *tr && strchr("YyTt1", tr[0]))
 		cob_trace_on = 1;
 	cob_call_init();
 }

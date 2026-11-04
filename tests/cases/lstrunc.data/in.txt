@@ -1,0 +1,8 @@
+short
+exactly-ten
+0123456789
+this line is much longer than the record
+tab	here
+padded    	
+ten-chars!          
+last line no newline

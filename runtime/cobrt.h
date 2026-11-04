@@ -1049,6 +1049,8 @@ typedef struct cob_file {
 	int open_lock;            /* OPEN ... WITH LOCK: this OPEN has the file to itself */
 	int read_lock;            /* the lock phrase of the READ under way (COB_LOCK_*) */
 	void *holder;             /* the process's file-level locks (cobrt_io.c) */
+	unsigned char *ls_carry;  /* LINE SEQUENTIAL, COB_LS_SPLIT: the rest of a long line */
+	size_t ls_carry_len, ls_carry_at;
 } cob_file;
 /* SHARING (cob_file.sharing) */
 #define COB_SHARE_NONE      0   /* no clause: INPUT shares, a sequential file opened

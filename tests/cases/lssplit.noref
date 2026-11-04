@@ -1,0 +1,4 @@
+COB_LS_SPLIT=Y (GnuCOBOL 3.2's option): a LINE SEQUENTIAL line longer than
+the record is read as several records, status 06 for each one that more
+follows. GnuCOBOL 3.1.2 has no such option. Compared only against the
+recorded baseline.

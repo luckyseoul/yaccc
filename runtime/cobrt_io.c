@@ -787,9 +787,28 @@ static int sync_wanted(void)
 	static int v = -1;
 	if (v < 0) {
 		const char *e = getenv("COB_SYNC");
-		v = e && (strchr("YyTt1", e[0]) != NULL || strcasecmp(e, "on") == 0);
+		v = e && *e && (strchr("YyTt1", e[0]) != NULL || strcasecmp(e, "on") == 0);
 	}
 	return v;
+}
+
+/* COB_LS_SPLIT=Y: a LINE SEQUENTIAL line longer than the record is read as
+ * several records (GnuCOBOL 3.2's option of the same name) */
+static int ls_split(void)
+{
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("COB_LS_SPLIT");
+		v = e && *e && (strchr("YyTt1", e[0]) != NULL || strcasecmp(e, "on") == 0);
+	}
+	return v;
+}
+
+static void ls_drop_carry(cob_file *f)
+{
+	free(f->ls_carry);
+	f->ls_carry = NULL;
+	f->ls_carry_len = f->ls_carry_at = 0;
 }
 
 static void put32(unsigned char *p, uint32_t v)
@@ -1662,6 +1681,7 @@ again:
 
 static int open_seq(cob_file *f, int mode)
 {
+	ls_drop_carry(f);
 	if (f->assign_kind == 1) {
 		if (mode != COB_OPEN_INPUT)
 			return set_st(f, "37");
@@ -1743,6 +1763,7 @@ int cob_close(cob_file *f)
 				fclose(f->fp);
 		}
 		f->fp = NULL;
+		ls_drop_carry(f);
 	} else {
 		ixstate *s = ixs(f);
 		if (s->journal) {
@@ -1842,25 +1863,72 @@ static int read_seq(cob_file *f)
 	unsigned char *rec = f->record;
 	size_t max = f->record_max;
 	if (f->organization == COB_ORG_LINE_SEQ) {
-		int c = getc(f->fp);
 		size_t n = 0;
-		if (c == EOF) {
-			f->at_end = 1;
-			return set_st(f, "10");
-		}
-		while (c != EOF && c != '\n') {
-			if (n < max)
+		const char *st = "00";
+		if (f->ls_carry) {
+			/* COB_LS_SPLIT: the next piece of a line too long for one record */
+			size_t left = f->ls_carry_len - f->ls_carry_at;
+			n = left < max ? left : max;
+			memcpy(rec, f->ls_carry + f->ls_carry_at, n);
+			f->ls_carry_at += n;
+			if (f->ls_carry_at < f->ls_carry_len) {
+				st = "06";
+			} else {
+				free(f->ls_carry);
+				f->ls_carry = NULL;
+			}
+		} else {
+			int c = getc(f->fp);
+			if (c == EOF) {
+				f->at_end = 1;
+				return set_st(f, "10");
+			}
+			while (c != EOF && c != '\n' && n < max) {
 				rec[n++] = (unsigned char)c;
-			c = getc(f->fp);
+				c = getc(f->fp);
+			}
+			if (c != EOF && c != '\n') {
+				/* the line is longer than the record. Its rest is the next
+				   record (or records) with COB_LS_SPLIT, status 06 for each
+				   that more follows, as GnuCOBOL 3.2 does; otherwise it is
+				   dropped, and status 04 (the standard's "record length
+				   does not conform") says so unless it was only spaces */
+				size_t cap = 256, len = 0;
+				unsigned char *rest = cob_malloc(cap);
+				while (c != EOF && c != '\n') {
+					if (len == cap) {
+						cap *= 2;
+						rest = realloc(rest, cap);
+						if (!rest)
+							cob_fatal("out of memory");
+					}
+					rest[len++] = (unsigned char)c;
+					c = getc(f->fp);
+				}
+				if (len > 0 && rest[len - 1] == '\r')
+					len--;
+				while (len > 0 && rest[len - 1] == ' ')
+					len--;          /* spaces at the end are no data */
+				if (len > 0 && ls_split()) {
+					f->ls_carry = rest;
+					f->ls_carry_len = len;
+					f->ls_carry_at = 0;
+					rest = NULL;
+					st = "06";
+				} else if (len > 0) {
+					st = "04";
+				}
+				free(rest);
+			} else if (n > 0 && rec[n - 1] == '\r') {
+				n--;
+			}
 		}
-		if (n > 0 && rec[n - 1] == '\r')
-			n--;
 		memset(rec + n, ' ', max - n);
 		f->cur_size = n;
 		if (f->size_field)
 			cob_set_int(f->size_field, (cob_s64)n);
 		f->last_read_ok = 1;
-		return set_st(f, "00");
+		return set_st(f, st);
 	}
 	f->last_pos = ftell(f->fp);
 	size_t sz = max;

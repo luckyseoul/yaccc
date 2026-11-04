@@ -1,0 +1,4 @@
+Deliberate deviation from GnuCOBOL 3.1.2: a LINE SEQUENTIAL READ that drops
+part of a line returns status 04, as the standard has it for a record whose
+length does not conform (and GnuCOBOL 3.2 with COB_LS_SPLIT=false); 3.1.2
+returns 00. Compared only against the recorded baseline.

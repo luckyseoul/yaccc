@@ -1,0 +1,9 @@
+00 [short     ]
+04 [exactly-te]
+00 [0123456789]
+04 [this line ]
+00 [tab	here  ]
+04 [padded    ]
+00 [ten-chars!]
+04 [last line ]
+at end 10

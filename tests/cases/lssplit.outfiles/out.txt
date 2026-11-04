@@ -1,0 +1,14 @@
+short
+exactly-te
+n
+0123456789
+this line
+is much lo
+nger than
+the record
+tab	here
+padded
+	
+ten-chars!
+last line
+no newline

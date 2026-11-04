@@ -25,7 +25,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
 - **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **69** differential test programs, compared with GnuCOBOL byte for byte:
+- **71** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
   run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
   baselines checked by hand).
@@ -105,7 +105,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 69 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 71 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -116,10 +116,10 @@ conditional compilation inside a copybook, and report items placed without a
 COLUMN clause, and JSON and XML GENERATE and PARSE.
 
 - `make test` compares each program's output and every file it writes against
-  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, `rw1`, `dbg2`
-  and `dbg5`, cases where YACCC deliberately differs from GnuCOBOL, and
-  `jsonparse1`, `xmlparse1`, `genocc1` and `fnutf8`, which use what GnuCOBOL
-  3.1.2 doesn't have; their baselines were verified by hand.
+  recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, `rw1`, `dbg2`,
+  `dbg5` and `lstrunc`, cases where YACCC deliberately differs from GnuCOBOL, and
+  `jsonparse1`, `xmlparse1`, `genocc1`, `fnutf8` and `lssplit`, which use what
+  GnuCOBOL 3.1.2 doesn't have; their baselines were verified by hand.
 - Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
   had no live `cobc` to record from, so their baselines were checked by hand
   against the standard. `rwlimit` is marked `.noref` because `cobc` rejects
@@ -129,11 +129,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 64 of the 69 run and all 64 pass (the `.noref` ones against their
+  3.1.2, 66 of the 71 run and all 66 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 69 pass, built with gcc.
+All 71 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -337,6 +337,12 @@ Runtime environment:
 | `COB_TRACE_FORMAT` | the layout of a trace line: `%P` program, `%S` what is traced (`Paragraph: NAME`), `%L` line, `%F` source file; default `Program-Id:  %P%S Line: %L` |
 | `COB_LIBRARY_PATH` | directories, `:`-separated, where CALL looks for a module `NAME.so` before the current directory |
 | `COB_PRE_LOAD` | modules to load at start-up, `:`-separated, so CALL finds the programs and ENTRY points they hold |
+| `COB_LS_SPLIT=Y` | a LINE SEQUENTIAL line longer than the record is read as several records (status 06), not cut short (status 04) |
+| `COB_SYNC=Y` | each change to a relative or indexed file waits until it is on the disk |
+| `COB_SQL_DATABASE`, `COB_SQL_USER`, `COB_SQL_PASSWORD` | the database of a program that runs SQL without CONNECT |
+| `COB_SQL_TRACE=Y` | write each SQL statement and its SQLCODE to standard error |
+| `COB_SQL_SAVEPOINT=N` | PostgreSQL: no savepoint around each statement (faster; an error then spoils the unit of work) |
+| `COB_SQLITE_LIBRARY`, `COB_PQ_LIBRARY` | the path of libsqlite3 or libpq when it isn't found by its usual name |
 
 Compile errors name the file and line and print the offending source line.
 One run reports every error it can: the parser goes on at the next sentence
@@ -786,6 +792,11 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - Organizations: sequential (fixed and variable length), line sequential,
   relative, and indexed with alternate keys and duplicates (duplicates are
   returned in WRITE/REWRITE order).
+- Line sequential: a line ends at LF or CR LF; a READ of a line longer than
+  the record gets what fits and status 04 when the rest wasn't only spaces,
+  or, with `COB_LS_SPLIT=Y` (GnuCOBOL 3.2's option), reads the rest as the
+  next records, with status 06 for each one that more follows. A WRITE drops
+  the record's trailing spaces.
 - Access modes: sequential, random and dynamic.
 - FILE STATUS codes follow the standard, including 04/05/07/14/24/35/38/41–49.
 
@@ -1064,6 +1075,11 @@ All of these were checked against GnuCOBOL 3.1.2:
     no tables, which yaccc writes as arrays and repeated elements, and with a
     NAMESPACE that is all spaces it still writes the NAMESPACE-PREFIX on every
     element, with no namespace bound to it; yaccc writes no prefix then.
+12. **LINE SEQUENTIAL READ of a long line** returns status 04 when part of the
+    line was dropped, as the standard has it for a record whose length does
+    not conform, and as GnuCOBOL 3.2 does with `COB_LS_SPLIT` off (3.2 splits
+    the line into several records by default; `COB_LS_SPLIT=Y` does that
+    here). GnuCOBOL 3.1.2 drops the rest of the line with status 00.
 
 ## How it works
 
