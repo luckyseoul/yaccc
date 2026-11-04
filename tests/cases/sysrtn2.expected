@@ -1,0 +1,14 @@
+alloc +0000000000
+the memory is zeros
+memory [hello]
+free +0000000000
+000 000 000 000 000 001 000 001 unpacked
+packed 133
+screen 030 x 100
+exit procedure installed +0000000000
+its priority 064
+removed +0000000000
+removed again +0000000001
+STOP RUN
+exit procedure, priority 200
+exit procedure, priority 64

@@ -907,6 +907,125 @@ int cob_sys_cbl_gc_getopt(int n, cob_field **a)
  * The first argument selects a slot, but GnuCOBOL's procedures form one chain
  * in which the latest registration runs first whatever the index, which is what
  * its own test depends on. */
+/* ---------------------------------------------------------------- memory */
+
+/* CBL_ALLOC_MEM pointer BY VALUE size BY VALUE flags: memory set to zeros,
+ * its address in pointer; 0, or 1 when there is none to be had */
+int cob_sys_cbl_alloc_mem(int n, cob_field **a)
+{
+	if (n < 2)
+		return -1;
+	cob_s64 size = num_arg(a[1]);
+	void *p = size > 0 ? calloc(1, (size_t)size) : NULL;
+	cob_pointer_set(a[0], p);
+	return p ? 0 : 1;
+}
+
+/* CBL_FREE_MEM BY VALUE pointer (memory from CBL_ALLOC_MEM or ALLOCATE) */
+int cob_sys_cbl_free_mem(int n, cob_field **a)
+{
+	if (n < 1)
+		return -1;
+	free(cob_pointer_get(a[0]));
+	return 0;
+}
+
+/* ---------------------------------------------------------------- bits in a byte */
+
+/* X"F4" byte array: the low bits of eight bytes, the first the highest, as
+ * one byte; X"F5" byte array: the other way */
+int cob_sys_x_f4(int n, cob_field **a)
+{
+	if (n < 2 || !a[0]->size)
+		return -1;
+	unsigned char b = 0;
+	for (size_t i = 0; i < 8; i++)
+		b = (unsigned char)(b << 1 | (i < a[1]->size ? (a[1]->data[i] & 1) : 0));
+	a[0]->data[0] = b;
+	return 0;
+}
+
+int cob_sys_x_f5(int n, cob_field **a)
+{
+	if (n < 2 || !a[0]->size)
+		return -1;
+	unsigned char b = a[0]->data[0];
+	for (size_t i = 0; i < 8 && i < a[1]->size; i++)
+		a[1]->data[i] = (unsigned char)((b >> (7 - i)) & 1);
+	return 0;
+}
+
+/* ---------------------------------------------------------------- exit procedures
+ *
+ * CBL_EXIT_PROC flag params: params is a PROCEDURE-POINTER, then a byte for
+ * the priority. Flag 0 installs the procedure (priority 64), 1 removes it, 2
+ * puts its priority in the byte, 3 sets the priority from the byte (and
+ * installs it). The run unit's end -- STOP RUN, the main program's end, or a
+ * runtime error -- calls them, highest priority first and, of the same
+ * priority, the last installed first.
+ */
+#define COB_MAX_EXIT_PROCS 32
+static struct { void *fn; int prio; int order; } exit_procs[COB_MAX_EXIT_PROCS];
+static int n_exit_procs, exit_order, exits_running;
+
+int cob_sys_cbl_exit_proc(int n, cob_field **a)
+{
+	if (n < 2 || a[1]->size < sizeof(void *))
+		return -1;
+	int flag = (int)num_arg(a[0]);
+	void *fn = cob_pointer_get(a[1]);
+	unsigned char *prio = a[1]->size > sizeof(void *) ? a[1]->data + sizeof(void *) : NULL;
+	int i = 0;
+	while (i < n_exit_procs && exit_procs[i].fn != fn)
+		i++;
+	switch (flag) {
+	case 1:
+		if (i == n_exit_procs)
+			return 1;
+		exit_procs[i] = exit_procs[--n_exit_procs];
+		return 0;
+	case 2:
+		if (i == n_exit_procs)
+			return 1;
+		if (prio)
+			*prio = (unsigned char)exit_procs[i].prio;
+		return 0;
+	case 0:
+	case 3:
+		if (!fn)
+			return 1;
+		if (i == n_exit_procs) {
+			if (n_exit_procs == COB_MAX_EXIT_PROCS)
+				return 1;
+			exit_procs[n_exit_procs].fn = fn;
+			exit_procs[n_exit_procs].prio = 64;
+			exit_procs[n_exit_procs].order = ++exit_order;
+			n_exit_procs++;
+		}
+		if (flag == 3 && prio)
+			exit_procs[i].prio = *prio;
+		return 0;
+	}
+	return 1;
+}
+
+void cob_run_exit_procs(void)
+{
+	if (exits_running)
+		return;
+	exits_running = 1;
+	while (n_exit_procs > 0) {
+		int best = 0;
+		for (int i = 1; i < n_exit_procs; i++)
+			if (exit_procs[i].prio > exit_procs[best].prio ||
+			    (exit_procs[i].prio == exit_procs[best].prio && exit_procs[i].order > exit_procs[best].order))
+				best = i;
+		void *fn = exit_procs[best].fn;
+		exit_procs[best] = exit_procs[--n_exit_procs];
+		((int (*)(void))fn)();
+	}
+}
+
 int cob_sys_cbl_error_proc(int n, cob_field **a)
 {
 	if (n < 2)

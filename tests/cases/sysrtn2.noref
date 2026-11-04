@@ -1,0 +1,4 @@
+GnuCOBOL 3.1 has no CBL_ALLOC_MEM or CBL_FREE_MEM, and its CBL_EXIT_PROC
+takes its parameters otherwise (the program crashes there). Compared only
+against the recorded baseline, checked by hand against Micro Focus's
+description of the routines.

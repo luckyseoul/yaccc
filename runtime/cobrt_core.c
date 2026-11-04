@@ -86,6 +86,8 @@ const char *cob_arg_value(int i)
 void cob_stop_run(int rc)
 {
 	fflush(stdout);
+	cob_run_exit_procs();           /* CBL_EXIT_PROC procedures */
+	fflush(stdout);
 	cob_sql_end(0);                 /* the run unit's normal end commits */
 	cob_close_all_files();
 	fflush(stdout);
@@ -173,6 +175,7 @@ void cob_fatal(const char *fmt, ...)
 			fprintf(stderr, "libcob: error: %s\n", msg);
 			print_fatal_note();
 		}
+		cob_run_exit_procs();
 		cob_close_all_files();
 		fflush(stdout);
 		exit(1);
@@ -181,6 +184,7 @@ void cob_fatal(const char *fmt, ...)
 	fputs(msg, stderr);
 	fputc('\n', stderr);
 	print_fatal_note();
+	cob_run_exit_procs();
 	cob_close_all_files();
 	fflush(stdout);
 	exit(1);

@@ -1128,3 +1128,108 @@ int cob_scr_escape_key(void)
 {
 	return last_key;
 }
+
+/* ------------------------------------------------------------ library routines
+ *
+ * The screen and keyboard routines programs call by name, on the same
+ * terminal state as SCREEN SECTION I/O: CBL_GET_SCR_SIZE, CBL_GET_CSR_POS
+ * and CBL_SET_CSR_POS (a row and a column byte, from 0), CBL_READ_KBD_CHAR
+ * (a key, without echo), CBL_GET_KBD_STATUS (1 when a key is waiting), X"E4"
+ * (clear the screen) and X"E5" (the bell).
+ */
+static void term_size(int *r, int *c)
+{
+	struct winsize ws;
+	*r = 24;
+	*c = 80;
+	if (ioctl(1, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0) {
+		*r = ws.ws_row;
+		*c = ws.ws_col;
+	} else {
+		const char *l = getenv("LINES"), *co = getenv("COLUMNS");
+		if (l && atoi(l) > 0)
+			*r = atoi(l);
+		if (co && atoi(co) > 0)
+			*c = atoi(co);
+	}
+}
+
+int cob_sys_cbl_get_scr_size(int n, cob_field **a)
+{
+	int r, c;
+	term_size(&r, &c);
+	if (n > 0)
+		cob_set_int(a[0], r > 255 ? 255 : r);
+	if (n > 1)
+		cob_set_int(a[1], c > 255 ? 255 : c);
+	return 0;
+}
+
+int cob_sys_cbl_get_csr_pos(int n, cob_field **a)
+{
+	if (n < 1 || a[0]->size < 2)
+		return -1;
+	int r = cur_line - 1, c = cur_col - 1;
+	a[0]->data[0] = (unsigned char)(r < 0 ? 0 : r > 255 ? 255 : r);
+	a[0]->data[1] = (unsigned char)(c < 0 ? 0 : c > 255 ? 255 : c);
+	return 0;
+}
+
+int cob_sys_cbl_set_csr_pos(int n, cob_field **a)
+{
+	if (n < 1 || a[0]->size < 2)
+		return -1;
+	scr_start();
+	int r = a[0]->data[0] + 1, c = a[0]->data[1] + 1;
+	printf("\033[%d;%dH", r, c);
+	set_cur(r, c);
+	if (r > max_line)
+		max_line = r;           /* the program's end leaves the cursor below it */
+	fflush(stdout);
+	return 0;
+}
+
+int cob_sys_cbl_read_kbd_char(int n, cob_field **a)
+{
+	fflush(stdout);
+	raw_mode(1);
+	int c = get_byte(-1);
+	raw_mode(0);
+	if (c < 0)
+		return 1;               /* end of input */
+	if (n > 0 && a[0]->size)
+		a[0]->data[0] = (unsigned char)c;
+	return 0;
+}
+
+int cob_sys_cbl_get_kbd_status(int n, cob_field **a)
+{
+	fflush(stdout);
+	raw_mode(1);                /* a key typed is there to see before Enter */
+	struct pollfd p = { 0, POLLIN, 0 };
+	int ready = poll(&p, 1, 0) > 0;
+	raw_mode(0);
+	if (n > 0)
+		cob_set_int(a[0], ready);
+	return 0;
+}
+
+int cob_sys_x_e4(int n, cob_field **a)
+{
+	(void)n;
+	(void)a;
+	scr_start();
+	out("\033[0m\033[H\033[2J");
+	set_cur(1, 1);
+	fflush(stdout);
+	return 0;
+}
+
+int cob_sys_x_e5(int n, cob_field **a)
+{
+	(void)n;
+	(void)a;
+	fputc('\a', stdout);
+	fflush(stdout);
+	return 0;
+}

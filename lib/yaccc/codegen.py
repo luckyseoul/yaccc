@@ -204,10 +204,17 @@ SYSTEM_ROUTINES = {
     'CBL_GC_GETOPT': (6, 6), 'CBL_ERROR_PROC': (2, 2),
     'CBL_OPEN_FILE': (5, 5), 'CBL_CREATE_FILE': (5, 5), 'CBL_READ_FILE': (5, 5),
     'CBL_WRITE_FILE': (5, 5), 'CBL_CLOSE_FILE': (1, 1), 'CBL_FLUSH_FILE': (1, 1),
-    'CBL_GC_HOSTED': (2, 2), 'CBL_OC_HOSTED': (2, 2),
+    'CBL_GC_HOSTED': (2, 2), 'CBL_OC_HOSTED': (2, 2), 'CBL_OC_GETOPT': (6, 6),
+    'CBL_GC_PRINTABLE': (1, 2),
+    'CBL_ALLOC_MEM': (2, 3), 'CBL_FREE_MEM': (1, 1), 'CBL_EXIT_PROC': (2, 2),
+    'CBL_GET_SCR_SIZE': (2, 2), 'CBL_GET_CSR_POS': (1, 1), 'CBL_SET_CSR_POS': (1, 1),
+    'CBL_READ_KBD_CHAR': (1, 1), 'CBL_GET_KBD_STATUS': (1, 1),
+    '\xf4': (2, 2), '\xf5': (2, 2), '\xe4': (0, 0), '\xe5': (0, 0),
 }
 SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_GC_NANOSLEEP',
-                         'CBL_OC_HOSTED': 'CBL_GC_HOSTED'}
+                         'CBL_OC_HOSTED': 'CBL_GC_HOSTED', 'CBL_OC_GETOPT': 'CBL_GC_GETOPT',
+                         'CBL_GC_PRINTABLE': 'C$PRINTABLE',
+                         '\xf4': 'X_F4', '\xf5': 'X_F5', '\xe4': 'X_E4', '\xe5': 'X_E5'}
 
 
 class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):

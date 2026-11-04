@@ -25,7 +25,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
 - **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **71** differential test programs, compared with GnuCOBOL byte for byte:
+- **72** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
   run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
   baselines checked by hand).
@@ -105,7 +105,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 71 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 72 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -118,8 +118,9 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, `rw1`, `dbg2`,
   `dbg5` and `lstrunc`, cases where YACCC deliberately differs from GnuCOBOL, and
-  `jsonparse1`, `xmlparse1`, `genocc1`, `fnutf8` and `lssplit`, which use what
-  GnuCOBOL 3.1.2 doesn't have; their baselines were verified by hand.
+  `jsonparse1`, `xmlparse1`, `genocc1`, `fnutf8`, `lssplit` and `sysrtn2`,
+  which use what GnuCOBOL 3.1.2 doesn't have; their baselines were verified
+  by hand.
 - Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
   had no live `cobc` to record from, so their baselines were checked by hand
   against the standard. `rwlimit` is marked `.noref` because `cobc` rejects
@@ -129,11 +130,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 66 of the 71 run and all 66 pass (the `.noref` ones against their
+  3.1.2, 67 of the 72 run and all 67 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 71 pass, built with gcc.
+All 72 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -967,14 +968,22 @@ literal.
 **Library routines.** CALL by name reaches these routines directly:
 - bytes and text: CBL_AND, CBL_OR, CBL_NOR, CBL_XOR, CBL_IMP, CBL_NIMP, CBL_EQ,
   CBL_NOT, CBL_TOUPPER, CBL_TOLOWER, C$TOUPPER, C$TOLOWER, C$JUSTIFY,
-  C$PRINTABLE, CBL_OC_DUMP;
+  C$PRINTABLE (and CBL_GC_PRINTABLE), CBL_OC_DUMP, and Micro Focus's X"F4"
+  and X"F5" (eight bits to a byte, and back);
+- memory: CBL_ALLOC_MEM (zeroed) and CBL_FREE_MEM;
+- the screen and keyboard: CBL_GET_SCR_SIZE, CBL_GET_CSR_POS, CBL_SET_CSR_POS,
+  CBL_READ_KBD_CHAR (one key, not echoed), CBL_GET_KBD_STATUS (is a key
+  waiting), X"E4" (clear the screen) and X"E5" (the bell);
 - files and directories: CBL_CREATE_DIR, CBL_DELETE_DIR, CBL_CHANGE_DIR,
   CBL_GET_CURRENT_DIR, C$MAKEDIR, C$CHDIR, CBL_DELETE_FILE, C$DELETE,
   CBL_RENAME_FILE, CBL_COPY_FILE, C$COPY, CBL_CHECK_FILE_EXIST, C$FILEINFO, and
   the byte-stream files CBL_OPEN_FILE, CBL_CREATE_FILE, CBL_READ_FILE,
   CBL_WRITE_FILE, CBL_FLUSH_FILE, CBL_CLOSE_FILE;
 - calls and processes: C$NARG, C$PARAMSIZE, C$CALLEDBY, C$GETPID, C$SLEEP,
-  CBL_GC_NANOSLEEP, CBL_GC_FORK, CBL_GC_WAITPID, CBL_ERROR_PROC, and `SYSTEM`;
+  CBL_GC_NANOSLEEP, CBL_GC_FORK, CBL_GC_WAITPID, CBL_GC_GETOPT, CBL_ERROR_PROC,
+  CBL_EXIT_PROC (procedures the run unit's end calls, highest priority first:
+  install, remove, query and set a priority), and `SYSTEM`; the CBL_OC_ names
+  of GnuCOBOL 2 are accepted for the CBL_GC_ ones;
 - the C runtime's own variables, for programs that hand them to C:
   CBL_GC_HOSTED (stdin, stdout, stderr, argc, argv, errno, tzname, timezone,
   daylight), and `EXTERNAL AS "errno"` for an item that is C's errno itself.
