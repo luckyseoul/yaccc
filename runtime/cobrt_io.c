@@ -4,7 +4,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <sys/file.h>
+#include <sys/types.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 
 struct cob_irec {
@@ -40,6 +41,19 @@ typedef struct {
 	cob_s64 rel_pos;          /* relative: last slot read/positioned (0 = before first) */
 	int rel_incl;             /* relative: rel_pos set by START, the next READ returns it */
 	cob_s64 rel_last_read;
+	/* the file on disk (see "the journal" below) */
+	int fd;                   /* open while the file is; -1 for a missing OPTIONAL file */
+	int journal;              /* the file is a journal: each change is appended to it */
+	int writable;
+	int sync;                 /* someone else may change it: catch up before each statement */
+	int reload;               /* this process rewrote it under this connector: read it again */
+	off_t log_end;            /* how much of the journal is applied */
+	size_t live_bytes;        /* what the live records take in a fresh journal */
+	/* record locks this connector holds: hashes of their keys or numbers */
+	cob_u64 *held;
+	size_t nheld, heldcap;
+	unsigned char *map;       /* the journal's header, shared with the other connectors */
+	int locker;               /* this connector is counted among those that lock records */
 } ixstate;
 
 static cob_file *open_list;
@@ -85,6 +99,8 @@ static const char *status_msg(const char *s)
 	case 47: return "READ not allowed in this open mode";
 	case 48: return "WRITE not allowed in this open mode";
 	case 49: return "REWRITE/DELETE not allowed in this open mode";
+	case 51: return "record locked by another file connector";
+	case 61: return "file in use (sharing conflict)";
 	default: return "I/O error";
 	}
 }
@@ -202,13 +218,6 @@ static size_t gather_key(const cob_file *f, int k, const unsigned char *rec, uns
 	return o;
 }
 
-/* compare two already-gathered key values */
-static int key_cmp_buf(const cob_file *f, int k, const unsigned char *ka, const unsigned char *kb)
-{
-	const cob_file_key *key = &f->keys[k];
-	return memcmp(ka, kb, key->total ? key->total : key->size);
-}
-
 static int key_cmp_rec(const cob_file *f, int k, const unsigned char *a, const unsigned char *b)
 {
 	const cob_file_key *key = &f->keys[k];
@@ -222,8 +231,11 @@ static int key_cmp_rec(const cob_file *f, int k, const unsigned char *a, const u
 
 static ixstate *ixs(cob_file *f)
 {
-	if (!f->ix)
-		f->ix = cob_malloc(sizeof(ixstate));
+	if (!f->ix) {
+		ixstate *s = cob_malloc(sizeof(ixstate));
+		s->fd = -1;
+		f->ix = s;
+	}
 	return (ixstate *)f->ix;
 }
 
@@ -238,6 +250,7 @@ static void ix_free(cob_file *f)
 	free(s->recs);
 	for (int k = 0; k < COB_MAX_KEYS; k++)
 		free(s->ord[k]);
+	free(s->held);
 	free(s);
 	f->ix = NULL;
 }
@@ -368,7 +381,6 @@ static size_t ord_count(cob_file *f, int k)
 /* binary search in ordering k: first index with (key prefix, seq) relation */
 static size_t lower_bound(cob_file *f, int k, const unsigned char *key, size_t klen, cob_u64 seq, int use_seq, int strict)
 {
-	ixstate *s = ixs(f);
 	cob_irec **ord = get_order(f, k);
 	size_t lo = 0, hi = ord_count(f, k);
 	const cob_file_key *fk = &f->keys[k];
@@ -546,43 +558,930 @@ static int linage_params(cob_file *f)
 
 static int open_seq(cob_file *f, int mode);
 
-/* SHARING: a program that declares it keeps a lock on the file while it is
- * open, so another process that opens the same file exclusively is told the
- * file is in use (status 61) instead of writing over it. A program without the
- * clause takes no lock, but still looks for one. */
-static int apply_sharing(cob_file *f)
+/* ================================================================ sharing and locks
+ *
+ * Who may have a file open is settled with byte-range locks far past its end,
+ * taken on an open file description of their own (Linux OFD locks: they
+ * belong to the description, not to the process, so closing one descriptor
+ * drops nothing taken through another):
+ *   LK_READERS  every connector holds it shared; one that has the file to
+ *               itself (SHARING NO, LOCK MODE EXCLUSIVE, OPEN ... WITH LOCK,
+ *               OPEN OUTPUT, and a sequential file opened I-O or EXTEND
+ *               without SHARING or LOCK MODE) holds it exclusively
+ *   LK_WRITERS  a connector that may change the file holds it shared, and
+ *               SHARING READ ONLY exclusively: no one else may write
+ * A process holds one set of these per file however many of its connectors
+ * have the file open, so a program and the programs it calls can each open
+ * it. Record locks are each connector's own, at LK_RECORDS plus a hash of
+ * the record's key (or its relative record number), and LK_JOURNAL is held
+ * while a connector appends to a journal or reads what others appended. */
+#ifdef F_OFD_SETLK
+#define LK_SET  F_OFD_SETLK
+#define LK_SETW F_OFD_SETLKW
+#define LK_GET  F_OFD_GETLK
+#else
+#define LK_SET  F_SETLK
+#define LK_SETW F_SETLKW
+#define LK_GET  F_GETLK
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+#define LK_READERS ((off_t)1 << 62)
+#define LK_WRITERS (LK_READERS + 1)
+#define LK_JOURNAL (LK_READERS + 2)
+#define LK_RECORDS ((off_t)1 << 61)
+#define LK_RECSPAN ((cob_u64)1 << 60)
+
+static int lk(int fd, int cmd, int type, off_t at)
 {
-	if (!f->path[0])
-		return COB_IO_OK;
-	int fd = open(f->path, O_RDWR);
-	if (fd < 0)
-		fd = open(f->path, O_RDONLY);
-	if (fd < 0)
-		return COB_IO_OK;               /* no file to lock (stdout, printer) */
-	if (f->sharing == 0) {
-		/* reading is compatible with another program's READ ONLY lock; any
-		   other mode needs the file to itself */
-		int op = f->open_mode == COB_OPEN_INPUT ? LOCK_SH : LOCK_EX;
-		int rc = flock(fd, op | LOCK_NB);
-		close(fd);
-		return rc == 0 ? COB_IO_OK : set_st(f, "61");
-	}
-	if (flock(fd, (f->sharing == 2 ? LOCK_EX : LOCK_SH) | LOCK_NB) != 0) {
-		close(fd);
-		return set_st(f, "61");
-	}
-	f->lockfd = fd;
-	return COB_IO_OK;
+	struct flock l;
+	memset(&l, 0, sizeof l);
+	l.l_type = (short)type;
+	l.l_whence = SEEK_SET;
+	l.l_start = at;
+	l.l_len = 1;
+	int rc;
+	while ((rc = fcntl(fd, cmd, &l)) != 0 && errno == EINTR)
+		;
+	return rc;
 }
 
-static void release_sharing(cob_file *f)
+/* whether another descriptor holds a lock on the byte */
+static int lk_busy(int fd, off_t at)
 {
-	if (f->lockfd > 0) {
-		flock(f->lockfd, LOCK_UN);
-		close(f->lockfd);
-		f->lockfd = 0;
+	struct flock l;
+	memset(&l, 0, sizeof l);
+	l.l_type = F_WRLCK;
+	l.l_whence = SEEK_SET;
+	l.l_start = at;
+	l.l_len = 1;
+	if (fcntl(fd, LK_GET, &l) != 0)
+		return 0;
+	return l.l_type != F_UNLCK;
+}
+
+typedef struct holder {
+	dev_t dev;
+	ino_t ino;
+	int fd;                   /* a description of its own, for the locks */
+	int refs;                 /* connectors of this process with the file open */
+	int readers, writers;     /* what it holds: F_UNLCK, F_RDLCK or F_WRLCK */
+	struct holder *next;
+} holder;
+static holder *holders;
+
+static int lock_rank(int t)
+{
+	return t == F_WRLCK ? 2 : t == F_RDLCK ? 1 : 0;
+}
+
+/* raise a holder's lock on byte `at` to `want`; -1 when another process
+ * holds a lock in the way */
+static int raise_lock(holder *h, int *have, int want, off_t at)
+{
+	if (lock_rank(want) <= lock_rank(*have))
+		return 0;
+	if (lk(h->fd, LK_SET, want, at) != 0) {
+		if (errno == EBADF)
+			return 0;       /* a read-only file can't be locked for writing */
+		return -1;
+	}
+	*have = want;
+	return 0;
+}
+
+/* the file-level locks an OPEN needs: 0, or -1 (status 61) when another
+ * process has the file in a way this OPEN can't share */
+static int take_file_locks(cob_file *f, int fd, int mode)
+{
+	struct stat st;
+	if (fd < 0 || fstat(fd, &st) != 0 || !S_ISREG(st.st_mode))
+		return 0;               /* a terminal, a pipe, a device: nothing to share */
+	int seq = f->organization == COB_ORG_SEQUENTIAL || f->organization == COB_ORG_LINE_SEQ;
+	int alone = mode == COB_OPEN_OUTPUT || f->sharing == COB_SHARE_NO || f->lock_mode == 3 ||
+		    f->open_lock ||
+		    (seq && f->sharing == COB_SHARE_NONE && f->lock_mode == 0 && mode != COB_OPEN_INPUT);
+	int want_r = alone ? F_WRLCK : F_RDLCK;
+	int want_w = f->sharing == COB_SHARE_READ_ONLY ? F_WRLCK :
+		     mode != COB_OPEN_INPUT ? F_RDLCK : F_UNLCK;
+	holder *h;
+	for (h = holders; h; h = h->next)
+		if (h->dev == st.st_dev && h->ino == st.st_ino)
+			break;
+	int fresh = h == NULL;
+	if (fresh) {
+		/* a new description of the same file: through /proc, so a rename
+		   since this OPEN can't give another file */
+		char proc[64];
+		snprintf(proc, sizeof proc, "/proc/self/fd/%d", fd);
+		int hfd = open(proc, O_RDWR | O_CLOEXEC);
+		if (hfd < 0)
+			hfd = open(proc, O_RDONLY | O_CLOEXEC);
+		if (hfd < 0)
+			hfd = open(f->path, O_RDWR | O_CLOEXEC);
+		if (hfd < 0)
+			hfd = open(f->path, O_RDONLY | O_CLOEXEC);
+		if (hfd < 0)
+			return 0;
+		h = cob_malloc(sizeof *h);
+		h->dev = st.st_dev;
+		h->ino = st.st_ino;
+		h->fd = hfd;
+		h->readers = h->writers = F_UNLCK;
+	}
+	int r0 = h->readers, w0 = h->writers;
+	if (raise_lock(h, &h->readers, want_r, LK_READERS) != 0 ||
+	    raise_lock(h, &h->writers, want_w, LK_WRITERS) != 0) {
+		if (fresh) {
+			close(h->fd);
+			free(h);
+		} else {
+			/* back to what the process held before */
+			if (h->readers != r0)
+				lk(h->fd, LK_SET, r0, LK_READERS);
+			if (h->writers != w0)
+				lk(h->fd, LK_SET, w0, LK_WRITERS);
+			h->readers = r0;
+			h->writers = w0;
+		}
+		return -1;
+	}
+	if (fresh) {
+		h->next = holders;
+		holders = h;
+	}
+	h->refs++;
+	f->holder = h;
+	return 0;
+}
+
+static void drop_file_locks(cob_file *f)
+{
+	holder *h = f->holder;
+	if (!h)
+		return;
+	f->holder = NULL;
+	if (--h->refs > 0)
+		return;
+	close(h->fd);           /* the locks go with the description */
+	for (holder **pp = &holders; *pp; pp = &(*pp)->next)
+		if (*pp == h) {
+			*pp = h->next;
+			break;
+		}
+	free(h);
+}
+
+/* the other connectors of this process that have the same file open */
+static int same_file_open(cob_file *f)
+{
+	int n = 0;
+	for (cob_file *o = open_list; o; o = o->next_open)
+		if (o != f && o->holder && o->holder == f->holder)
+			n++;
+	return n;
+}
+
+/* ================================================================ the journal
+ *
+ * A relative or indexed file is a journal: a header, then an entry for every
+ * WRITE, REWRITE and DELETE, appended as the statement runs, so what a
+ * program has done is on disk however it ends. OPEN reads the journal into
+ * memory, where the records are kept in key order. A connector that may not
+ * be alone with the file reads what others have appended before each
+ * statement, and appends under LK_JOURNAL. The last connector to CLOSE a
+ * journal made mostly of superseded entries writes the live records to a
+ * fresh one and renames it over the file.
+ *
+ *   header  "CIXJ", u32 version (1), u32 organization, u32 key count,
+ *           u64 record size, u64 where the journal ends (0: not known),
+ *           u32 how many connectors may be holding record locks, zeros to 64
+ *           bytes; the last two are read and written through a shared
+ *           mapping, so a statement that finds nothing new needs no system
+ *           call to know it
+ *   entry   u32 size of the entry, u8 'W' (WRITE), 'R' (REWRITE) or 'D'
+ *           (DELETE), u8 key count n, u16 0, u64 relative record number (0
+ *           when indexed), u32 record length, n u64 sequence numbers (the
+ *           order of duplicates under each key), the record, the size again
+ *
+ * COB_SYNC=Y makes every change wait until it is on the disk (fdatasync).
+ * Files in the format of earlier versions are read, and rewritten as a
+ * journal the first time they are opened for update by a lone connector. */
+#define J_MAGIC "CIXJ"
+#define J_HDR 64
+#define J_FIXED 24
+
+static size_t j_entry_size(int nk, size_t len)
+{
+	return J_FIXED + (size_t)nk * 8 + len + 4;
+}
+
+static int j_nkeys(const cob_file *f)
+{
+	return f->organization == COB_ORG_INDEXED ? (f->nkeys > 0 ? f->nkeys : 1) : 0;
+}
+
+static int sync_wanted(void)
+{
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("COB_SYNC");
+		v = e && (strchr("YyTt1", e[0]) != NULL || strcasecmp(e, "on") == 0);
+	}
+	return v;
+}
+
+static void put32(unsigned char *p, uint32_t v)
+{
+	memcpy(p, &v, 4);
+}
+
+static void put64(unsigned char *p, cob_u64 v)
+{
+	memcpy(p, &v, 8);
+}
+
+static uint32_t get32(const unsigned char *p)
+{
+	uint32_t v;
+	memcpy(&v, p, 4);
+	return v;
+}
+
+static cob_u64 get64(const unsigned char *p)
+{
+	cob_u64 v;
+	memcpy(&v, p, 8);
+	return v;
+}
+
+static void j_header(const cob_file *f, unsigned char *h)
+{
+	memset(h, 0, J_HDR);
+	memcpy(h, J_MAGIC, 4);
+	put32(h + 4, 1);
+	put32(h + 8, (uint32_t)f->organization);
+	put32(h + 12, (uint32_t)j_nkeys(f));
+	put64(h + 16, (cob_u64)f->record_max);
+}
+
+static size_t j_encode(unsigned char *b, int op, cob_u64 slot, const unsigned char *data, size_t len,
+		       const cob_u64 *kseq, int nk)
+{
+	size_t sz = j_entry_size(nk, len);
+	put32(b, (uint32_t)sz);
+	b[4] = (unsigned char)op;
+	b[5] = (unsigned char)nk;
+	b[6] = b[7] = 0;
+	put64(b + 8, slot);
+	put32(b + 16, (uint32_t)len);
+	put32(b + 20, 0);
+	unsigned char *p = b + J_FIXED;
+	for (int k = 0; k < nk; k++, p += 8)
+		put64(p, kseq[k]);
+	memcpy(p, data, len);
+	put32(p + len, (uint32_t)sz);
+	return sz;
+}
+
+/* ---------------------------------------------------------------- applying entries */
+
+static size_t rec_entry_size(cob_file *f, const cob_irec *r)
+{
+	return j_entry_size(j_nkeys(f), r->size);
+}
+
+static cob_irec *irec_make(cob_file *f, const unsigned char *data, size_t len, const cob_u64 *kseq, int nk)
+{
+	if (len > f->record_max)
+		len = f->record_max;
+	cob_irec *r = cob_malloc(sizeof *r);
+	r->data = cob_malloc(f->record_max);
+	memset(r->data, ' ', f->record_max);
+	memcpy(r->data, data, len);
+	r->size = len;
+	int n = f->nkeys > 0 ? f->nkeys : 1;
+	r->kseq = cob_malloc(sizeof(cob_u64) * (size_t)n);
+	for (int k = 0; k < n; k++)
+		r->kseq[k] = k < nk ? kseq[k] : (nk ? kseq[0] : 0);
+	r->seq = r->kseq[0];
+	return r;
+}
+
+static void irec_set(cob_file *f, cob_irec *r, const unsigned char *data, size_t len, const cob_u64 *kseq, int nk)
+{
+	if (len > f->record_max)
+		len = f->record_max;
+	memset(r->data, ' ', f->record_max);
+	memcpy(r->data, data, len);
+	r->size = len;
+	int n = f->nkeys > 0 ? f->nkeys : 1;
+	for (int k = 0; k < n && k < nk; k++)
+		r->kseq[k] = kseq[k];
+	r->seq = r->kseq[0];
+}
+
+static long find_exact(cob_file *f, int k, const unsigned char *key);
+
+/* an entry, applied to the records in memory (the same for this connector's
+ * own statements and for what others appended) */
+static void apply_entry(cob_file *f, int op, cob_u64 slot, const unsigned char *data, size_t len,
+			const cob_u64 *kseq, int nk)
+{
+	ixstate *s = ixs(f);
+	for (int k = 0; k < nk; k++)
+		if (kseq[k] >= s->next_seq)
+			s->next_seq = kseq[k] + 1;
+	if (f->organization == COB_ORG_RELATIVE) {
+		if (slot < 1 || slot > ((cob_u64)1 << 40))
+			return;
+		size_t i = (size_t)slot - 1;
+		ensure_cap(s, i + 1);
+		cob_irec *r = s->recs[i];
+		if (op == 'D') {
+			if (r) {
+				s->live_bytes -= rec_entry_size(f, r);
+				free_rec(r);
+				s->recs[i] = NULL;
+			}
+		} else if (r) {
+			s->live_bytes -= rec_entry_size(f, r);
+			irec_set(f, r, data, len, kseq, nk);
+			s->live_bytes += rec_entry_size(f, r);
+		} else {
+			s->recs[i] = r = irec_make(f, data, len, kseq, nk);
+			s->live_bytes += rec_entry_size(f, r);
+			if (i + 1 > s->n)
+				s->n = i + 1;
+		}
+		s->modified = 1;
+		return;
+	}
+	/* indexed: the record with the entry's primary key (from the record as
+	   it would be in the record area: a short one padded with spaces) */
+	unsigned char stackpad[8192];
+	unsigned char *pad = (const unsigned char *)data == NULL ? NULL : stackpad;
+	if (len >= f->record_max)
+		pad = (unsigned char *)data;
+	else {
+		if (f->record_max > sizeof stackpad)
+			pad = cob_malloc(f->record_max);
+		memset(pad, ' ', f->record_max);
+		memcpy(pad, data, len);
+	}
+	unsigned char key[COB_KEY_MAX_SEGS * 512];
+	size_t klen = gather_key(f, 0, pad, key);
+	long i = find_exact(f, 0, key);
+	if (op == 'D') {
+		if (i >= 0) {
+			cob_irec *r = s->recs[i];
+			if (s->last_read == r)
+				s->last_read = NULL;
+			s->live_bytes -= rec_entry_size(f, r);
+			free_rec(r);
+			memmove(s->recs + i, s->recs + i + 1, (s->n - (size_t)i - 1) * sizeof(cob_irec *));
+			s->n--;
+		}
+	} else if (i >= 0) {
+		cob_irec *r = s->recs[i];
+		s->live_bytes -= rec_entry_size(f, r);
+		irec_set(f, r, data, len, kseq, nk);
+		s->live_bytes += rec_entry_size(f, r);
+	} else {
+		size_t at = lower_bound(f, 0, key, klen, 0, 0, 0);
+		ensure_cap(s, s->n + 1);
+		memmove(s->recs + at + 1, s->recs + at, (s->n - at) * sizeof(cob_irec *));
+		s->recs[at] = irec_make(f, data, len, kseq, nk);
+		s->live_bytes += rec_entry_size(f, s->recs[at]);
+		s->n++;
+	}
+	if (pad != stackpad && pad != data)
+		free(pad);
+	invalidate(s);
+}
+
+/* ---------------------------------------------------------------- reading the journal */
+
+typedef void (*entry_fn)(cob_file *, int, cob_u64, const unsigned char *, size_t, const cob_u64 *, int);
+
+/* the entries in [from, to), each given to fn; returns where the complete
+ * ones end */
+static off_t j_replay(cob_file *f, off_t from, off_t to, entry_fn fn)
+{
+	ixstate *s = ixs(f);
+	size_t cap = 1 << 16;
+	unsigned char *buf = cob_malloc(cap);
+	size_t pos = 0, have = 0;       /* unread bytes: buf[pos .. have) */
+	off_t at = from;                /* file offset of buf[pos] */
+	cob_u64 *kseq = cob_malloc(sizeof(cob_u64) * 256);
+	for (;;) {
+		size_t avail = have - pos;
+		uint32_t sz = avail >= 4 ? get32(buf + pos) : 0;
+		if (avail < 4 || avail < sz) {
+			/* refill: what is left to the front, then read */
+			if (at + (off_t)avail >= to)
+				break;
+			memmove(buf, buf + pos, avail);
+			pos = 0;
+			have = avail;
+			if (sz > cap) {
+				cap = sz;
+				buf = realloc(buf, cap);
+				if (!buf)
+					cob_fatal("out of memory");
+			}
+			off_t want = to - (at + (off_t)have);
+			if (want > (off_t)(cap - have))
+				want = (off_t)(cap - have);
+			ssize_t n = pread(s->fd, buf + have, (size_t)want, at + (off_t)have);
+			if (n <= 0)
+				break;
+			have += (size_t)n;
+			continue;
+		}
+		if (sz < J_FIXED + 4 || at + (off_t)sz > to)
+			break;          /* the last entry, still being written (or cut short) */
+		const unsigned char *e = buf + pos;
+		if (get32(e + sz - 4) != sz)
+			break;
+		int op = e[4], nk = e[5];
+		cob_u64 slot = get64(e + 8);
+		size_t len = get32(e + 16);
+		if (j_entry_size(nk, len) != sz)
+			break;
+		for (int k = 0; k < nk; k++)
+			kseq[k] = get64(e + J_FIXED + (size_t)k * 8);
+		fn(f, op, slot, e + J_FIXED + (size_t)nk * 8, len, kseq, nk);
+		at += sz;
+		pos += sz;
+	}
+	free(kseq);
+	free(buf);
+	return at;
+}
+
+/* OPEN of an indexed file: its records found by key in a hash table while
+ * the journal is read, and sorted once at the end (one at a time into the
+ * sorted array would be quadratic for a journal in random key order) */
+static struct {
+	cob_irec **tab;           /* open addressing */
+	size_t cap, used;
+} bulk;
+
+static cob_u64 key_hash(const unsigned char *k, size_t n)
+{
+	cob_u64 h = 1469598103934665603ULL;
+	for (size_t i = 0; i < n; i++) {
+		h ^= k[i];
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+static void bulk_grow(cob_file *f)
+{
+	size_t ncap = bulk.cap ? bulk.cap * 2 : 1024;
+	cob_irec **nt = cob_malloc(ncap * sizeof(cob_irec *));
+	unsigned char key[COB_KEY_MAX_SEGS * 512];
+	for (size_t i = 0; i < bulk.cap; i++) {
+		cob_irec *r = bulk.tab[i];
+		if (!r)
+			continue;
+		size_t n = gather_key(f, 0, r->data, key);
+		size_t j = (size_t)key_hash(key, n) & (ncap - 1);
+		while (nt[j])
+			j = (j + 1) & (ncap - 1);
+		nt[j] = r;
+	}
+	free(bulk.tab);
+	bulk.tab = nt;
+	bulk.cap = ncap;
+}
+
+static void bulk_entry(cob_file *f, int op, cob_u64 slot, const unsigned char *data, size_t len,
+		       const cob_u64 *kseq, int nk)
+{
+	ixstate *s = ixs(f);
+	(void)slot;
+	for (int k = 0; k < nk; k++)
+		if (kseq[k] >= s->next_seq)
+			s->next_seq = kseq[k] + 1;
+	if ((bulk.used + 1) * 2 > bulk.cap)
+		bulk_grow(f);
+	unsigned char key[COB_KEY_MAX_SEGS * 512], other[COB_KEY_MAX_SEGS * 512];
+	size_t n;
+	if (len >= f->record_max)
+		n = gather_key(f, 0, data, key);
+	else {
+		unsigned char *pad = cob_malloc(f->record_max);
+		memset(pad, ' ', f->record_max);
+		memcpy(pad, data, len);
+		n = gather_key(f, 0, pad, key);
+		free(pad);
+	}
+	size_t j = (size_t)key_hash(key, n) & (bulk.cap - 1);
+	for (; bulk.tab[j]; j = (j + 1) & (bulk.cap - 1)) {
+		gather_key(f, 0, bulk.tab[j]->data, other);
+		if (memcmp(key, other, n) == 0)
+			break;
+	}
+	cob_irec *r = bulk.tab[j];
+	if (op == 'D') {
+		if (r) {
+			/* removed from the table: the run after it is placed again */
+			free_rec(r);
+			bulk.tab[j] = NULL;
+			bulk.used--;
+			for (size_t i = (j + 1) & (bulk.cap - 1); bulk.tab[i]; i = (i + 1) & (bulk.cap - 1)) {
+				cob_irec *m = bulk.tab[i];
+				bulk.tab[i] = NULL;
+				size_t mn = gather_key(f, 0, m->data, other);
+				size_t q = (size_t)key_hash(other, mn) & (bulk.cap - 1);
+				while (bulk.tab[q])
+					q = (q + 1) & (bulk.cap - 1);
+				bulk.tab[q] = m;
+			}
+		}
+	} else if (r) {
+		irec_set(f, r, data, len, kseq, nk);
+	} else {
+		bulk.tab[j] = irec_make(f, data, len, kseq, nk);
+		bulk.used++;
 	}
 }
+
+/* the whole journal, as OPEN reads it */
+static void j_load(cob_file *f, off_t size)
+{
+	ixstate *s = ixs(f);
+	s->live_bytes = 0;
+	if (f->organization != COB_ORG_INDEXED) {
+		s->log_end = j_replay(f, J_HDR, size, apply_entry);
+		s->modified = 0;
+		return;
+	}
+	memset(&bulk, 0, sizeof bulk);
+	bulk_grow(f);
+	s->log_end = j_replay(f, J_HDR, size, bulk_entry);
+	ensure_cap(s, s->n + bulk.used + 1);
+	for (size_t i = 0; i < bulk.cap; i++)
+		if (bulk.tab[i]) {
+			s->recs[s->n++] = bulk.tab[i];
+			s->live_bytes += rec_entry_size(f, bulk.tab[i]);
+		}
+	free(bulk.tab);
+	memset(&bulk, 0, sizeof bulk);
+	sort_file_ctx = f;
+	sort_key_ctx = 0;
+	qsort(s->recs, s->n, sizeof(cob_irec *), ord_cmp);
+	invalidate(s);
+	s->modified = 0;
+}
+
+/* what the other connectors appended since this one last looked */
+static void j_catch_up(cob_file *f)
+{
+	ixstate *s = ixs(f);
+	if (!s->journal || !s->sync || s->fd < 0)
+		return;
+	if (!s->reload && s->map &&
+	    __atomic_load_n((cob_u64 *)(void *)(s->map + 24), __ATOMIC_ACQUIRE) == (cob_u64)s->log_end)
+		return;
+	struct stat st;
+	if (!s->reload && (fstat(s->fd, &st) != 0 || st.st_size == s->log_end))
+		return;
+	lk(s->fd, LK_SETW, F_RDLCK, LK_JOURNAL);
+	if (fstat(s->fd, &st) == 0) {
+		if (s->reload || st.st_size < s->log_end) {
+			/* the file was rewritten (OPEN OUTPUT by another connector of
+			   this process): read it all again */
+			for (size_t i = 0; i < s->n; i++)
+				if (s->recs[i])
+					free_rec(s->recs[i]);
+			s->n = 0;
+			s->last_read = NULL;
+			invalidate(s);
+			s->reload = 0;
+			j_load(f, st.st_size);
+		} else if (st.st_size > s->log_end) {
+			s->log_end = j_replay(f, s->log_end, st.st_size, apply_entry);
+		}
+	}
+	lk(s->fd, LK_SET, F_UNLCK, LK_JOURNAL);
+}
+
+/* ---------------------------------------------------------------- writing it */
+
+/* before a change: the journal to this connector alone, and up to date */
+static void j_begin(cob_file *f)
+{
+	ixstate *s = ixs(f);
+	if (!s->journal || !s->sync || s->fd < 0)
+		return;
+	lk(s->fd, LK_SETW, F_WRLCK, LK_JOURNAL);
+	struct stat st;
+	if (s->reload || (fstat(s->fd, &st) == 0 && st.st_size != s->log_end)) {
+		lk(s->fd, LK_SET, F_UNLCK, LK_JOURNAL);
+		j_catch_up(f);
+		lk(s->fd, LK_SETW, F_WRLCK, LK_JOURNAL);
+		/* nobody can append between the two locks but this process, which
+		   isn't doing so: the catch-up stands */
+		if (fstat(s->fd, &st) == 0 && st.st_size > s->log_end)
+			s->log_end = j_replay(f, s->log_end, st.st_size, apply_entry);
+	}
+}
+
+static void j_end(cob_file *f)
+{
+	ixstate *s = ixs(f);
+	if (!s->journal || !s->sync || s->fd < 0)
+		return;
+	lk(s->fd, LK_SET, F_UNLCK, LK_JOURNAL);
+}
+
+/* a change: appended to the journal, then applied in memory; -1 when the
+ * file can't be written */
+static int j_change(cob_file *f, int op, cob_u64 slot, const unsigned char *data, size_t len, const cob_u64 *kseq)
+{
+	ixstate *s = ixs(f);
+	int nk = j_nkeys(f);
+	if (s->journal && s->fd >= 0) {
+		size_t sz = j_entry_size(nk, len);
+		unsigned char stack[4096];
+		unsigned char *b = sz <= sizeof stack ? stack : cob_malloc(sz);
+		j_encode(b, op, slot, data, len, kseq, nk);
+		ssize_t w = pwrite(s->fd, b, sz, s->log_end);
+		if (b != stack)
+			free(b);
+		if (w != (ssize_t)sz) {
+			if (w > 0 && ftruncate(s->fd, s->log_end) != 0) {
+				/* the torn entry stays; readers stop before it */
+			}
+			return -1;
+		}
+		if (sync_wanted())
+			fdatasync(s->fd);
+		s->log_end += (off_t)sz;
+		if (s->map && s->writable)
+			__atomic_store_n((cob_u64 *)(void *)(s->map + 24), (cob_u64)s->log_end, __ATOMIC_RELEASE);
+	}
+	apply_entry(f, op, slot, data, len, kseq, nk);
+	return 0;
+}
+
+/* a fresh journal of the live records, in key or record-number order: to
+ * the open descriptor (fd >= 0), else to a new file renamed over `path` */
+static int j_write_all(cob_file *f, int fd, const char *path)
+{
+	ixstate *s = ixs(f);
+	char tmp[1100];
+	int own = fd < 0;
+	if (own) {
+		snprintf(tmp, sizeof tmp, "%s.yaccc-%ld", path, (long)getpid());
+		fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+		if (fd < 0)
+			return -1;
+		struct stat st;
+		if (stat(path, &st) == 0)
+			fchmod(fd, st.st_mode & 07777);
+	} else if (ftruncate(fd, 0) != 0)
+		return -1;
+	int nk = j_nkeys(f);
+	size_t cap = 1 << 16, used = 0;
+	unsigned char *buf = cob_malloc(cap);
+	j_header(f, buf);
+	used = J_HDR;
+	off_t at = 0;
+	int bad = 0;
+	size_t live = 0;
+	for (size_t i = 0; i < s->n && !bad; i++) {
+		cob_irec *r = s->recs[i];
+		if (!r)
+			continue;
+		size_t sz = j_entry_size(nk, r->size);
+		if (used + sz > cap) {
+			if (pwrite(fd, buf, used, at) != (ssize_t)used)
+				bad = 1;
+			at += (off_t)used;
+			used = 0;
+			if (sz > cap) {
+				cap = sz;
+				buf = realloc(buf, cap);
+				if (!buf)
+					cob_fatal("out of memory");
+			}
+		}
+		j_encode(buf + used, 'W', f->organization == COB_ORG_RELATIVE ? (cob_u64)i + 1 : 0,
+			 r->data, r->size, r->kseq, nk);
+		used += sz;
+		live += sz;
+	}
+	if (!bad && used && pwrite(fd, buf, used, at) != (ssize_t)used)
+		bad = 1;
+	at += (off_t)used;
+	free(buf);
+	if (!bad && sync_wanted())
+		fdatasync(fd);
+	if (own) {
+		if (close(fd) != 0)
+			bad = 1;
+		if (bad || rename(tmp, path) != 0) {
+			unlink(tmp);
+			return -1;
+		}
+	} else if (!bad) {
+		s->log_end = at;
+	}
+	if (!bad)
+		s->live_bytes = live;
+	return bad ? -1 : 0;
+}
+
+/* does this connector have the file to itself (no other process, no other
+ * connector of this one)? */
+static int alone_with(cob_file *f)
+{
+	holder *h = f->holder;
+	if (!h)
+		return 1;
+	if (same_file_open(f))
+		return 0;
+	if (h->readers == F_WRLCK)
+		return 1;
+	/* ask for it: no other process holds the file */
+	if (lk(h->fd, LK_SET, F_WRLCK, LK_READERS) == 0) {
+		h->readers = F_WRLCK;
+		return 1;
+	}
+	return 0;
+}
+
+/* ---------------------------------------------------------------- record locks */
+
+static cob_u64 rec_lock_id(cob_file *f, const unsigned char *rec, cob_s64 slot)
+{
+	if (f->organization == COB_ORG_RELATIVE)
+		return (cob_u64)slot % LK_RECSPAN;
+	unsigned char key[COB_KEY_MAX_SEGS * 512];
+	size_t n = gather_key(f, 0, rec, key);
+	cob_u64 h = 1469598103934665603ULL;     /* FNV-1a */
+	for (size_t i = 0; i < n; i++) {
+		h ^= key[i];
+		h *= 1099511628211ULL;
+	}
+	return h % LK_RECSPAN;
+}
+
+static int rec_held(ixstate *s, cob_u64 id)
+{
+	for (size_t i = 0; i < s->nheld; i++)
+		if (s->held[i] == id)
+			return 1;
+	return 0;
+}
+
+/* lock a record for this connector: 0, or -1 when another holds it */
+static int rec_lock(cob_file *f, cob_u64 id)
+{
+	ixstate *s = ixs(f);
+	if (rec_held(s, id))
+		return 0;
+	if (!s->locker && s->map) {
+		/* from now on the others check for this connector's locks */
+		__atomic_fetch_add((uint32_t *)(void *)(s->map + 32), 1, __ATOMIC_ACQ_REL);
+		s->locker = 1;
+	}
+	if (lk(s->fd, LK_SET, F_WRLCK, LK_RECORDS + (off_t)id) != 0)
+		return errno == EBADF ? 0 : -1;
+	if (s->nheld == s->heldcap) {
+		s->heldcap = s->heldcap ? s->heldcap * 2 : 8;
+		s->held = realloc(s->held, s->heldcap * sizeof(cob_u64));
+		if (!s->held)
+			cob_fatal("out of memory");
+	}
+	s->held[s->nheld++] = id;
+	return 0;
+}
+
+static int rec_locked_elsewhere(cob_file *f, cob_u64 id)
+{
+	ixstate *s = ixs(f);
+	if (s->map) {
+		uint32_t n = __atomic_load_n((uint32_t *)(void *)(s->map + 32), __ATOMIC_ACQUIRE);
+		if (n <= (uint32_t)s->locker)
+			return 0;       /* no other connector locks records */
+	}
+	return !rec_held(s, id) && lk_busy(s->fd, LK_RECORDS + (off_t)id);
+}
+
+static void rec_unlock_all(cob_file *f)
+{
+	ixstate *s = f->ix;
+	if (!s)
+		return;
+	for (size_t i = 0; i < s->nheld; i++)
+		lk(s->fd, LK_SET, F_UNLCK, LK_RECORDS + (off_t)s->held[i]);
+	s->nheld = 0;
+}
+
+/* record locks are kept only where someone else may share the file, by a
+ * connector open for I-O */
+static int rec_locking(cob_file *f)
+{
+	ixstate *s = f->ix;
+	return s && s->fd >= 0 && s->sync && s->journal && f->open_mode == COB_OPEN_IO;
+}
+
+static void rec_unlock_one(cob_file *f, cob_u64 id)
+{
+	ixstate *s = ixs(f);
+	for (size_t i = 0; i < s->nheld; i++)
+		if (s->held[i] == id) {
+			lk(s->fd, LK_SET, F_UNLCK, LK_RECORDS + (off_t)id);
+			s->held[i] = s->held[--s->nheld];
+			return;
+		}
+}
+
+/* the lock a READ takes on the record it found: 0 nothing more to do (no
+ * lock wanted, or held since before the last catch-up), 1 locked just now
+ * (*id: which), -1 locked by another connector (status 51) */
+static int read_lock_step(cob_file *f, const unsigned char *rec, cob_s64 slot, cob_u64 *id)
+{
+	if (!rec_locking(f))
+		return 0;
+	int opt = f->read_lock;
+	if (opt == COB_LOCK_NONE)
+		return 0;
+	*id = rec_lock_id(f, rec, slot);
+	int want = opt == COB_LOCK_WITH || opt == COB_LOCK_KEPT ||
+		   (opt == COB_LOCK_DEFAULT && f->lock_mode == 2);
+	if (!want)
+		return rec_locked_elsewhere(f, *id) ? -1 : 0;
+	if (rec_held(ixs(f), *id))
+		return 0;
+	return rec_lock(f, *id) == 0 ? 1 : -1;
+}
+
+/* before a READ: in single-record mode the lock of the record read before
+ * goes */
+static void read_release(cob_file *f)
+{
+	if (!rec_locking(f))
+		return;
+	if (f->lock_multiple || f->read_lock == COB_LOCK_KEPT)
+		return;
+	rec_unlock_all(f);
+}
+
+/* REWRITE and DELETE: not of a record another connector holds */
+static int update_blocked(cob_file *f, const unsigned char *rec, cob_s64 slot)
+{
+	if (!rec_locking(f))
+		return 0;
+	return rec_locked_elsewhere(f, rec_lock_id(f, rec, slot));
+}
+
+int cob_unlock(cob_file *f)
+{
+	if (!f->open_mode)
+		return set_st(f, "42");
+	rec_unlock_all(f);
+	return set_st(f, "00");
+}
+
+/* COMMIT and ROLLBACK: every record lock goes (changes are already on disk) */
+void cob_unlock_all(void)
+{
+	for (cob_file *f = open_list; f; f = f->next_open)
+		rec_unlock_all(f);
+}
+
+/* has the path been renamed over (a fresh journal) since fd was opened? */
+static int path_moved(int fd, const char *path)
+{
+	struct stat a, b;
+	if (fstat(fd, &a) != 0 || stat(path, &b) != 0)
+		return 0;
+	return a.st_dev != b.st_dev || a.st_ino != b.st_ino;
+}
+
+/* the other connectors of this process with the file open: they now share
+ * it, so they catch up before each statement; reload: OPEN OUTPUT rewrote it */
+static void share_with_others(cob_file *f, int reload)
+{
+	for (cob_file *o = open_list; o; o = o->next_open) {
+		if (o == f || !o->holder || o->holder != f->holder || !o->ix)
+			continue;
+		ixstate *t = o->ix;
+		t->sync = 1;
+		if (reload)
+			t->reload = 1;
+	}
+}
+
+static int open_ix(cob_file *f, int mode);
 
 int cob_open(cob_file *f, int mode)
 {
@@ -600,6 +1499,7 @@ int cob_open(cob_file *f, int mode)
 	if (!f->path[0])
 		return set_st(f, "31");         /* no file name: the file does not exist */
 	f->lockfd = 0;
+	f->holder = NULL;
 	if (f->organization == COB_ORG_SEQUENTIAL || f->organization == COB_ORG_LINE_SEQ) {
 		int rc = open_seq(f, mode);
 		if (rc == COB_IO_OK && f->linage_ctr && (mode == COB_OPEN_OUTPUT || mode == COB_OPEN_EXTEND)) {
@@ -610,51 +1510,141 @@ int cob_open(cob_file *f, int mode)
 			cob_set_int(f->linage_ctr, 1);
 			f->lin_need_top = 1;
 		}
-		if (rc == COB_IO_OK && apply_sharing(f) != COB_IO_OK) {
-			cob_close_quiet(f);
-			return COB_IO_ERROR;
-		}
 		return rc;
 	}
-	/* relative / indexed: in-memory with persistence */
+	return open_ix(f, mode);
+}
+
+/* relative / indexed: the journal opened and read */
+static int open_ix(cob_file *f, int mode)
+{
+	int converted = 0;
+again:
 	ix_free(f);
 	ixstate *s = ixs(f);
 	s->key_ref = 0;
 	s->pos_mode = 0;
 	s->rel_pos = 0;
 	s->rel_incl = 0;
+	s->writable = mode != COB_OPEN_INPUT;
 	const char *st = "00";
-	if (mode != COB_OPEN_OUTPUT) {
-		FILE *fp = fopen(f->path, "rb");
-		if (!fp) {
-			if (errno == ENOENT) {
-				if (!f->optional)
-					return set_st(f, "35");
-				st = "05";
-				/* OPEN I-O / EXTEND creates a missing optional file */
-				if (mode != COB_OPEN_INPUT) {
-					fp = fopen(f->path, "ab");
-					if (!fp)
-						return set_st(f, errno == EACCES ? "37" : "30");
-					fclose(fp);
-					s->modified = 1;
-				}
+	int fd = -1;
+	for (int tries = 0;; tries++) {
+		int flags = O_CLOEXEC | (mode == COB_OPEN_INPUT ? O_RDONLY : O_RDWR);
+		fd = open(f->path, flags);
+		if (fd < 0 && errno == ENOENT) {
+			if (mode == COB_OPEN_OUTPUT || (f->optional && mode != COB_OPEN_INPUT)) {
+				/* OUTPUT, and I-O / EXTEND of a missing OPTIONAL file, create it */
+				fd = open(f->path, flags | O_CREAT, 0666);
+				if (fd >= 0 && mode != COB_OPEN_OUTPUT)
+					st = "05";
+			} else if (f->optional) {
+				/* INPUT of a missing OPTIONAL file: there are no records */
+				f->open_mode = mode;
+				link_open(f);
+				return set_st(f, "05");
 			} else
-				return set_st(f, errno == EACCES ? "37" : "30");
-		} else {
+				return set_st(f, "35");
+		}
+		if (fd < 0)
+			return set_st(f, errno == EACCES ? "37" : "30");
+		if (take_file_locks(f, fd, mode) != 0) {
+			close(fd);
+			return set_st(f, "61");
+		}
+		/* a CLOSE elsewhere may have renamed a fresh journal over the file
+		   between our open and our lock: then it's that file we want */
+		if (!path_moved(fd, f->path) || tries >= 8)
+			break;
+		drop_file_locks(f);
+		close(fd);
+	}
+	s->fd = fd;
+	holder *h = f->holder;
+	/* catch up before each statement unless no one else can change the file */
+	s->sync = !(h && h->readers == F_WRLCK) || same_file_open(f) > 0;
+	if (s->sync)
+		share_with_others(f, 0);
+	unsigned char hdr[J_HDR];
+	ssize_t got = mode == COB_OPEN_OUTPUT ? 0 : pread(fd, hdr, J_HDR, 0);
+	if (mode == COB_OPEN_OUTPUT || got == 0) {
+		/* a new journal: OUTPUT has the file to itself; an empty file gets
+		   its header from whoever writes first */
+		if (s->writable) {
+			if (s->sync)
+				lk(fd, LK_SETW, F_WRLCK, LK_JOURNAL);
+			struct stat sb;
+			if (mode == COB_OPEN_OUTPUT || (fstat(fd, &sb) == 0 && sb.st_size == 0)) {
+				unsigned char h0[J_HDR];
+				j_header(f, h0);
+				if (ftruncate(fd, 0) != 0 || pwrite(fd, h0, J_HDR, 0) != J_HDR) {
+					if (s->sync)
+						lk(fd, LK_SET, F_UNLCK, LK_JOURNAL);
+					drop_file_locks(f);
+					close(fd);
+					s->fd = -1;
+					return set_st(f, "30");
+				}
+				s->log_end = J_HDR;
+			}
+			if (s->sync)
+				lk(fd, LK_SET, F_UNLCK, LK_JOURNAL);
+			if (mode == COB_OPEN_OUTPUT)
+				share_with_others(f, 1);
+		}
+		s->journal = 1;
+		if (mode != COB_OPEN_OUTPUT) {
+			/* someone may have written the header and more meanwhile */
+			struct stat sb;
+			if (fstat(fd, &sb) == 0 && sb.st_size >= J_HDR &&
+			    pread(fd, hdr, J_HDR, 0) == J_HDR && memcmp(hdr, J_MAGIC, 4) == 0)
+				j_load(f, sb.st_size);
+		}
+	} else if (got == J_HDR && memcmp(hdr, J_MAGIC, 4) == 0) {
+		if ((int)get32(hdr + 8) != f->organization) {
+			drop_file_locks(f);
+			close(fd);
+			s->fd = -1;
+			return set_st(f, "39");
+		}
+		s->journal = 1;
+		if (s->sync)
+			lk(fd, LK_SETW, F_RDLCK, LK_JOURNAL);
+		struct stat sb;
+		if (fstat(fd, &sb) == 0)
+			j_load(f, sb.st_size);
+		if (s->sync)
+			lk(fd, LK_SET, F_UNLCK, LK_JOURNAL);
+	} else {
+		/* a file in the format of an earlier version: read as it was */
+		int dfd = dup(fd);
+		FILE *fp = dfd >= 0 ? fdopen(dfd, "rb") : NULL;
+		if (fp) {
 			if (f->organization == COB_ORG_INDEXED)
 				load_indexed(f, fp);
 			else
 				load_relative(f, fp);
 			fclose(fp);
 		}
-	} else {
-		/* the file is written at CLOSE; make sure it can be created now */
-		FILE *fp = fopen(f->path, "ab");
-		if (!fp)
-			return set_st(f, errno == EACCES ? "37" : "30");
-		fclose(fp);
-		s->modified = 1;
+		/* opened for update by a lone connector: rewritten as a journal
+		   (renamed over the file, which is then opened again); otherwise
+		   written back at CLOSE, as before */
+		if (s->writable && !converted && alone_with(f) && j_write_all(f, -1, f->path) == 0) {
+			converted = 1;
+			drop_file_locks(f);
+			close(fd);
+			s->fd = -1;
+			goto again;
+		}
+	}
+	if (s->journal && s->sync && s->fd >= 0) {
+		void *m = mmap(NULL, J_HDR, PROT_READ | (s->writable ? PROT_WRITE : 0), MAP_SHARED, s->fd, 0);
+		if (m != MAP_FAILED) {
+			s->map = m;
+			if (s->writable)
+				__atomic_store_n((cob_u64 *)(void *)(s->map + 24), (cob_u64)s->log_end,
+						 __ATOMIC_RELEASE);
+		}
 	}
 	f->open_mode = mode;
 	link_open(f);
@@ -663,47 +1653,71 @@ int cob_open(cob_file *f, int mode)
 
 static int open_seq(cob_file *f, int mode)
 {
-	{
-		if (f->assign_kind == 1) {
-			if (mode != COB_OPEN_INPUT)
-				return set_st(f, "37");
-			f->fp = stdin;
-		} else if (f->assign_kind == 2 || f->assign_kind == 3) {
-			if (mode == COB_OPEN_INPUT || mode == COB_OPEN_IO)
-				return set_st(f, "37");
-			f->fp = stdout;
-		} else {
-			const char *fm = mode == COB_OPEN_INPUT ? "rb" : mode == COB_OPEN_OUTPUT ? "wb" :
-					 mode == COB_OPEN_IO ? "r+b" : "ab";
-			if (mode == COB_OPEN_EXTEND && access(f->path, F_OK) != 0) {
-				errno = ENOENT;
-				f->fp = NULL;
-			} else
-				f->fp = fopen(f->path, fm);
-			if (!f->fp) {
-				int e = errno;
-				if (e == ENOENT && f->optional) {
-					if (mode == COB_OPEN_INPUT) {
-						f->open_mode = mode;
-						link_open(f);
-						return set_st(f, "05");
-					}
-					f->fp = fopen(f->path, mode == COB_OPEN_EXTEND ? "ab" : "w+b");
-					if (f->fp) {
-						f->open_mode = mode;
-						link_open(f);
-						return set_st(f, "05");
-					}
-				}
-				if (e == EACCES)
-					return set_st(f, "37");
-				return set_st(f, e == ENOENT && mode != COB_OPEN_OUTPUT ? "35" : "30");
-			}
-		}
+	if (f->assign_kind == 1) {
+		if (mode != COB_OPEN_INPUT)
+			return set_st(f, "37");
+		f->fp = stdin;
 		f->open_mode = mode;
 		link_open(f);
 		return set_st(f, "00");
 	}
+	if (f->assign_kind == 2 || f->assign_kind == 3) {
+		if (mode == COB_OPEN_INPUT || mode == COB_OPEN_IO)
+			return set_st(f, "37");
+		f->fp = stdout;
+		f->open_mode = mode;
+		link_open(f);
+		return set_st(f, "00");
+	}
+	int flags = O_CLOEXEC | (mode == COB_OPEN_INPUT ? O_RDONLY : mode == COB_OPEN_OUTPUT ? O_WRONLY :
+				 mode == COB_OPEN_IO ? O_RDWR : O_WRONLY | O_APPEND);
+	const char *fm = mode == COB_OPEN_INPUT ? "rb" : mode == COB_OPEN_OUTPUT ? "wb" :
+			 mode == COB_OPEN_IO ? "r+b" : "ab";
+	const char *st = "00";
+	int fd = open(f->path, flags | (mode == COB_OPEN_OUTPUT ? O_CREAT : 0), 0666);
+	if (fd < 0) {
+		int e = errno;
+		if (e == ENOENT && f->optional) {
+			if (mode == COB_OPEN_INPUT) {
+				f->fp = NULL;   /* a missing OPTIONAL file: at end at once */
+				f->open_mode = mode;
+				link_open(f);
+				return set_st(f, "05");
+			}
+			fd = open(f->path, flags | O_CREAT, 0666);
+			if (fd >= 0)
+				st = "05";
+			else
+				e = errno;
+		}
+		if (fd < 0) {
+			if (e == EACCES)
+				return set_st(f, "37");
+			return set_st(f, e == ENOENT && mode != COB_OPEN_OUTPUT ? "35" : "30");
+		}
+	}
+	/* the sharing is settled before OUTPUT empties the file */
+	if (take_file_locks(f, fd, mode) != 0) {
+		close(fd);
+		return set_st(f, "61");
+	}
+	if (mode == COB_OPEN_OUTPUT) {
+		struct stat sb;
+		if (fstat(fd, &sb) == 0 && S_ISREG(sb.st_mode) && ftruncate(fd, 0) != 0) {
+			drop_file_locks(f);
+			close(fd);
+			return set_st(f, "30");
+		}
+	}
+	f->fp = fdopen(fd, fm);
+	if (!f->fp) {
+		drop_file_locks(f);
+		close(fd);
+		return set_st(f, "30");
+	}
+	f->open_mode = mode;
+	link_open(f);
+	return set_st(f, st);
 }
 
 int cob_close(cob_file *f)
@@ -722,12 +1736,30 @@ int cob_close(cob_file *f)
 		f->fp = NULL;
 	} else {
 		ixstate *s = ixs(f);
-		if (f->open_mode != COB_OPEN_INPUT && s->modified)
-			persist(f);
+		if (s->journal) {
+			/* the last connector out writes a journal made mostly of
+			   superseded entries afresh */
+			struct stat sb;
+			if (s->writable && s->fd >= 0 && fstat(s->fd, &sb) == 0 &&
+			    (size_t)sb.st_size > 2 * s->live_bytes + J_HDR + 65536 && alone_with(f)) {
+				j_catch_up(f);
+				j_write_all(f, -1, f->path);
+			}
+		} else if (f->open_mode != COB_OPEN_INPUT && s->modified) {
+			persist(f);     /* an earlier format, shared: written back as before */
+		}
+		if (s->map) {
+			if (s->locker)
+				__atomic_fetch_sub((uint32_t *)(void *)(s->map + 32), 1, __ATOMIC_ACQ_REL);
+			munmap(s->map, J_HDR);
+			s->map = NULL;
+		}
+		if (s->fd >= 0)
+			close(s->fd);   /* the record locks go with it */
 		ix_free(f);
 	}
 	f->open_mode = 0;
-	release_sharing(f);
+	drop_file_locks(f);
 	unlink_open(f);
 	return set_st(f, "00");
 }
@@ -1092,16 +2124,19 @@ static cob_s64 rel_key(cob_file *f)
 	return f->relative_key ? cob_get_int(f->relative_key) : 0;
 }
 
-static int read_rel(cob_file *f, int next)
+/* the record number a READ of a relative file reads: 0 and a status when
+ * there is none */
+static cob_s64 locate_rel(cob_file *f, int next, const char **st)
 {
 	ixstate *s = ixs(f);
-	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
-		return set_st(f, "47");
 	cob_s64 slot;
+	*st = NULL;
 	if (next == 2) {
 		/* READ PREVIOUS */
-		if (f->at_end)
-			return set_st(f, "46");
+		if (f->at_end) {
+			*st = "46";
+			return 0;
+		}
 		slot = s->rel_incl ? s->rel_pos : s->rel_pos - 1;
 		if (slot > (cob_s64)s->n)
 			slot = (cob_s64)s->n;
@@ -1109,13 +2144,16 @@ static int read_rel(cob_file *f, int next)
 			slot--;
 		if (slot < 1) {
 			f->at_end = 1;
-			return set_st(f, "10");
+			*st = "10";
+			return 0;
 		}
-		if (f->relative_key)
-			cob_set_int(f->relative_key, slot);
-	} else if (next || f->access == COB_ACC_SEQUENTIAL) {
-		if (f->at_end)
-			return set_st(f, "46");
+		return slot;
+	}
+	if (next || f->access == COB_ACC_SEQUENTIAL) {
+		if (f->at_end) {
+			*st = "46";
+			return 0;
+		}
 		slot = s->rel_incl ? s->rel_pos : s->rel_pos + 1;
 		if (slot < 1)
 			slot = 1;
@@ -1123,19 +2161,61 @@ static int read_rel(cob_file *f, int next)
 			slot++;
 		if (slot > (cob_s64)s->n) {
 			f->at_end = 1;
-			return set_st(f, "10");
+			*st = "10";
+			return 0;
 		}
 		if (slot > rel_key_cap(f)) {
 			f->at_end = 1;
-			return set_st(f, "14");
+			*st = "14";
+			return 0;
 		}
-		if (f->relative_key)
-			cob_set_int(f->relative_key, slot);
-	} else {
-		slot = rel_key(f);
-		if (slot < 1 || slot > (cob_s64)s->n || !s->recs[slot - 1])
-			return set_st(f, "23");
+		return slot;
 	}
+	slot = rel_key(f);
+	if (slot < 1 || slot > (cob_s64)s->n || !s->recs[slot - 1]) {
+		*st = "23";
+		return 0;
+	}
+	return slot;
+}
+
+static int read_rel(cob_file *f, int next)
+{
+	ixstate *s = ixs(f);
+	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
+		return set_st(f, "47");
+	read_release(f);
+	cob_s64 slot = 0;
+	cob_u64 got = 0;
+	int have_got = 0;
+	for (int pass = 0;; pass++) {
+		j_catch_up(f);
+		const char *st;
+		slot = locate_rel(f, next, &st);
+		if (!slot) {
+			if (have_got)
+				rec_unlock_one(f, got);
+			return set_st(f, st);
+		}
+		cob_u64 id = 0;
+		int lr = read_lock_step(f, NULL, slot, &id);
+		if (lr < 0) {
+			if (have_got)
+				rec_unlock_one(f, got);
+			/* the position stays, to try again */
+			if (f->relative_key && (next || f->access == COB_ACC_SEQUENTIAL))
+				cob_set_int(f->relative_key, slot);
+			return set_st(f, "51");
+		}
+		if (have_got && got != (cob_u64)slot % LK_RECSPAN)
+			rec_unlock_one(f, got);
+		if (lr == 0 || pass >= 8)
+			break;
+		got = id;
+		have_got = 1;
+	}
+	if (f->relative_key && (next || f->access == COB_ACC_SEQUENTIAL))
+		cob_set_int(f->relative_key, slot);
 	memcpy(f->record, s->recs[slot - 1]->data, f->record_max);
 	f->cur_size = s->recs[slot - 1]->size;
 	if (f->size_field)
@@ -1156,26 +2236,29 @@ static int write_rel(cob_file *f, size_t recsize)
 	size_t size;
 	if (new_rec_size(f, recsize, &size))
 		return set_st(f, "44");
+	j_begin(f);
 	cob_s64 slot;
+	const char *st = "00";
 	if (f->access == COB_ACC_SEQUENTIAL) {
 		slot = (cob_s64)s->n + 1;
 		if (slot > rel_key_cap(f))
-			return set_st(f, "24");
-		if (f->relative_key)
+			st = "24";
+		else if (f->relative_key)
 			cob_set_int(f->relative_key, slot);
 	} else {
 		slot = rel_key(f);
 		if (slot < 1)
-			return set_st(f, "24");
+			st = "24";
 	}
-	ensure_cap(s, (size_t)slot);
-	if (slot <= (cob_s64)s->n && s->recs[slot - 1])
-		return set_st(f, "22");
-	s->recs[slot - 1] = new_rec(f, f->record, size);
-	if ((size_t)slot > s->n)
-		s->n = (size_t)slot;
-	s->modified = 1;
-	return set_st(f, "00");
+	if (st[0] == '0' && slot <= (cob_s64)s->n && s->recs[slot - 1])
+		st = "22";
+	if (st[0] == '0') {
+		cob_u64 seq = s->next_seq++;
+		if (j_change(f, 'W', (cob_u64)slot, f->record, size, &seq) != 0)
+			st = "30";
+	}
+	j_end(f);
+	return set_st(f, st);
 }
 
 static int rewrite_rel(cob_file *f, size_t recsize, int del)
@@ -1195,23 +2278,26 @@ static int rewrite_rel(cob_file *f, size_t recsize, int del)
 		slot = s->rel_last_read;
 	} else
 		slot = rel_key(f);
+	j_begin(f);
+	const char *st = "00";
 	if (slot < 1 || slot > (cob_s64)s->n || !s->recs[slot - 1])
-		return set_st(f, "23");
-	if (del) {
-		free_rec(s->recs[slot - 1]);
-		s->recs[slot - 1] = NULL;
-	} else {
-		memcpy(s->recs[slot - 1]->data, f->record, f->record_max);
-		s->recs[slot - 1]->size = size;
+		st = "23";
+	else if (update_blocked(f, NULL, slot))
+		st = "51";
+	else {
+		cob_u64 seq = s->recs[slot - 1]->kseq[0];
+		if (j_change(f, del ? 'D' : 'R', (cob_u64)slot, f->record, del ? 0 : size, &seq) != 0)
+			st = "30";
 	}
+	j_end(f);
 	f->last_read_ok = 0;
-	s->modified = 1;
-	return set_st(f, "00");
+	return set_st(f, st);
 }
 
 static int start_rel(cob_file *f, int op)
 {
 	ixstate *s = ixs(f);
+	j_catch_up(f);
 	cob_s64 k = rel_key(f);
 	cob_s64 found = 0;
 	if (op == 5 || op == 6) {
@@ -1257,7 +2343,6 @@ static int start_rel(cob_file *f, int op)
 
 static long find_exact(cob_file *f, int k, const unsigned char *key)
 {
-	ixstate *s = ixs(f);
 	size_t klen = f->keys[k].size;
 	size_t i = lower_bound(f, k, key, klen, 0, 0, 0);
 	cob_irec **ord = get_order(f, k);
@@ -1278,19 +2363,18 @@ static void set_pos(ixstate *s, cob_file *f, cob_irec *r, int k, int mode)
 	s->pos_mode = mode;
 }
 
-static int read_idx(cob_file *f, int next, int key_index)
+/* the record a READ reads: NULL and a status when there is none */
+static cob_irec *locate_idx(cob_file *f, int next, int key_index, int *kk, const char **st)
 {
 	ixstate *s = ixs(f);
-	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
-		return set_st(f, "47");
-	if (f->no_current && next != 0)
-		return set_st(f, "46");      /* a sequential READ after a failed START */
-	cob_irec *r;
+	*st = NULL;
 	if (next == 2) {
 		/* READ PREVIOUS: the record before the position (at it after a START) */
-		if (f->at_end)
-			return set_st(f, "46");
-		int k = s->key_ref;
+		if (f->at_end) {
+			*st = "46";
+			return NULL;
+		}
+		int k = *kk = s->key_ref;
 		cob_irec **ord = get_order(f, k);
 		size_t j;
 		if (s->pos_mode == 0)
@@ -1303,14 +2387,17 @@ static int read_idx(cob_file *f, int next, int key_index)
 			j = lower_bound(f, k, s->pos_key, s->pos_keylen, 0, 0, 1);
 		if (j == 0) {
 			f->at_end = 1;
-			return set_st(f, "10");
+			*st = "10";
+			return NULL;
 		}
-		r = ord[j - 1];
-		set_pos(s, f, r, k, 1);
-	} else if (next || f->access == COB_ACC_SEQUENTIAL) {
-		if (f->at_end)
-			return set_st(f, "46");
-		int k = s->key_ref;
+		return ord[j - 1];
+	}
+	if (next || f->access == COB_ACC_SEQUENTIAL) {
+		if (f->at_end) {
+			*st = "46";
+			return NULL;
+		}
+		int k = *kk = s->key_ref;
 		cob_irec **ord = get_order(f, k);
 		size_t i;
 		if (s->pos_mode == 0)
@@ -1323,21 +2410,62 @@ static int read_idx(cob_file *f, int next, int key_index)
 			i = lower_bound(f, k, s->pos_key, s->pos_keylen, 0, 0, 0);
 		if (i >= ord_count(f, k)) {
 			f->at_end = 1;
-			return set_st(f, "10");
+			*st = "10";
+			return NULL;
 		}
-		r = ord[i];
-		set_pos(s, f, r, k, 1);
-	} else {
-		int k = key_index < 0 ? 0 : key_index;
-		unsigned char kbuf[COB_KEY_MAX_SEGS * 512];
-		gather_key(f, k, f->record, kbuf);
-		long i = find_exact(f, k, kbuf);
-		if (i < 0)
-			return set_st(f, "23");
-		r = get_order(f, k)[i];
-		set_pos(s, f, r, k, 1);
-		f->at_end = 0;
+		return ord[i];
 	}
+	int k = *kk = key_index < 0 ? 0 : key_index;
+	unsigned char kbuf[COB_KEY_MAX_SEGS * 512];
+	gather_key(f, k, f->record, kbuf);
+	long i = find_exact(f, k, kbuf);
+	if (i < 0) {
+		*st = "23";
+		return NULL;
+	}
+	return get_order(f, k)[i];
+}
+
+static int read_idx(cob_file *f, int next, int key_index)
+{
+	ixstate *s = ixs(f);
+	if (f->open_mode != COB_OPEN_INPUT && f->open_mode != COB_OPEN_IO)
+		return set_st(f, "47");
+	if (f->no_current && next != 0)
+		return set_st(f, "46");      /* a sequential READ after a failed START */
+	read_release(f);
+	cob_irec *r = NULL;
+	int k = 0;
+	cob_u64 got = 0;
+	int have_got = 0;
+	/* a record lock taken now: catch up once more and find the record
+	   again, so what is read is what the lock protects */
+	for (int pass = 0;; pass++) {
+		j_catch_up(f);
+		const char *st;
+		r = locate_idx(f, next, key_index, &k, &st);
+		if (!r) {
+			if (have_got)
+				rec_unlock_one(f, got);
+			return set_st(f, st);
+		}
+		cob_u64 id = 0;
+		int lr = read_lock_step(f, r->data, 0, &id);
+		if (lr < 0) {
+			if (have_got)
+				rec_unlock_one(f, got);
+			return set_st(f, "51");
+		}
+		if (have_got && (lr == 1 || got != rec_lock_id(f, r->data, 0)) && got != id)
+			rec_unlock_one(f, got);
+		if (lr == 0 || pass >= 8)
+			break;
+		got = id;
+		have_got = 1;
+	}
+	set_pos(s, f, r, k, 1);
+	if (!(next == 2 || next || f->access == COB_ACC_SEQUENTIAL))
+		f->at_end = 0;
 	memcpy(f->record, r->data, f->record_max);
 	f->cur_size = r->size;
 	if (f->size_field)
@@ -1350,7 +2478,6 @@ static int read_idx(cob_file *f, int next, int key_index)
 
 static int alt_conflict(cob_file *f, const unsigned char *rec, cob_irec *self)
 {
-	ixstate *s = ixs(f);
 	for (int k = 1; k < f->nkeys; k++) {
 		if (f->keys[k].dups)
 			continue;
@@ -1387,26 +2514,34 @@ static int write_idx(cob_file *f, size_t recsize)
 		if (s->have_last_written && memcmp(key, s->last_written, klen) <= 0)
 			return set_st(f, "21");
 	}
+	size_t size;
+	if (new_rec_size(f, recsize, &size))
+		return set_st(f, "44");
+	j_begin(f);
+	const char *st = "00";
 	size_t i = lower_bound(f, 0, key, klen, 0, 0, 0);
 	if (i < s->n) {
 		unsigned char seen[COB_KEY_MAX_SEGS * 512];
 		gather_key(f, 0, s->recs[i]->data, seen);
 		if (memcmp(seen, key, klen) == 0)
-			return set_st(f, "22");
+			st = "22";
 	}
-	if (alt_conflict(f, f->record, NULL))
-		return set_st(f, "22");
-	size_t size;
-	if (new_rec_size(f, recsize, &size))
-		return set_st(f, "44");
-	ensure_cap(s, s->n + 1);
-	memmove(s->recs + i + 1, s->recs + i, (s->n - i) * sizeof(cob_irec *));
-	s->recs[i] = new_rec(f, f->record, size);
-	s->n++;
-	memcpy(s->last_written, key, klen);
-	s->have_last_written = 1;
-	invalidate(s);
-	return set_st(f, "00");
+	if (st[0] == '0' && alt_conflict(f, f->record, NULL))
+		st = "22";
+	if (st[0] == '0') {
+		cob_u64 kseq[COB_MAX_KEYS];
+		cob_u64 seq = s->next_seq++;
+		for (int k = 0; k < j_nkeys(f); k++)
+			kseq[k] = seq;
+		if (j_change(f, 'W', 0, f->record, size, kseq) != 0)
+			st = "30";
+		else {
+			memcpy(s->last_written, key, klen);
+			s->have_last_written = 1;
+		}
+	}
+	j_end(f);
+	return set_st(f, st);
 }
 
 static int rewrite_idx(cob_file *f, size_t recsize, int del)
@@ -1424,40 +2559,50 @@ static int rewrite_idx(cob_file *f, size_t recsize, int del)
 			return set_st(f, "21");
 		key = s->last_read->data + f->keys[0].offset;
 	}
+	size_t size = 0;
+	if (!del && new_rec_size(f, recsize, &size))
+		return set_st(f, "44");
+	unsigned char keycopy[COB_KEY_MAX_SEGS * 512];
+	memcpy(keycopy, key, klen);     /* last_read may go while catching up */
+	key = keycopy;
+	j_begin(f);
+	const char *st = "00";
 	i = find_exact(f, 0, key);
-	if (i < 0)
-		return set_st(f, "23");
-	cob_irec *r = s->recs[i];
-	if (del) {
-		if (s->last_read == r)
-			s->last_read = NULL;
-		free_rec(r);
-		memmove(s->recs + i, s->recs + i + 1, (s->n - (size_t)i - 1) * sizeof(cob_irec *));
-		s->n--;
+	cob_irec *r = i >= 0 ? s->recs[i] : NULL;
+	if (!r)
+		st = "23";
+	else if (update_blocked(f, r->data, 0))
+		st = "51";
+	else if (del) {
+		if (j_change(f, 'D', 0, r->data, r->size, r->kseq) != 0)
+			st = "30";
+	} else if (alt_conflict(f, f->record, r)) {
+		st = "22";
 	} else {
-		size_t size;
-		if (new_rec_size(f, recsize, &size))
-			return set_st(f, "44");
-		if (alt_conflict(f, f->record, r))
-			return set_st(f, "22");
+		/* an alternate key that changes goes after its duplicates */
+		cob_u64 kseq[COB_MAX_KEYS];
+		int nk = j_nkeys(f);
+		for (int k = 0; k < nk; k++)
+			kseq[k] = r->kseq[k];
 		for (int k = 1; k < f->nkeys; k++) {
 			unsigned char ka[COB_KEY_MAX_SEGS * 512], kb[COB_KEY_MAX_SEGS * 512];
 			size_t klen2 = gather_key(f, k, r->data, ka);
 			gather_key(f, k, f->record, kb);
 			if (memcmp(ka, kb, klen2) != 0)
-				r->kseq[k] = s->next_seq++;
+				kseq[k] = s->next_seq++;
 		}
-		memcpy(r->data, f->record, f->record_max);
-		r->size = size;
+		if (j_change(f, 'R', 0, f->record, size, kseq) != 0)
+			st = "30";
 	}
+	j_end(f);
 	f->last_read_ok = 0;
-	invalidate(s);
-	return set_st(f, "00");
+	return set_st(f, st);
 }
 
 static int start_idx(cob_file *f, int op, int k, size_t keylen)
 {
 	ixstate *s = ixs(f);
+	j_catch_up(f);
 	if (k < 0)
 		k = 0;
 	size_t kfull = f->keys[k].total ? f->keys[k].total : f->keys[k].size;
@@ -1517,6 +2662,14 @@ static int start_idx(cob_file *f, int op, int k, size_t keylen)
 }
 
 /* ================================================================ dispatch */
+
+int cob_read_lock(cob_file *f, int next, int key_index, int lock)
+{
+	f->read_lock = lock;
+	int rc = cob_read(f, next, key_index);
+	f->read_lock = COB_LOCK_DEFAULT;
+	return rc;
+}
 
 int cob_read(cob_file *f, int next, int key_index)
 {

@@ -502,6 +502,47 @@ is LEFTLINE, and two want Left on a field's first column, or Right on its
 last, to end a one-field ACCEPT: YACCC, like `cobc` 3.1.2, keeps the cursor
 in the field there.
 
+## Files shared between programs
+
+A relative or indexed file is a journal: each WRITE, REWRITE and DELETE is
+appended to the file as the statement runs, so a program that crashes, or is
+killed, loses nothing it wrote. OPEN reads the journal and keeps the records
+in memory in key order; the last CLOSE writes a journal that is mostly
+superseded entries afresh. `COB_SYNC=Y` makes each change wait until it is on
+the disk. Files written by earlier versions are read, and rewritten as a
+journal the first time they are opened for update.
+
+Several programs, and several processes, can have a file open at once:
+
+- **Sharing** follows cobc 3.1.2: INPUT shares; a sequential file opened
+  OUTPUT, I-O or EXTEND without SHARING or LOCK MODE is the opener's alone; a
+  relative or indexed one is shared, and each connector sees the others'
+  changes at its next statement. `SHARING NO`, `LOCK MODE EXCLUSIVE`,
+  `OPEN ... WITH LOCK` and OPEN OUTPUT keep a file to one connector,
+  `SHARING READ ONLY` lets others only read, and `SHARING ALL` shares; OPEN
+  takes `SHARING WITH ...` too. A conflicting OPEN gets status 61. A program
+  and the programs it calls are one process: they can always open the same
+  file together.
+- **Record locks.** With `LOCK MODE AUTOMATIC` a READ in I-O mode locks the
+  record it reads; with `LOCK MODE MANUAL`, `READ ... WITH LOCK` does. The
+  lock goes with the next READ, UNLOCK, CLOSE, COMMIT or ROLLBACK, unless
+  `WITH LOCK ON MULTIPLE RECORDS` or `READ ... WITH KEPT LOCK` keeps it.
+  Another connector's READ in I-O mode, REWRITE or DELETE of a locked record
+  gets status 51 (`READ ... WITH NO LOCK` reads it anyway); a READ in INPUT
+  mode is never held up.
+
+The locks are byte-range locks on the file itself (Linux open file
+description locks), so they go with the process however it ends. `make
+files-test` runs programs one after another, side by side and from each
+other through `CALL "SYSTEM"`: the sharing combinations above, record
+locks, four programs writing one indexed file at once and keeping a counter
+under a record lock without losing an update, a program killed before
+CLOSE, compaction, files in the earlier formats, and one program with a file
+open through two SELECTs and a called program. Of GnuCOBOL's 13 sharing and
+locking tests, ten of which 3.1.2 itself marks as expected failures,
+`run_gc.py --xfail` passes 11; the other two want status 61 for the READ of
+a locked record, where the standard has 51.
+
 ## Language coverage
 
 **Source.** Fixed, free and variable reference formats, continuation lines,
@@ -755,17 +796,15 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
   and not drawn (no terminal sequence draws a line beside a field).
 - Report Writer: VARYING in report groups (GnuCOBOL 3.1.2 doesn't have it
   either).
-- SYNCHRONIZED alignment: items are laid out packed, so a `POINTER, SYNC`
-  item in a group is not aligned as it should be.
 - JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.
-- Split keys on indexed files (a key made of several SOURCE items).
 - Object-oriented COBOL.
 - GnuCOBOL's C API for fields (`cob_get_field_str` and the like): C code gets
   addresses and values, not `cob_field` structures.
-- Relative and indexed files are held in memory while open and written back on
-  CLOSE. That's fine for batch-sized files, but there's no record locking or
-  sharing between processes, and the indexed format is YACCC's own (not
-  BDB/VBISAM compatible).
+- Indexed files in BDB or VBISAM format: YACCC's own format is a journal (see
+  *Files shared between programs*), and an indexed file's records are held
+  in memory while it is open, which suits files up to a few million records.
+- Waiting for a lock: a locked record or file is reported at once (status
+  51 or 61); OPEN's RETRY phrase and READ's WAIT are accepted and don't wait.
 
 ## Differences from GnuCOBOL
 
@@ -823,17 +862,22 @@ All of these were checked against GnuCOBOL 3.1.2:
    (4 digits for 2 bytes) and truncates values to them.
 8. **WHEN-COMPILED register** has IBM's `MM/DD/YYhh.mm.ss` format; GnuCOBOL
    puts the day first.
-9. **Screen I/O.** The phrases of a DISPLAY operand apply to that operand
-   alone, as Micro Focus documents. GnuCOBOL 3.1.2 carries an operand's
-   attributes on to the later ones that have a position of their own. The
-   screen is the terminal's own, in its own colours, and stays as it is when
-   the program ends; GnuCOBOL switches to an alternate screen in white on
-   black and restores the old one at the end, so the last screen vanishes.
-   An input field shows its PROMPT character in the blanks after what has
-   been typed, not over blanks within it, and is drawn without prompt
-   characters once the ACCEPT ends. A number of a USAGE other than DISPLAY
-   is typed as text, sign and decimal point included, and read back as
-   NUMVAL would read it.
+9. **Files.** A record a connector has locked can't be read in I-O mode,
+   rewritten or deleted by another (status 51); GnuCOBOL 3.1.2 doesn't keep
+   record locks between processes. OPEN OUTPUT of an indexed file keeps it
+   to itself, where GnuCOBOL with Berkeley DB lets another program open it
+   meanwhile.
+10. **Screen I/O.** The phrases of a DISPLAY operand apply to that operand
+    alone, as Micro Focus documents. GnuCOBOL 3.1.2 carries an operand's
+    attributes on to the later ones that have a position of their own. The
+    screen is the terminal's own, in its own colours, and stays as it is when
+    the program ends; GnuCOBOL switches to an alternate screen in white on
+    black and restores the old one at the end, so the last screen vanishes.
+    An input field shows its PROMPT character in the blanks after what has
+    been typed, not over blanks within it, and is drawn without prompt
+    characters once the ACCEPT ends. A number of a USAGE other than DISPLAY
+    is typed as text, sign and decimal point included, and read back as
+    NUMVAL would read it.
 
 ## How it works
 
@@ -906,11 +950,12 @@ tests/gnucobol/      GnuCOBOL testsuite runner, comparison tool and recorded res
 tests/cli_test.py    compiler command-line tests
 tests/screen/        screen I/O programs, the keys typed and the screens expected
 tests/screen_test.py runs them in a pseudo-terminal through a small terminal emulator
+tests/files_test.py  files shared between programs and processes: sharing, locks, journal
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      file carries SPDX, README credits GnuCOBOL (make
                      provenance; provenance-deep measures token overlap)
 docs/img/            the figures in this README, drawn from the numbers above
-Makefile             make test | cli-test | screen-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
+Makefile             make test | cli-test | screen-test | files-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
 ```
 
 ## Acknowledgements

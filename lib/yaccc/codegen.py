@@ -1489,6 +1489,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         em(f"{f}.access = {ACC[fc.access]};")
         em(f"{f}.optional = {1 if fc.optional else 0};")
         em(f"{f}.sharing = {getattr(fc, 'sharing', 0)};")
+        em(f"{f}.lock_mode = {getattr(fc, 'lock_mode', 0)};")
+        em(f"{f}.lock_multiple = {1 if getattr(fc, 'lock_multiple', False) else 0};")
         kind = {'': 0, 'KEYBOARD': 1, 'DISPLAY': 2, 'PRINTER': 2}.get(fc.assign_kind, 0)
         em(f"{f}.assign_kind = {kind};")
         a = fc.assign
@@ -4288,6 +4290,15 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
     def g_Continue(self, s):
         self.em(";")
 
+    def g_Unlock(self, s):
+        """UNLOCK file: its record locks go; COMMIT / ROLLBACK: every file's
+        (each change is on disk as it is made: nothing to commit or undo)."""
+        if s.file is None:
+            self.em("cob_unlock_all();")
+            return
+        fi = self.file_info(s.file, s.loc)
+        self.io_result(fi, f"cob_unlock(&{fi.sym})", flush=False)
+
     def g_NextSentence(self, s):
         self.em(f"goto {self.cur_sentence_end};")
 
@@ -5084,7 +5095,23 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
                 # BASED storage named in ASSIGN is allocated (or not) by now
                 for sym, expr in self.dyn_fields:
                     self.em(f"{sym}.data = {expr};")
+                # OPEN ... WITH LOCK / SHARING: for this OPEN only
+                lock = fn in s.locked
+                share = s.sharing.get(fn)
+                if lock or share is not None:
+                    self.em("{")
+                    self.em.ind += 1
+                    self.em(f"int cob_sh = {fi.sym}.sharing;")
+                    if lock:
+                        self.em(f"{fi.sym}.open_lock = 1;")
+                    if share is not None:
+                        self.em(f"{fi.sym}.sharing = {share};")
                 self.io_result(fi, f"cob_open(&{fi.sym}, {OPEN_MODE[mode]})", flush=False)
+                if lock or share is not None:
+                    self.em(f"{fi.sym}.open_lock = 0;")
+                    self.em(f"{fi.sym}.sharing = cob_sh;")
+                    self.em.ind -= 1
+                    self.em("}")
 
     def g_Close(self, s):
         for i, fn in enumerate(s.files):
@@ -5144,7 +5171,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         if s.into is not None:
             self.check_receiving(s.into)
             on_ok.append(f"cob_move(CF({fi.buf}, {self.cur_rec_size(fi)}, &cob_attr_group), {self.into_field(s.into)});")
-        self.io_result(fi, f"cob_read(&{fi.sym}, {next_}, {kidx})", s.at_end, s.not_at_end, s.invalid,
+        call = (f"cob_read_lock(&{fi.sym}, {next_}, {kidx}, {s.lock})" if getattr(s, 'lock', 0)
+                else f"cob_read(&{fi.sym}, {next_}, {kidx})")
+        self.io_result(fi, call, s.at_end, s.not_at_end, s.invalid,
                        s.not_invalid, on_ok)
 
     def g_Write(self, s):

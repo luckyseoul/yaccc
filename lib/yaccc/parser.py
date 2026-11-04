@@ -764,11 +764,17 @@ class Parser:
                 self.accept('IS')
                 fc.status = self.parse_identifier()
             elif self.accept('LOCK'):
+                # LOCK MODE IS MANUAL / AUTOMATIC / EXCLUSIVE [WITH LOCK ON
+                # [MULTIPLE] RECORD[S]] [WITH ROLLBACK]
                 self.accept('MODE')
                 self.accept('IS')
                 while self.is_word('MANUAL', 'AUTOMATIC', 'EXCLUSIVE', 'WITH', 'LOCK', 'ON', 'MULTIPLE',
                                    'RECORD', 'RECORDS', 'ROLLBACK'):
-                    self.next()
+                    w = self.next().up
+                    if w in ('MANUAL', 'AUTOMATIC', 'EXCLUSIVE'):
+                        fc.lock_mode = {'MANUAL': 1, 'AUTOMATIC': 2, 'EXCLUSIVE': 3}[w]
+                    elif w == 'MULTIPLE':
+                        fc.lock_multiple = True
             elif self.accept('RESERVE'):
                 self.next()
                 self.accept('AREA', 'AREAS')
@@ -778,11 +784,7 @@ class Parser:
                 self.next()
             elif self.accept('SHARING'):
                 self.accept('WITH')
-                words = set()
-                while self.is_word('ALL', 'OTHER', 'NO', 'READ', 'ONLY', 'OTHERS'):
-                    words.add(self.next().up)
-                # SHARING NO is exclusive, READ ONLY shared, ALL / OTHER shared
-                fc.sharing = 2 if 'NO' in words else 1
+                fc.sharing = self._sharing_words()
             elif self.accept('COLLATING'):
                 self.accept('SEQUENCE')
                 self.accept('IS')
@@ -3281,19 +3283,64 @@ class Parser:
         return Cancel(loc, progs)
 
     # ---- file I/O
+    def _sharing_words(self):
+        """SHARING [WITH] ALL [OTHER] / NO [OTHER] / READ ONLY: COB_SHARE_*."""
+        words = set()
+        while self.is_word('ALL', 'OTHER', 'NO', 'READ', 'ONLY', 'OTHERS'):
+            words.add(self.next().up)
+        return 2 if 'NO' in words else 1 if 'READ' in words or 'ONLY' in words else 3
+
     def p_OPEN(self, loc):
-        modes = []
-        while self.is_word('INPUT', 'OUTPUT', 'I-O', 'EXTEND'):
+        st = Open(loc, [])
+        sharing = None
+        while True:
+            if self.accept('SHARING'):
+                # OPEN [SHARING WITH ...] INPUT file ... (COBOL 2002, X/Open)
+                self.accept('WITH')
+                sharing = self._sharing_words()
+                continue
+            if self.is_word('RETRY'):
+                # RETRY n TIMES / FOR n SECONDS / FOREVER: no waiting here
+                self.next()
+                while self.is_word('FOR', 'TIMES', 'SECONDS', 'FOREVER') or self.is_operand_start():
+                    if self.is_operand_start():
+                        self.parse_operand()
+                    else:
+                        self.next()
+                continue
+            if not self.is_word('INPUT', 'OUTPUT', 'I-O', 'EXTEND'):
+                break
             m = self.next().up
             files = []
-            while self.is_user_word():
-                files.append(self.next().up)
+            while True:
+                if self.accept('SHARING'):
+                    self.accept('WITH')
+                    sharing = self._sharing_words()
+                    continue
+                if not self.is_user_word():
+                    break
+                name = self.next().up
+                files.append(name)
+                if sharing is not None:
+                    st.sharing[name] = sharing
                 while self.is_word('WITH', 'NO', 'REWIND', 'REVERSED', 'LOCK'):
-                    self.next()
-            modes.append((m, files))
-        if not modes:
+                    if self.next().up == 'LOCK':
+                        st.locked.add(name)
+            st.modes.append((m, files))
+        if not st.modes:
             raise self.err("INPUT, OUTPUT, I-O or EXTEND expected")
-        return Open(loc, modes)
+        return st
+
+    def p_UNLOCK(self, loc):
+        f = self.user_word('file name')
+        self.accept('RECORD', 'RECORDS')
+        return Unlock(loc, f)
+
+    def p_COMMIT(self, loc):
+        return Unlock(loc, None)
+
+    def p_ROLLBACK(self, loc):
+        return Unlock(loc, None)
 
     def p_CLOSE(self, loc):
         files = []
@@ -3323,12 +3370,20 @@ class Parser:
         into = key = None
         if self.accept('INTO'):
             into = self.parse_identifier()
-        while self.is_word('WITH', 'NO', 'LOCK', 'IGNORING', 'KEPT'):
-            self.next()
+        lock = 0
+        while self.is_word('WITH', 'NO', 'LOCK', 'IGNORING', 'KEPT', 'WAIT'):
+            w = self.next().up
+            if w == 'NO' or w == 'IGNORING':
+                lock = 2                # WITH NO LOCK, IGNORING LOCK
+            elif w == 'KEPT':
+                lock = 3                # WITH KEPT LOCK
+            elif w == 'LOCK' and lock == 0:
+                lock = 1                # WITH LOCK
         if self.accept('KEY'):
             self.accept('IS')
             key = self.parse_identifier()
         st = Read(loc, f, direction, into, key, None, None, None, None)
+        st.lock = lock
         while True:
             a, na = self._at_end()
             if a is not None:

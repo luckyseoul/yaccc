@@ -4,7 +4,7 @@
 with yaccc and compares exit status and standard output with the
 testsuite's expectations.
 
-usage: run_gc.py [--cobc] [-k TEXT] [-v] [--log FILE] [--expect RESULTS]
+usage: run_gc.py [--cobc] [-k TEXT] [-v] [--log FILE] [--expect RESULTS] [--xfail]
                  TESTSUITE_SRC [FILE.at ...]
 
 TESTSUITE_SRC is GnuCOBOL's tests/testsuite.src directory. Only tests built
@@ -524,6 +524,9 @@ def main():
                     help='link $COMPILE_MODULE sources into each executable instead of '
                          'building loadable modules')
     ap.add_argument('--log', help='write failure details to this file')
+    ap.add_argument('--xfail', action='store_true',
+                    help='also run the tests GnuCOBOL marks as expected to fail (AT_XFAIL_IF), '
+                         'which are otherwise skipped')
     ap.add_argument('--expect', help='results file written by -v (tests/gnucobol/results.txt): '
                     'report only the tests whose result changed, and fail if a passing test no longer passes')
     ap.add_argument('-j', '--jobs', type=int, default=0,
@@ -546,6 +549,8 @@ def main():
         for t in parse_file(path):
             if a.pattern and a.pattern.lower() not in t.title.lower():
                 continue
+            if a.xfail and t.skip_reason == 'expected failure in GnuCOBOL':
+                t.skip_reason = None
             todo.append(t)
 
     def work(t):

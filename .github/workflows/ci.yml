@@ -30,6 +30,10 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
         run: make screen-test
+      - name: Files shared between processes
+        env:
+          CC: ${{ matrix.cc }}
+        run: make files-test
       - name: Licence provenance (this tree stays MIT, no GPL code vendored)
         run: make provenance
       - name: Examples

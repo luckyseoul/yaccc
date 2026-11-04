@@ -975,7 +975,23 @@ typedef struct cob_file {
 	const unsigned short *sort_coll;  /* SORT/MERGE COLLATING SEQUENCE */
 	int no_mapping;           /* -fno-filename-mapping: the name is used as it stands */
 	char given[256];          /* the name ASSIGN gave, before mapping (for messages) */
+	int lock_mode;            /* LOCK MODE: 0 none, 1 MANUAL, 2 AUTOMATIC, 3 EXCLUSIVE */
+	int lock_multiple;        /* LOCK MODE ... WITH LOCK ON MULTIPLE RECORDS */
+	int open_lock;            /* OPEN ... WITH LOCK: this OPEN has the file to itself */
+	int read_lock;            /* the lock phrase of the READ under way (COB_LOCK_*) */
+	void *holder;             /* the process's file-level locks (cobrt_io.c) */
 } cob_file;
+/* SHARING (cob_file.sharing) */
+#define COB_SHARE_NONE      0   /* no clause: INPUT shares, a sequential file opened
+				   otherwise is the opener's alone */
+#define COB_SHARE_READ_ONLY 1
+#define COB_SHARE_NO        2
+#define COB_SHARE_ALL       3
+/* the lock phrase of a READ */
+#define COB_LOCK_DEFAULT 0      /* none: as LOCK MODE says */
+#define COB_LOCK_WITH    1      /* WITH LOCK */
+#define COB_LOCK_NONE    2      /* WITH NO LOCK, IGNORING LOCK */
+#define COB_LOCK_KEPT    3      /* WITH KEPT LOCK */
 
 void cob_exc_io(cob_file *f, const char *status);
 int cob_open(cob_file *f, int mode);
@@ -988,6 +1004,9 @@ int cob_write(cob_file *f, size_t recsize, int adv_when, int adv_lines);
 int cob_rewrite(cob_file *f, size_t recsize);
 int cob_delete(cob_file *f);
 int cob_start(cob_file *f, int op, int key_index, size_t keylen);
+int cob_read_lock(cob_file *f, int next, int key_index, int lock);
+int cob_unlock(cob_file *f);
+void cob_unlock_all(void);
 void cob_io_unhandled(cob_file *f, int rc, const char *loc);
 #define COB_ADV_NONE   0
 #define COB_ADV_BEFORE 1

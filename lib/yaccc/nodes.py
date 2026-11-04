@@ -407,6 +407,11 @@ class Continue(Stmt):
 
 
 @dataclass(eq=False)
+class Unlock(Stmt):
+    file: Optional[str]             # UNLOCK file; None: COMMIT / ROLLBACK, every file
+
+
+@dataclass(eq=False)
 class NextSentence(Stmt):
     pass
 
@@ -520,6 +525,8 @@ class Cancel(Stmt):
 @dataclass(eq=False)
 class Open(Stmt):
     modes: List[tuple]              # (mode, [file names])
+    locked: set = field(default_factory=set)        # OPEN ... file WITH LOCK
+    sharing: dict = field(default_factory=dict)     # file -> SHARING of the OPEN
 
 
 @dataclass(eq=False)
@@ -538,6 +545,7 @@ class Read(Stmt):
     not_at_end: Optional[list]
     invalid: Optional[list]
     not_invalid: Optional[list]
+    lock: int = 0                   # COB_LOCK_*: WITH LOCK / NO LOCK / KEPT LOCK
 
 
 @dataclass(eq=False)
