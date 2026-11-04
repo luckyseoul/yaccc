@@ -1,0 +1,43 @@
+START-OF-DOCUMENT             ||||
+VERSION-INFORMATION           |1.0|||
+ENCODING-DECLARATION          |UTF-8|||
+COMMENT                       | order |||
+START-OF-ELEMENT              |order|p|urn:o|
+NAMESPACE-DECLARATION         ||p|urn:o|
+ATTRIBUTE-NAME                |id|||
+ATTRIBUTE-CHARACTERS          |7|||
+ATTRIBUTE-NAME                |note|||
+ATTRIBUTE-CHARACTERS          |a & b|||
+START-OF-ELEMENT              |item|||
+ATTRIBUTE-NAME                |qty|||
+ATTRIBUTE-CHARACTERS          |2|||
+CONTENT-CHARACTERS            |bolt <M8>|||
+END-OF-ELEMENT                |item|||
+START-OF-ELEMENT              |item|||
+ATTRIBUTE-NAME                |qty|||
+ATTRIBUTE-CHARACTERS          |1|||
+START-OF-CDATA-SECTION        ||||
+CONTENT-CHARACTERS            |<nut>|||
+END-OF-CDATA-SECTION          ||||
+END-OF-ELEMENT                |item|||
+PROCESSING-INSTRUCTION-TARGET |app|||
+PROCESSING-INSTRUCTION-DATA   |keep|||
+START-OF-ELEMENT              |empty|||
+END-OF-ELEMENT                |empty|||
+UNRESOLVED-REFERENCE          |custom|||
+END-OF-ELEMENT                |order|p|urn:o|
+END-OF-DOCUMENT               ||||
+done, events 29
+  content [text] length 000000004
+  EXCEPTION code +000000005 text [<a><b>text</c]
+  exception +000000005 after 05
+  EXCEPTION code +000000003 text [<a x="1" x]
+  exception +000000003 after 02
+  content [one] length 000000003
+  EXCEPTION code +000000160 text [<a>one</a><]
+  exception +000000160 after 05
+  content [stop here] length 000000009
+  exception -000000001 after 06
+  content [AB] length 000000002
+  EXCEPTION code +000000013 text [<a>&#x41;&#66;&#xZ]
+  exception +000000013 after 04

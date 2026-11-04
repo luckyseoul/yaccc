@@ -797,7 +797,17 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
                 ('WHEN-COMPILED', '&cob_wc_reg', T_ALNUM, 0, 0, 16),
                 ('NUMBER-OF-CALL-PARAMETERS', '&cob_ncp_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
                 ('JSON-CODE', '&cob_json_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
+                ('JSON-STATUS', '&cob_json_status_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
                 ('XML-CODE', '&cob_xml_code_reg', T_NUM_BINARY, 9, F_SIGNED, 4),
+                # XML PARSE: the event, and its text and names, whose length
+                # is the event's (XML-N... are the same: there is no national)
+                ('XML-EVENT', '&cob_xml_event_reg', T_ALNUM, 0, 0, 30),
+                ('XML-TEXT', '&cob_xml_text_reg', T_ALNUM, 0, 0, 0),
+                ('XML-NTEXT', '&cob_xml_text_reg', T_ALNUM, 0, 0, 0),
+                ('XML-NAMESPACE', '&cob_xml_ns_reg', T_ALNUM, 0, 0, 0),
+                ('XML-NNAMESPACE', '&cob_xml_ns_reg', T_ALNUM, 0, 0, 0),
+                ('XML-NAMESPACE-PREFIX', '&cob_xml_nsprefix_reg', T_ALNUM, 0, 0, 0),
+                ('XML-NNAMESPACE-PREFIX', '&cob_xml_nsprefix_reg', T_ALNUM, 0, 0, 0),
                 # the key that ended the last screen ACCEPT, without a CRT STATUS clause
                 ('COB-CRT-STATUS', '&cob_crt_status_reg', T_NUM_DISPLAY, 4, 0, 4)):
             if nm not in ctx.names:
@@ -3526,11 +3536,11 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
             prefix = self.sym('xpfx_')
             em("{")
             em.ind += 1
-            em(f"static unsigned char {prefix}_d[64];")
-            em(f"cob_field {prefix}_f = {{64, {prefix}_d, &cob_attr_alnum}};")
-            em(f"cob_move({self.field(s.namespace_prefix)}, &{prefix}_f);")
-            em(f"{prefix}_d[63] = 0;")
-            em(f"const char *{prefix} = (const char *){prefix}_d;")
+            # the prefix without its trailing spaces; none when the
+            # namespace is all spaces
+            ns = self.field(s.namespace) if s.namespace is not None else 'NULL'
+            em(f"char {prefix}[256];")
+            em(f"cob_xml_prefix({prefix}, sizeof {prefix}, {self.field(s.namespace_prefix)}, {ns});")
         em("{")
         em.ind += 1
         em("xmlw cob_xw;")
@@ -3541,7 +3551,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
             em(f"if (cob_xml_bad_prefix({prefix})) cob_xml_abort(&cob_xw, 419);")
         if s.declaration:
             em("cob_xml_declaration(&cob_xw);")
-        self.xml_member(src, names, types, s, prefix, top=True)
+        em(f"unsigned char *cob_gb = ({self.field(s.src)})->data;")
+        self._gen_base = ('cob_gb', src.offset)
+        self.xml_member(src, names, types, s, prefix, [], top=True)
         cin = self.field(s.count_in) if s.count_in is not None else 'NULL'
         em(f"cob_xml_finish(&cob_xw, {cin});")
         em("int cob_xcode = cob_xml_code_value();")
@@ -3616,10 +3628,14 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
             return t
         return 'ATTRIBUTE' if all_attributes and not it.children else 'ELEMENT'
 
-    def xml_member(self, it, names, types, s, prefix, top=False):
+    def xml_member(self, it, names, types, s, prefix, subs, top=False):
         em = self.em
         name = self.xml_name(it, names)
         pfx = self.xml_pfx(prefix)
+        occ = None if top else it.occurs     # a subscripted source is one element
+        if occ is not None:
+            # a table: its element once per occurrence
+            _i, subs = self.gen_occurs_open(it, subs)
         if it.children:
             em("{")
             em.ind += 1
@@ -3628,21 +3644,31 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
             if top and s.namespace is not None:
                 em(f"cob_xml_root_namespace(&cob_xw, {pfx}, {self.field(s.namespace)});")
             for c in self.xml_members(it, s):
-                self.xml_member(c, names, types, s, prefix)
+                self.xml_member(c, names, types, s, prefix, subs)
             em(f"cob_xml_elem_close(&cob_xw, {pfx}, {c_string(name)});")
             if not top:
                 em("cob_xml_rollback_if_empty(&cob_xw, cob_xm);")
             em.ind -= 1
             em("}")
+            if occ is not None:
+                self.gen_occurs_close()
             return
         kind = self.xml_kind(it, types, s.all_attributes)
-        field = self.xml_field(it)
+        if occ is not None and kind == 'ATTRIBUTE':
+            # an attribute appears once in an element: a table's are elements
+            if types.get(id(it)) == 'ATTRIBUTE':
+                DIAG.warn(f"XML GENERATE: '{name}' has OCCURS, so it is generated as elements, "
+                          "not as an attribute", s.loc)
+            kind = 'ELEMENT'
+        field = self.json_field(it, subs)
         cond = self.xml_suppressed(it, s, kind == 'ATTRIBUTE', field)
         if cond is not None:
             em(f"if (!{cond}) {{")
             em.ind += 1
         text_fn = 'cob_xml_text_just' if (it.flags & F_JUSTIFIED) else 'cob_xml_text'
-        if kind == 'ATTRIBUTE':
+        if kind == 'ATTRIBUTE' and it.type in self.JSON_NUMERIC:
+            em(f"cob_xml_attr_num(&cob_xw, {pfx}, {c_string(name)}, {field}, {self.xml_dpc()});")
+        elif kind == 'ATTRIBUTE':
             em(f"cob_xml_attr(&cob_xw, {pfx}, {c_string(name)}, {field});")
         elif kind == 'CONTENT':
             if it.type in self.JSON_NUMERIC:
@@ -3651,6 +3677,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
                 em(f"{text_fn}(&cob_xw, {field});")
         else:
             em(f"cob_xml_elem_open(&cob_xw, {pfx}, {c_string(name)});")
+            if top and s.namespace is not None:
+                em(f"cob_xml_root_namespace(&cob_xw, {pfx}, {self.field(s.namespace)});")
             if it.type in self.JSON_NUMERIC:
                 em(f"cob_xml_num(&cob_xw, {field}, {self.xml_dpc()});")
             else:
@@ -3659,6 +3687,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         if cond is not None:
             em.ind -= 1
             em("}")
+        if occ is not None:
+            self.gen_occurs_close()
 
     def xml_members(self, it, s):
         out = []
@@ -3670,12 +3700,30 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
             out.append(c)
         return out
 
-    def xml_field(self, it):
-        return f"CF({it.storage} + {it.offset}, {it.size}, &{self.item_attr(it)})"
-
     # ---------------------------------------------------------------- JSON
     JSON_NUMERIC = (T_NUM_DISPLAY, T_NUM_PACKED, T_NUM_BINARY, T_NUM_COMP5,
                     T_NUM_FLOAT, T_NUM_DOUBLE, T_INDEX, T_NUM_DEC_FLOAT)
+
+    def g_XmlParse(self, s):
+        """XML PARSE: the runtime reads the document into events; the
+        processing procedure is PERFORMed for each. The parser's state lives
+        in the runtime, not here: a PERFORM leaves this block."""
+        em = self.em
+        em("{")
+        em.ind += 1
+        em(f"cob_xml_parse_start({self.field(s.doc)});")
+        em("while (cob_xml_parse_next()) {")
+        em.ind += 1
+        self.perform_call(s.proc, s.thru, cause='PERFORM')
+        em("if (cob_xml_parse_after())")
+        em("\tbreak;")
+        em.ind -= 1
+        em("}")
+        em("int cob_xc = cob_xml_parse_finish();")
+        self.handlers('cob_xc != 0', s.on_exc, s.not_on_exc)
+        em("(void)cob_xc;")
+        em.ind -= 1
+        em("}")
 
     def g_JsonGenerate(self, s):
         em = self.em
@@ -3697,6 +3745,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         em("jsonw cob_jw;")
         em("cob_json_code_reset();")
         em(f"cob_json_init(&cob_jw, {self.field(s.out)});")
+        # the items are found from the source's storage, which a subscript moves
+        em(f"unsigned char *cob_gb = ({self.field(s.src)})->data;")
+        self._gen_base = ('cob_gb', src.offset)
         em("cob_json_obj_open(&cob_jw);")
         self.json_member(src, names, omitted, suppress, [True], [], top=True)
         em("cob_json_obj_close(&cob_jw);")
@@ -3707,6 +3758,102 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         em("(void)cob_jcode;")
         em.ind -= 1
         em("}")
+
+    def g_JsonParse(self, s):
+        """JSON PARSE: the receiver goes to the runtime as a table of nodes,
+        each subtree contiguous, and the runtime reads the text once, giving
+        each value to the item its name matches."""
+        em = self.em
+        root = self.resolve(s.into)
+        if not isinstance(root, DataItem) or root.level in (66, 88):
+            raise CompileError("JSON PARSE needs a data item to receive the values", s.loc)
+        self.check_receiving(s.into)
+        names, suppress, conv, omitted = {}, set(), {}, False
+        for ref, nm in s.names:
+            it = self.resolve(ref)
+            if nm is None:
+                if it is not root:
+                    raise CompileError(f"NAME OF {ref.name} IS OMITTED: only the receiver can be "
+                                       "OMITTED", ref.loc)
+                omitted = True
+            else:
+                names[id(it)] = nm
+        for ref in s.suppress:
+            suppress.add(id(self.resolve(ref)))
+        for ref, spec in s.converting:
+            it = self.resolve(ref)
+            if not isinstance(it, DataItem) or it.children or it.level in (66, 88):
+                raise CompileError(f"CONVERTING '{ref.name}': an elementary data item is needed",
+                                   ref.loc)
+            if spec[0] == 'LITS':
+                conv[id(it)] = (self.lit_str(spec[1]), self.lit_str(spec[2]))
+                continue
+            conds = [self.resolve(r) for r in spec[1:]]
+            for r, c in zip(spec[1:], conds):
+                if not (isinstance(c, DataItem) and c.level == 88 and c.parent is it):
+                    raise CompileError(f"CONVERTING '{ref.name}': '{r.name}' is not a "
+                                       f"condition-name of it", r.loc)
+            if len(conds) == 2:
+                tv, fv = conds[0].values[0][0], conds[1].values[0][0]
+            else:
+                if conds[0].false_value is None:
+                    raise CompileError(f"condition-name '{spec[1].name}' has no WHEN SET TO FALSE "
+                                       "value, so false has nothing to set", spec[1].loc)
+                tv, fv = conds[0].values[0][0], conds[0].false_value
+            conv[id(it)] = (self.field(tv), self.field(fv))
+        rows = []
+        self.jp_node(root, root, names, suppress, conv, rows, omitted)
+        em("{")
+        em.ind += 1
+        em(f"const cob_jp_node cob_jpn[{len(rows)}] = {{")
+        for r in rows:
+            em("\t{" + ", ".join(f".{k} = {v}" for k, v in r) + "},")
+        em("};")
+        detail = 1 if s.detail else 0
+        em(f"int cob_jcode = cob_json_parse({self.field(s.text)}, {self.field(s.into)}, "
+           f"cob_jpn, {detail});")
+        self.handlers('cob_jcode', s.on_exc, s.not_on_exc)
+        em("(void)cob_jcode;")
+        em.ind -= 1
+        em("}")
+
+    def jp_node(self, it, root, names, suppress, conv, rows, omitted=False):
+        """Describe it and what it holds to JSON PARSE, preorder; False when
+        nothing in it can take a value: FILLER, condition names, RENAMES,
+        the second and later items of a REDEFINES set, SUPPRESSed items,
+        pointers, and groups left with none of the rest."""
+        top = it is root
+        if not top and (it.level in (66, 88) or not it.name or id(it) in suppress
+                        or it.redefines is not None):
+            return False
+        at = len(rows)
+        rows.append(None)
+        if it.children:
+            kept = [self.jp_node(c, root, names, suppress, conv, rows) for c in it.children]
+            if not any(kept) and not top:
+                del rows[at:]
+                return False
+            kind, attr = 'COB_JP_GROUP', 'NULL'
+        else:
+            if it.type == T_POINTER:
+                if top:
+                    raise CompileError("JSON PARSE cannot give a value to a pointer", it.loc)
+                del rows[at:]
+                return False
+            kind = 'COB_JP_BOOL' if id(it) in conv else 'COB_JP_ITEM'
+            attr = f"&{self.item_attr(it)}"
+        if top and omitted:
+            name = 'NULL'
+        else:
+            name = c_string(names[id(it)] if id(it) in names else self.json_name(it, names))
+        occ = None if top else it.occurs
+        tv, fv = conv.get(id(it), ('NULL', 'NULL'))
+        rows[at] = [('name', name), ('exact', 1 if id(it) in names else 0), ('kind', kind),
+                    ('span', len(rows) - at), ('offset', it.offset - root.offset),
+                    ('size', it.size), ('occurs', occ.max if occ else 0),
+                    ('odo', self.field(occ.depending) if occ and occ.depending else 'NULL'),
+                    ('attr', attr), ('tv', tv), ('fv', fv)]
+        return True
 
     def json_name(self, it, names):
         if id(it) in names:
@@ -3732,14 +3879,19 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         em = self.em
         name = self.json_name(it, names)
         om = id(it) in omitted
-        group = bool(it.children)
-        if group:
+        occ = None if top else it.occurs     # a subscripted source is one element
+        if not om:
+            if not first[0]:
+                em("cob_json_comma(&cob_jw);")
+            first[0] = False
+            em(f'cob_json_key(&cob_jw, {c_string(name)});')
+        if occ is not None:
+            # a table -> an array, of objects for a group
+            em("cob_json_arr_open(&cob_jw);")
+            i, subs = self.gen_occurs_open(it, subs)
+            em(f"if ({i}) cob_json_comma(&cob_jw);")
+        if it.children:
             members = self.json_members(it, names, omitted, suppress)
-            if not om:
-                if not first[0]:
-                    em("cob_json_comma(&cob_jw);")
-                first[0] = False
-                em(f'cob_json_key(&cob_jw, {c_string(name)});')
             if not om or not top:
                 em("cob_json_obj_open(&cob_jw);")
             inner = [True]
@@ -3747,31 +3899,36 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
                 self.json_member(c, names, omitted, suppress, inner, subs)
             if not om or not top:
                 em("cob_json_obj_close(&cob_jw);")
-            return
-        # an elementary item, possibly with OCCURS -> an array
-        occ = it.occurs
+        else:
+            self.json_value(it, subs)
         if occ is not None:
-            if not om:
-                if not first[0]:
-                    em("cob_json_comma(&cob_jw);")
-                first[0] = False
-                em(f'cob_json_key(&cob_jw, {c_string(name)});')
-            em("cob_json_arr_open(&cob_jw);")
-            i = self.sym('ji_')
-            em(f"for (cob_s64 {i} = 0; {i} < {occ.max}; {i}++) {{")
-            em.ind += 1
-            em(f"if ({i}) cob_json_comma(&cob_jw);")
-            self.json_value(it, subs + [(i, it.size)])
-            em.ind -= 1
-            em("}")
+            self.gen_occurs_close()
             em("cob_json_arr_close(&cob_jw);")
-            return
-        if not om:
-            if not first[0]:
-                em("cob_json_comma(&cob_jw);")
-            first[0] = False
-            em(f'cob_json_key(&cob_jw, {c_string(name)});')
-        self.json_value(it, subs)
+
+    def gen_occurs_open(self, it, subs):
+        """Open a C loop over the occurrences of the table it -- as many as
+        its DEPENDING ON object says, when it has one -- for JSON and XML
+        GENERATE; returns the loop variable and subs with it added."""
+        em = self.em
+        occ = it.occurs
+        i = self.sym('gi_')
+        em("{")
+        em.ind += 1
+        count = str(occ.max)
+        if occ.depending is not None:
+            count = self.sym('gn_')
+            em(f"cob_s64 {count} = cob_get_int({self.field(occ.depending)});")
+            em(f"if ({count} > {occ.max}) {count} = {occ.max};")
+        em(f"for (cob_s64 {i} = 0; {i} < {count}; {i}++) {{")
+        em.ind += 1
+        return i, subs + [(i, it.size)]
+
+    def gen_occurs_close(self):
+        em = self.em
+        em.ind -= 1
+        em("}")
+        em.ind -= 1
+        em("}")
 
     def json_value(self, it, subs):
         em = self.em
@@ -3792,10 +3949,12 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen):
         return "'.'"
 
     def json_field(self, it, subs):
-        """C expression for an elementary item, applying enclosing OCCURS."""
-        term = [str(it.offset)] + [f"{v} * {stride}" for v, stride in subs]
+        """C expression for an elementary item of a JSON or XML GENERATE
+        source, applying enclosing OCCURS: found from the source's storage."""
+        base, root = self._gen_base
+        term = [str(it.offset - root)] + [f"{v} * {stride}" for v, stride in subs]
         total = ' + '.join(term)
-        return f"CF({it.storage} + ({total}), {it.size}, &{self.item_attr(it)})"
+        return f"CF({base} + ({total}), {it.size}, &{self.item_attr(it)})"
 
     def g_Display(self, s):
         em = self.em

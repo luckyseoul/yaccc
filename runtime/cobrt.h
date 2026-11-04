@@ -744,6 +744,22 @@ void cob_json_str(jsonw *w, cob_field *f, int justified);
 void cob_json_num(jsonw *w, cob_field *f, int dpc);
 void cob_json_finish(jsonw *w, cob_field *count_in);
 extern cob_field cob_json_code_reg;       /* JSON-CODE */
+/* JSON PARSE: the receiver described node by node, each subtree contiguous */
+enum { COB_JP_GROUP, COB_JP_ITEM, COB_JP_BOOL };
+typedef struct {
+	const char *name;          /* the JSON name; NULL for a receiver NAMEd OMITTED */
+	unsigned char exact;       /* a NAME phrase literal: matched case and all */
+	unsigned char kind;        /* COB_JP_* */
+	int span;                  /* nodes in its subtree, itself included */
+	size_t offset;             /* from the receiver's start, first occurrences */
+	size_t size;               /* the item's size; a table's, one occurrence's */
+	int occurs;                /* a table's occurrences; 0 for no table */
+	const cob_field *odo;      /* OCCURS DEPENDING ON object */
+	const cob_attr *attr;
+	const cob_field *tv, *fv;  /* COB_JP_BOOL: what true and false MOVE */
+} cob_jp_node;
+int cob_json_parse(cob_field *text, cob_field *into, const cob_jp_node *nodes, int detail);
+extern cob_field cob_json_status_reg;     /* JSON-STATUS */
 
 /* XML GENERATE */
 typedef struct {
@@ -758,18 +774,21 @@ typedef struct {
 	int last_was_empty;
 	int abort;                  /* a name or namespace was rejected: stop */
 	int hex[258];               /* per depth: content written as hex (417) */
+	int attrs[258];             /* per depth: the open element has attributes */
 } xmlw;
 void cob_xml_code_reset(void);
 int cob_xml_code_value(void);
 void cob_xml_init(xmlw *w, cob_field *out);
 void cob_xml_declaration(xmlw *w);
 void cob_xml_root_namespace(xmlw *w, const char *prefix, cob_field *uri);
+void cob_xml_prefix(char *out, size_t cap, const cob_field *prefix, const cob_field *uri);
 void cob_xml_elem_open(xmlw *w, const char *prefix, const char *name);
 void cob_xml_elem_close(xmlw *w, const char *prefix, const char *name);
 void cob_xml_text(xmlw *w, cob_field *f);
 void cob_xml_text_just(xmlw *w, cob_field *f);
 void cob_xml_num(xmlw *w, cob_field *f, int dpc);
 void cob_xml_attr(xmlw *w, const char *prefix, const char *name, cob_field *f);
+void cob_xml_attr_num(xmlw *w, const char *prefix, const char *name, cob_field *f, int dpc);
 void cob_xml_finish(xmlw *w, cob_field *count_in);
 int cob_xml_bad_uri(const cob_field *f);
 void cob_xml_abort(xmlw *w, int code);
@@ -779,6 +798,12 @@ int cob_xml_nonnumeric(const cob_field *f);
 size_t cob_xml_mark(xmlw *w);
 void cob_xml_rollback_if_empty(xmlw *w, size_t mark);
 extern cob_field cob_xml_code_reg;       /* XML-CODE */
+/* XML PARSE (cobrt_xmlp.c): the registers, and the loop the statement runs */
+extern cob_field cob_xml_event_reg, cob_xml_text_reg, cob_xml_ns_reg, cob_xml_nsprefix_reg;
+void cob_xml_parse_start(cob_field *doc);
+int cob_xml_parse_next(void);
+int cob_xml_parse_after(void);
+int cob_xml_parse_finish(void);
 
 /* SCREEN SECTION and DISPLAY / ACCEPT ... AT (cobrt_scr.c) */
 #define COB_SCR_HIGHLIGHT    0x00001

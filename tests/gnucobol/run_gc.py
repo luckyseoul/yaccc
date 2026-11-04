@@ -276,6 +276,9 @@ class Runner:
                 continue
             if w in IGNORED_FLAGS or w.startswith('-W') or w.startswith('-fno-ec') or w == '-fec=all':
                 continue
+            if w.startswith(('-fnot-reserved=', '-freserved=')) and '=' not in w.split('=', 1)[1]:
+                out.append(w)               # the same option in both compilers
+                continue
             if w == '-I':
                 d = next(it, None)
                 out.extend(['-I', d])

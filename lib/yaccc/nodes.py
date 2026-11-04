@@ -271,6 +271,30 @@ class XmlGenerate(Stmt):
 
 
 @dataclass(eq=False)
+class JsonParse(Stmt):
+    """JSON PARSE text INTO receiver, with WITH DETAIL / NAME OF / SUPPRESS /
+    CONVERTING ... FROM JSON BOOLEAN."""
+    text: Any = None
+    into: Any = None
+    detail: bool = False
+    names: list = field(default_factory=list)       # (DataRef, str|None); None = IS OMITTED
+    suppress: list = field(default_factory=list)
+    converting: list = field(default_factory=list)  # (DataRef, ('COND', c) | ('CONDS', t, f) | ('LITS', t, f))
+    on_exc: Optional[list] = None
+    not_on_exc: Optional[list] = None
+
+
+@dataclass(eq=False)
+class XmlParse(Stmt):
+    """XML PARSE doc PROCESSING PROCEDURE proc [THRU proc2]."""
+    doc: Any = None
+    proc: Any = None
+    thru: Any = None
+    on_exc: Optional[list] = None
+    not_on_exc: Optional[list] = None
+
+
+@dataclass(eq=False)
 class JsonGenerate(Stmt):
     """JSON GENERATE out FROM src, with NAME OF / SUPPRESS / COUNT IN."""
     out: Any = None

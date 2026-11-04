@@ -30,6 +30,17 @@ PROG = """       IDENTIFICATION DIVISION.
            STOP RUN.
 """
 
+# BOTTOM is reserved (LINAGE ... LINES AT BOTTOM), HELLO isn't
+WORDS = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. WORDS.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 BOTTOM PIC 9 VALUE 3.
+       01 HELLO PIC 9 VALUE 4.
+       PROCEDURE DIVISION.
+           DISPLAY BOTTOM HELLO.
+"""
+
 passed = failed = 0
 
 
@@ -340,6 +351,16 @@ def diagnostics(work):
     check('-E', r, 0)
     r = run(['cliarg_pre.cob', '--run'], work)
     check('-E output compiles and runs', r, 0, 'NARGS=+000000000')
+    # -fnot-reserved / -freserved move words in and out of the reserved set
+    write('words.cbl', WORDS)
+    r = run(['words.cbl', '--run'], work)
+    check('a reserved word as a name is an error', r, 1, "'BOTTOM'")
+    r = run(['-fnot-reserved=bottom,volatile', 'words.cbl', '--run'], work)
+    check('-fnot-reserved frees words', r, 0, '34')
+    r = run(['-fnot-reserved=bottom', '-freserved=hello', 'words.cbl'], work)
+    check('-freserved reserves a word', r, 1, "'HELLO'")
+    r = run(['-fnot-reserved=display', 'words.cbl'], work)
+    check('-fnot-reserved keeps verbs', r, 2, "'DISPLAY' begins a statement")
 
 
 if __name__ == '__main__':

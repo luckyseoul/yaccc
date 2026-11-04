@@ -1,0 +1,31 @@
+1 ok +000000000
+1 status +000000266
+  id [00042] name [Ada Lovelace]
+  balance [  -123.45] active [Y]
+  city [London    ] zip [NW1  ]
+  phone 1 [home][5551234 ]
+  phone 2 [work][5559876 ]
+  phone 3 [****][********]
+  tags [a  ][bb ][ccc][ddd]
+2 code +000000000 status +000000033
+  active [N] id [00042]
+3 exception +000000105
+4 exception +000000101
+5 exception +000000100
+6 exception +000000106 status +000000003
+7 exception +000000104
+  id [00001]
+8 code +000000000 zip [E1   ]
+9 ok
+9 code +000000000 status +000000338
+  no [0007] qty [015] price [125.50]
+  rate [0.0025] edited [1,234.50]
+  flag [F] yesno [YES] note [cdefgh]
+  secret [    ] n [3]
+  item 1 [Aé][01][02]
+  item 2 [   ][  ][  ]
+  item 3 [C  ][05][06]
+10 code +000000000 status +000000129
+  no [9999] qty [000] price [001.50]
+11 code +000000000 status +000000129
+  no [0005] qty [000]

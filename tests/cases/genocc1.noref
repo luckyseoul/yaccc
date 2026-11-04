@@ -1,0 +1,3 @@
+GnuCOBOL 3.1 does not generate tables in JSON or XML GENERATE, writes a
+numeric attribute's stored bytes, and has no JSON PARSE. Compared only
+against the recorded baseline (genocc1.expected), checked by hand.

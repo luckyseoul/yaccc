@@ -22,11 +22,12 @@ $ ./yaccc examples/mandelbrot.cbl --run
 
 - **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
   them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **534** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 159
+- **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **65** differential test programs, compared with GnuCOBOL byte for byte:
-  standard output, and every file each program writes.
+- **68** differential test programs, compared with GnuCOBOL byte for byte:
+  standard output, and every file each program writes (the few GnuCOBOL can't
+  run, such as JSON PARSE and XML PARSE, against baselines checked by hand).
 - **527** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
   `cobc` byte for byte.
 - **1** NIST test that cannot pass unattended. OBNC1M prints
@@ -103,7 +104,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 65 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 68 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -111,12 +112,13 @@ ACCEPT, CALL and CANCEL, library routines and exception functions, ALTER,
 declaratives, sequential, relative and indexed files (including READ PREVIOUS,
 START FIRST/LAST and DELETE FILE), SORT, Report Writer and the Debug module,
 conditional compilation inside a copybook, and report items placed without a
-COLUMN clause.
+COLUMN clause, and JSON and XML GENERATE and PARSE.
 
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, `rw1`, `dbg2`
-  and `dbg5`. They cover cases where YACCC deliberately differs from GnuCOBOL,
-  so their baselines were verified by hand.
+  and `dbg5`, cases where YACCC deliberately differs from GnuCOBOL, and
+  `jsonparse1`, `xmlparse1` and `genocc1`, which use what GnuCOBOL 3.1.2 doesn't
+  have; their baselines were verified by hand.
 - Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
   had no live `cobc` to record from, so their baselines were checked by hand
   against the standard. `rwlimit` is marked `.noref` because `cobc` rejects
@@ -126,10 +128,11 @@ COLUMN clause.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 60 of the 65 run and all 60 pass; the five whose *test program*
-  `cobc` itself rejects are skipped.
+  3.1.2, 63 of the 68 run and all 63 pass (the `.noref` ones against their
+  baselines); the five whose *test program* `cobc` itself rejects are
+  skipped.
 
-All 65 pass, built with gcc.
+All 68 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -144,7 +147,7 @@ compile as modules (`$COMPILE_MODULE`) are built as real loadable modules with
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   534     0              0      159
+  693   536     0              0      157
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -247,6 +250,7 @@ COBOL* below):
 | `--keep-c` | keep the generated C file next to the executable |
 | `-ftrace` / `-ftraceall` | trace program entry and exit, sections and paragraphs (`-ftraceall`: every statement too) while `READY TRACE` or `COB_SET_TRACE=Y` has tracing on |
 | `-fintrinsics=all` or `=NAME,...` | intrinsic functions that need no `FUNCTION` keyword, as `REPOSITORY. FUNCTION ALL INTRINSIC` allows |
+| `-fnot-reserved=WORD,...` / `-freserved=WORD,...` | reserved words the program may use as its own names (a word that begins a statement stays reserved), and words to reserve besides the standard ones |
 | `-fsign=ascii\|ebcdic` | how a signed DISPLAY item stores an embedded sign: `ascii` (negative digits are 0x70–0x79, the default) or the EBCDIC overpunch letters `{A`–`I` and `}J`–`R` |
 | `-fdefaultbyte=init\|C\|N` | what WORKING-STORAGE without a VALUE clause starts as: spaces and zeros by type (`init`, the default), a character, or a byte value |
 | `-fsticky-linkage` | a LINKAGE item keeps its address from one call to the next when the caller passes nothing for it |
@@ -644,8 +648,14 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
   PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
   NORMAL STATUS], STOP literal, GOBACK [RETURNING].
 - JSON: JSON GENERATE with NAME OF ... IS, SUPPRESS, COUNT IN, ON EXCEPTION /
-  NOT ON EXCEPTION, OCCURS as arrays, REDEFINES resolved to the first item,
-  JSON-CODE, and the `$SET DPC-IN-DATA` / `-fdpc-in-data` decimal comma.
+  NOT ON EXCEPTION, OCCURS as arrays (of objects for a group table, as many
+  elements as DEPENDING ON says), REDEFINES resolved to the first item,
+  JSON-CODE, and the `$SET DPC-IN-DATA` / `-fdpc-in-data` decimal comma;
+  JSON PARSE with WITH DETAIL, NAME OF ... IS literal / OMITTED, SUPPRESS,
+  CONVERTING ... FROM JSON BOOLEAN, JSON-CODE and JSON-STATUS.
+- XML: XML GENERATE (elements, attributes, content, tables, SUPPRESS,
+  NAMESPACE) and XML PARSE with a PROCESSING PROCEDURE, XML-EVENT, XML-TEXT,
+  XML-NAMESPACE, XML-NAMESPACE-PREFIX and XML-CODE.
 - Strings and tables: STRING, UNSTRING (a literal or figurative constant is
   accepted as the sending item, as GnuCOBOL and Micro Focus do), INSPECT
   (TALLYING / REPLACING / CONVERTING, ALL / LEADING / FIRST / TRAILING,
@@ -759,8 +769,32 @@ keep the source case, with a leading `_` when the name starts with a digit.
 `SUPPRESS [item | EVERY ELEMENT | EVERY ATTRIBUTE | EVERY NONNUMERIC] WHEN
 <figurative>` omits items whose value is that figurative constant, and a group
 left with nothing inside is written as `<x/>` or, at the top of a suppressed
-subtree, omitted altogether. `XML PARSE` is not implemented, and the XML
-exception conditions are not reported through `XML-CODE` beyond overflow.
+subtree, omitted altogether. A table repeats its element once per occurrence
+(as many as its DEPENDING ON object says), and a number is written the same
+way as an attribute's value as it is as an element's content. XML-CODE is 400
+when the document does not fit, 416 and 419 for a namespace or prefix that is
+not valid, and 417 for a value that is not valid XML text (then written in
+hex, as `hex.name`).
+
+**XML PARSE.** Reads an XML document and PERFORMs the processing procedure
+once per event, with the events of Enterprise COBOL's XMLPARSE(XMLSS) parser:
+XML-EVENT names the event, XML-TEXT holds its text (an element or attribute
+name, character content with the references in it resolved, a comment, a
+processing instruction's target or data) and XML-NAMESPACE /
+XML-NAMESPACE-PREFIX the name's namespace. The events are START-OF-DOCUMENT, VERSION-INFORMATION,
+ENCODING-DECLARATION, STANDALONE-DECLARATION, DOCUMENT-TYPE-DECLARATION,
+COMMENT, PROCESSING-INSTRUCTION-TARGET and -DATA, START-OF-ELEMENT,
+NAMESPACE-DECLARATION, ATTRIBUTE-NAME, ATTRIBUTE-CHARACTERS,
+CONTENT-CHARACTERS, START- and END-OF-CDATA-SECTION, END-OF-ELEMENT,
+UNRESOLVED-REFERENCE (an entity the document does not define), END-OF-DOCUMENT
+and EXCEPTION. A document that is not well formed raises EXCEPTION with
+XML-CODE set to the code Enterprise COBOL's XMLPARSE(COMPAT) parser gives the
+same fault (5 for a mismatched end tag, 3 for a repeated attribute, 160 for
+content after the root element, 102 for an empty document, ...) and XML-TEXT
+holding the document up to that point; the statement's ON EXCEPTION runs.
+The processing procedure may itself run an XML PARSE. The procedure stops the parse by setting
+XML-CODE to -1. `WITH ENCODING`, `RETURNING NATIONAL` and `VALIDATING` are
+accepted; the document is read as UTF-8 and not validated.
 
 **JSON GENERATE.** Writes the JSON document for a data item into an
 alphanumeric receiving field. A group becomes an object, an elementary item a
@@ -772,8 +806,31 @@ group left with nothing to write is itself omitted. Alphanumeric values lose
 their trailing spaces (leading ones for a JUSTIFIED item) and are escaped as
 the standard requires; numeric values are written without leading zeros and
 with the digits their PICTURE declares, so `PIC 99V999` holding 0.12 is
-`0.120`. `COUNT IN` reports the length the document needed and JSON-CODE is 1
-when it did not fit the receiving field. `JSON PARSE` is not implemented.
+`0.120`. A table is an array (of objects for a group table) with as many
+elements as its DEPENDING ON object says. `COUNT IN` reports the length the
+document needed and JSON-CODE is 1 when it did not fit the receiving field.
+
+**JSON PARSE.** Reads a JSON text into a data item with Enterprise COBOL's
+rules. The text is an object whose member named after the receiver holds its
+value (`NAME OF receiver IS OMITTED`: the object is the receiver's value).
+Each member of an object goes to the item of the matching group whose name it
+matches: a `NAME OF x IS 'y'` literal exactly, a data name in any case. An
+object goes to a group, an array to a table (as many elements as the table
+has, or as its DEPENDING ON object holds when the array is reached), a string
+or a number to an elementary item as MOVE would put it (a string holding a
+number is that number for a numeric item), and `true` / `false` to an item of
+the `CONVERTING x FROM JSON BOOLEAN [USING] cond-1 [AND cond-2] | lit-1 AND
+lit-2` phrase. FILLER, the later items of a REDEFINES set, SUPPRESSed items and
+pointers take no value. What doesn't stop the statement is gathered in
+JSON-STATUS, one bit each: 1 an item no name matched, 2 a name no item
+matched, 8 / 16 an array with fewer / more elements than its table, 32 / 64 a
+null that left an item / an element as it was, 128 a number too big for its
+item (the digits that fit are kept), 256 a value cut short. JSON-CODE is the
+exception that stopped it: 100 the text is not valid JSON, 101 it is empty,
+104 a value of the wrong kind for its item, 105 `true` or `false` for an item
+not in the CONVERTING phrase, 106 no name matched anything. `WITH DETAIL`
+writes a line to standard error for each condition. The text may also be a
+literal.
 
 **Library routines.** CALL by name reaches these routines directly:
 - bytes and text: CBL_AND, CBL_OR, CBL_NOR, CBL_XOR, CBL_IMP, CBL_NIMP, CBL_EQ,
@@ -796,7 +853,7 @@ when it did not fit the receiving field. `JSON PARSE` is not implemented.
   and not drawn (no terminal sequence draws a line beside a field).
 - Report Writer: VARYING in report groups (GnuCOBOL 3.1.2 doesn't have it
   either).
-- JSON PARSE, XML PARSE, and `EXEC SQL`/CICS.
+- `EXEC SQL`/CICS.
 - Object-oriented COBOL.
 - GnuCOBOL's C API for fields (`cob_get_field_str` and the like): C code gets
   addresses and values, not `cob_field` structures.
@@ -878,6 +935,14 @@ All of these were checked against GnuCOBOL 3.1.2:
     characters once the ACCEPT ends. A number of a USAGE other than DISPLAY
     is typed as text, sign and decimal point included, and read back as
     NUMVAL would read it.
+11. **XML GENERATE WITH ATTRIBUTES** makes every eligible elementary item an
+    attribute of the element of the group above it, as IBM documents, and
+    writes a number's value (`AMT="-1.50"`). GnuCOBOL 3.1.2 does so only for
+    the items directly in the top element, and writes a number's stored bytes
+    (`AMT="0015p"`, `hex.PK="00225c"` for packed decimal). It also generates
+    no tables, which yaccc writes as arrays and repeated elements, and with a
+    NAMESPACE that is all spaces it still writes the NAMESPACE-PREFIX on every
+    element, with no namespace bound to it; yaccc writes no prefix then.
 
 ## How it works
 
@@ -885,31 +950,34 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 14,730 lines of Python across fifteen files; the runtime it
-links against is 12,713 lines of C.
+The compiler is 15,128 lines of Python across fifteen files; the runtime it
+links against is 15,560 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
 | `lib/yaccc/source.py` | 356 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 652 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 3,709 | recursive-descent parser to the AST (`nodes.py`, 752) |
-| `lib/yaccc/data.py` | 653 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,293 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/parser.py` | 4,181 | recursive-descent parser to the AST (`nodes.py`, 813) |
+| `lib/yaccc/data.py` | 663 | PICTURE analysis, USAGE resolution, storage layout |
+| `lib/yaccc/codegen.py` | 5,501 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
+| `lib/yaccc/scrgen.py` | 381 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 3,314 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,332 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
-| `runtime/cobrt_io.c` | 1,765 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_io.c` | 2,918 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_scr.c` | 1,130 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
 | `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 679 | intrinsic functions |
 | `runtime/cobrt_math.c` | 729 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
 | `runtime/cobrt_dt.c` | 729 | FORMATTED-DATE/TIME/DATETIME and the other COBOL 2014 date functions, locale functions |
 | `runtime/cobrt_sys.c` | 1,056 | library routines (CBL_..., C$...), `-ftrace` output |
-| `runtime/cobrt_xml.c` | 518 | XML GENERATE |
-| `runtime/cobrt_json.c` | 233 | JSON GENERATE |
-| `runtime/cobrt.h` | 1,023 | runtime interface and inline fast paths |
+| `runtime/cobrt_xml.c` | 567 | XML GENERATE |
+| `runtime/cobrt_xmlp.c` | 901 | XML PARSE: the document read into events |
+| `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
+| `runtime/cobrt.h` | 1,124 | runtime interface and inline fast paths |
 
 Design choices:
 

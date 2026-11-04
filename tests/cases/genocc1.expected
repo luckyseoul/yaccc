@@ -1,0 +1,9 @@
+{"REC":{"ID-NO":7,"AMT":-1.50,"PHN":[{"KIND":"home","NUM":123},{"KIND":"work","NUM":456}],"TAGS":["ab","cd","ef"]}}
+code +000000000 status +000000000
+0070015phome123work456abcdef
+<REC><ID-NO>7</ID-NO><AMT>-1.50</AMT><PHN><KIND>home</KIND><NUM>123</NUM></PHN><PHN><KIND>work</KIND><NUM>456</NUM></PHN><TAGS>ab</TAGS><TAGS>cd</TAGS><TAGS>ef</TAGS></REC>
+<REC ID-NO="7" AMT="-1.50"><PHN KIND="home" NUM="123"/><PHN KIND="work" NUM="456"/><TAGS>ab</TAGS><TAGS>cd</TAGS><TAGS>ef</TAGS></REC>
+{"VREC":{"VN":2,"VTAG":["x1","x2"]}}
+<VREC><VN>2</VN><VTAG>x1</VTAG><VTAG>x2</VTAG></VREC>
+code +000000000 status +000000016 vn 3
+p q r 

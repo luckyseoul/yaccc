@@ -580,7 +580,7 @@ PASS  run_misc.at:4289             SYMBOLIC clause
 PASS  run_misc.at:4326             OCCURS clause with 1 entry
 PASS  run_misc.at:4375             Computing of different USAGEs w/o decimal point
 PASS  run_misc.at:5011             Computing of different USAGEs w/- decimal point
-SKIP  run_misc.at:5646             C/C++ reserved words/predefined identifiers
+PASS  run_misc.at:5646             C/C++ reserved words/predefined identifiers
 SKIP  run_misc.at:6106             ON EXCEPTION clause of DISPLAY
 SKIP  run_misc.at:6131             EC-SCREEN-LINE-NUMBER and -STARTING-COLUMN
 SKIP  run_misc.at:6172             LINE/COLUMN 0 exceptions
@@ -626,7 +626,7 @@ PASS  run_misc.at:12322            Constant Expressions
 SKIP  run_misc.at:12408            ENTRY FOR GO TO / GO TO ENTRY
 SKIP  run_misc.at:12498            runtime checks within conditions
 SKIP  run_misc.at:12612            libcob version check
-SKIP  run_ml.at:19                 XML GENERATE general
+PASS  run_ml.at:19                 XML GENERATE general
 PASS  run_ml.at:127                XML GENERATE SUPPRESS
 PASS  run_ml.at:204                XML GENERATE exceptions
 PASS  run_ml.at:300                XML GENERATE record selection
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 534  FAIL 0  CERR 0  XERR 0  SKIP 159
+PASS 536  FAIL 0  CERR 0  XERR 0  SKIP 157

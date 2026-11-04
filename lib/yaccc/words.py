@@ -40,7 +40,7 @@ INITIATE GENERATE TERMINATE SUPPRESS JSON XML ALLOCATE FREE EXHIBIT ENTRY
 UNLOCK COMMIT ROLLBACK
 """.split())
 RESERVED |= {'JSON', 'XML', 'OMITTED', 'ALLOCATE', 'FREE', 'EXHIBIT', 'UNLOCK', 'COMMIT',
-             'ROLLBACK'}
+             'ROLLBACK', 'END-JSON', 'END-XML'}
 
 # Words that are reserved only in context: after PROGRAM-ID they are clauses,
 # but elsewhere - a data name, say - they are ordinary user-defined words.

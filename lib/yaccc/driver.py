@@ -19,7 +19,7 @@ PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
 RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
                'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c', 'cobrt_xml.c',
-               'cobrt_call.c', 'cobrt_scr.c']
+               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c']
 VERSION = '1.0'
 
 
@@ -317,6 +317,10 @@ def main(argv=None):
                          'and zeros by type, the default), one character, or a byte value')
     ap.add_argument('-fnot-intrinsic', dest='not_intrinsic', metavar='NAME,...',
                     help='intrinsic function names a FUNCTION-ID of the same name replaces')
+    ap.add_argument('-fnot-reserved', dest='not_reserved', metavar='WORD,...', action='append',
+                    default=[], help='reserved words the program may use as names of its own')
+    ap.add_argument('-freserved', dest='reserved', metavar='WORD,...', action='append',
+                    default=[], help='words to reserve besides the standard ones')
     ap.add_argument('-fsign', dest='sign', choices=['ascii', 'ebcdic'], default='ascii',
                     help='how a signed DISPLAY item stores an embedded sign: ascii (negative '
                          'digits 0x70-0x79, the default) or ebcdic (overpunch letters {A-I }J-R)')
@@ -441,6 +445,19 @@ def main(argv=None):
     opts.recursive_check = args.recursive_check
     if args.not_intrinsic:
         opts.not_intrinsic = {n.strip().upper() for n in args.not_intrinsic.split(',') if n.strip()}
+    if args.not_reserved or args.reserved:
+        # the reserved-word set is the parser's, for every source of this run
+        from .words import RESERVED, VERBS
+        for spec in args.reserved:
+            for w in (x.strip().upper() for x in spec.split(',') if x.strip()):
+                if '=' in w or ':' in w:
+                    ap.error(f"-freserved: '{w}': only words can be reserved, not aliases")
+                RESERVED.add(w)
+        for spec in args.not_reserved:
+            for w in (x.strip().upper() for x in spec.split(',') if x.strip()):
+                if w in VERBS:
+                    ap.error(f"-fnot-reserved: '{w}' begins a statement and stays reserved")
+                RESERVED.discard(w)
     if args.defaultbyte is not None and args.defaultbyte.lower() != 'init':
         db = args.defaultbyte
         if db.isdigit() and int(db) <= 255:

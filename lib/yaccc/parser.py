@@ -2326,8 +2326,10 @@ class Parser:
         """XML GENERATE out FROM src [WITH XML-DECLARATION] [WITH ATTRIBUTES]
         [NAME OF ...] [TYPE OF ... IS ATTRIBUTE|CONTENT] [SUPPRESS ...]
         [NAMESPACE x] [NAMESPACE-PREFIX p] [COUNT IN n]."""
+        if self.accept('PARSE'):
+            return self._xml_parse(loc)
         if not self.accept('GENERATE'):
-            raise self.err("XML PARSE is not supported (only XML GENERATE)")
+            raise self.err("XML GENERATE or XML PARSE expected")
         out = self.parse_identifier()
         self.expect('FROM')
         src = self.parse_identifier()
@@ -2418,11 +2420,113 @@ class Parser:
                 break
         return st
 
+    def _json_parse(self, loc):
+        """JSON PARSE text INTO receiver [WITH DETAIL] [NAME OF x IS lit |
+        OMITTED ...] [SUPPRESS x ...] [CONVERTING x FROM JSON BOOLEAN [USING]
+        cond | cond AND cond | lit AND lit [ALSO ...]] [ON EXCEPTION ...]
+        [NOT ON EXCEPTION ...] [END-JSON] (IBM Enterprise COBOL 6.2)."""
+        text = self.parse_operand()     # a data item; a literal too, as an extension
+        self.expect('INTO')
+        st = JsonParse(loc, text, self.parse_identifier())
+        clause_words = ('WITH', 'NAME', 'SUPPRESS', 'CONVERTING', 'ON', 'NOT', 'EXCEPTION',
+                        'END-JSON', 'DETAIL', 'ENCODING')
+        while True:
+            if self.accept('WITH'):
+                if self.accept('ENCODING'):
+                    self.parse_operand()        # the text is read as UTF-8 regardless
+                else:
+                    self.expect('DETAIL')
+                    st.detail = True
+            elif self.accept('DETAIL'):
+                st.detail = True
+            elif self.accept('ENCODING'):
+                self.parse_operand()
+            elif self.accept('NAME'):
+                self.accept('OF')
+                while True:
+                    ref = self.parse_identifier()
+                    self.accept('IS')
+                    if self.accept('OMITTED'):
+                        st.names.append((ref, None))
+                    else:
+                        t = self.peek()
+                        if t.kind != 'STR':
+                            raise self.err("a JSON name must be a literal")
+                        self.next()
+                        st.names.append((ref, t.val.decode('latin-1')))
+                    self.accept('OF')
+                    if not self.is_user_word() or self.is_word(*clause_words):
+                        break
+            elif self.accept('SUPPRESS'):
+                while self.is_user_word() and not self.is_word(*clause_words):
+                    st.suppress.append(self.parse_identifier())
+            elif self.accept('CONVERTING'):
+                while True:
+                    ref = self.parse_identifier()
+                    self.expect('FROM')
+                    self.expect('JSON')
+                    self.expect('BOOLEAN')
+                    self.accept('USING')
+                    if self.peek().kind == 'STR':
+                        t = self.next().val
+                        self.expect('AND')
+                        f = self.peek()
+                        if f.kind != 'STR':
+                            raise self.err("a literal for false expected")
+                        self.next()
+                        spec = ('LITS', t, f.val)
+                    else:
+                        c1 = self.parse_identifier()
+                        if self.accept('AND'):
+                            spec = ('CONDS', c1, self.parse_identifier())
+                        else:
+                            spec = ('COND', c1)
+                    st.converting.append((ref, spec))
+                    if not self.accept('ALSO'):
+                        break
+            else:
+                break
+        st.on_exc, st.not_on_exc = self._exception()
+        self._end('END-JSON')
+        return st
+
+    def _xml_parse(self, loc):
+        """XML PARSE doc [WITH ENCODING n] [RETURNING NATIONAL] [VALIDATING
+        WITH x | FILE s] PROCESSING PROCEDURE [IS] p [THRU q] [ON EXCEPTION
+        ...] [NOT ON EXCEPTION ...] [END-XML]."""
+        st = XmlParse(loc, self.parse_identifier())
+        while True:
+            if self.accept('WITH'):
+                self.expect('ENCODING')
+                self.parse_operand()            # the document is taken as it is
+            elif self.accept('RETURNING'):
+                self.expect('NATIONAL')
+            elif self.accept('VALIDATING'):
+                self.accept('WITH')
+                if self.accept('FILE'):
+                    self.next()
+                else:
+                    self.parse_identifier()
+                DIAG.warn("XML PARSE ... VALIDATING: the document is not validated", loc)
+            else:
+                break
+        self.expect('PROCESSING')
+        self.expect('PROCEDURE')
+        self.accept('IS')
+        st.proc = self._procref()
+        if self.accept('THRU', 'THROUGH'):
+            st.thru = self._procref()
+        st.on_exc, st.not_on_exc = self._exception()
+        self._end('END-XML')
+        return st
+
     def p_JSON(self, loc):
         """JSON GENERATE out FROM src [NAME OF ...] [SUPPRESS ...] [COUNT IN n]
         [ON EXCEPTION ...] [NOT ON EXCEPTION ...] [END-JSON]"""
+        if self.accept('PARSE'):
+            return self._json_parse(loc)
         if not self.accept('GENERATE'):
-            raise self.err("JSON PARSE is not supported (only JSON GENERATE)")
+            raise self.err("JSON GENERATE or JSON PARSE expected")
         out = self.parse_identifier()
         self.expect('FROM')
         src = self.parse_identifier()

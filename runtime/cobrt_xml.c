@@ -33,6 +33,7 @@ void cob_xml_init(xmlw *w, cob_field *out)
 	for (int i = 0; i < 258; i++) {
 		w->pending[i] = 0;
 		w->hex[i] = 0;
+		w->attrs[i] = 0;
 	}
 	w->depth = 0;
 	w->last_was_empty = 0;
@@ -158,9 +159,33 @@ void cob_xml_declaration(xmlw *w)
 	xputs(w, "<?xml version=\"1.0\"?>\n");
 }
 
+static int all_spaces(const cob_field *f)
+{
+	for (size_t i = 0; i < f->size; i++)
+		if (f->data[i] != ' ')
+			return 0;
+	return 1;
+}
+
+/* NAMESPACE-PREFIX as the elements' prefix: its value without trailing
+ * spaces, and nothing when there is no namespace to bind it to */
+void cob_xml_prefix(char *out, size_t cap, const cob_field *prefix, const cob_field *uri)
+{
+	size_t n = prefix->size;
+	while (n > 0 && prefix->data[n - 1] == ' ')
+		n--;
+	if (n > cap - 1)
+		n = cap - 1;
+	if (!uri || all_spaces(uri))
+		n = 0;
+	memcpy(out, prefix->data, n);
+	out[n] = 0;
+}
+
 void cob_xml_root_namespace(xmlw *w, const char *prefix, cob_field *uri)
 {
-	/* xmlns:pre="uri" on the root element, when both are given */
+	/* on the root element: xmlns:pre="uri" with a prefix, xmlns="uri" (the
+	 * default namespace) without one, and nothing when the URI is spaces */
 	if (w->abort || !uri || uri->size == 0)
 		return;
 	if (cob_xml_bad_uri(uri)) {
@@ -171,16 +196,14 @@ void cob_xml_root_namespace(xmlw *w, const char *prefix, cob_field *uri)
 		cob_xml_abort(w, XML_ERR_PREFIX);
 		return;
 	}
-	if (!prefix || !*prefix)
+	if (all_spaces(uri))
 		return;
-	int all_space = 1;
-	for (size_t i = 0; i < uri->size; i++)
-		if (uri->data[i] != ' ')
-			all_space = 0;
-	if (all_space)
-		return;
-	xputs(w, " xmlns:");
-	xputs(w, prefix);
+	if (prefix && *prefix) {
+		xputs(w, " xmlns:");
+		xputs(w, prefix);
+	} else {
+		xputs(w, " xmlns");
+	}
 	xputs(w, "=\"");
 	for (size_t i = 0; i < uri->size && uri->data[i] != ' '; i++)
 		xput(w, uri->data[i]);
@@ -207,8 +230,10 @@ void cob_xml_elem_open(xmlw *w, const char *prefix, const char *name)
 		xput(w, ':');
 	}
 	xname(w, name);
-	if (w->depth < 258)
+	if (w->depth < 258) {
 		w->pending[w->depth - 1] = 1;
+		w->attrs[w->depth - 1] = 0;
+	}
 	w->last_was_empty = 0;
 }
 
@@ -218,11 +243,11 @@ void cob_xml_elem_close(xmlw *w, const char *prefix, const char *name)
 	if (w->depth < 0)
 		w->depth = 0;
 	if (w->depth < 258 && w->pending[w->depth]) {
-		/* nothing inside: <name/> */
+		/* nothing inside: <name/>, empty unless it has attributes */
 		xputs(w, "/>");
 		w->pending[w->depth] = 0;
 		w->empty_start = w->depth < 256 ? w->open_at[w->depth] : 0;
-		w->last_was_empty = 1;
+		w->last_was_empty = !w->attrs[w->depth];
 		return;
 	}
 	w->last_was_empty = 0;
@@ -325,18 +350,18 @@ void cob_xml_text_just(xmlw *w, cob_field *f)
 	emit_text(w, f->data + lo, f->size - lo);
 }
 
-void cob_xml_num(xmlw *w, cob_field *f, int dpc)
+/* a number as XML GENERATE writes it: no leading zeros, a sign only when
+ * negative, the decimal point only with a scale */
+static void num_text(xmlw *w, cob_field *f, int dpc)
 {
 	if (f->attr->type == COB_NUM_DEC_FLOAT) {
 		char t[160];
 		int n = cob_dec_float_str(f, t, sizeof t);
-		flush_open(w);
 		for (int i = 0; i < n; i++)
 			xput(w, t[i]);
 		return;
 	}
 	cob_dec d = cob_d_get(f);
-	flush_open(w);
 	if (d.scale == COB_DEC_ERR) {
 		xput(w, '0');
 		return;
@@ -386,6 +411,28 @@ void cob_xml_num(xmlw *w, cob_field *f, int dpc)
 	}
 }
 
+void cob_xml_num(xmlw *w, cob_field *f, int dpc)
+{
+	flush_open(w);
+	num_text(w, f, dpc);
+}
+
+/* a numeric item as an attribute: its value, written as element content is */
+void cob_xml_attr_num(xmlw *w, const char *prefix, const char *name, cob_field *f, int dpc)
+{
+	xput(w, ' ');
+	if (prefix && *prefix) {
+		xputs(w, prefix);
+		xput(w, ':');
+	}
+	xname(w, name);
+	xputs(w, "=\"");
+	num_text(w, f, dpc);
+	xput(w, '"');
+	if (w->depth > 0 && w->depth <= 258)
+		w->attrs[w->depth - 1] = 1;
+}
+
 void cob_xml_attr(xmlw *w, const char *prefix, const char *name, cob_field *f)
 {
 	xput(w, ' ');
@@ -420,6 +467,8 @@ void cob_xml_attr(xmlw *w, const char *prefix, const char *name, cob_field *f)
 		}
 	}
 	xput(w, '"');
+	if (w->depth > 0 && w->depth <= 258)
+		w->attrs[w->depth - 1] = 1;
 }
 
 /* <name></name> with no content is written as <name/>, as GnuCOBOL writes it */

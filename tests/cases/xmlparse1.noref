@@ -1,0 +1,3 @@
+GnuCOBOL 3.1 has no XML PARSE. Compared only against the recorded baseline
+(xmlparse1.expected), checked by hand against the events and XML-CODE values
+IBM Enterprise COBOL documents.
