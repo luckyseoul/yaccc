@@ -13,6 +13,7 @@ from . import errors
 from .errors import CompileError, DIAG, ErrorsReported, did_you_mean, source_line
 from .nodes import *
 from .dbggen import DebugGen
+from .dumpgen import DumpGen
 from .rwgen import ReportWriterGen
 from .scrgen import ScreenGen
 from .sqlgen import SqlGen
@@ -99,6 +100,7 @@ class Options:
         self.defaultbyte = None      # -fdefaultbyte: WORKING-STORAGE without VALUE starts as this byte
         self.recursive_check = True  # EC-PROGRAM-RECURSIVE-CALL for a program that isn't RECURSIVE
         self.stack_trace = True      # PERFORM frames a runtime error can list (-fno-stack-trace)
+        self.dump = None             # -fdump: the sections whose data a runtime error writes out
         self.emit_main = True        # an executable's main(); not for -c or -m
         self.export_c = False        # C entry points, for C code that calls COBOL
 
@@ -218,7 +220,7 @@ SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_
                          '\xf4': 'X_F4', '\xf5': 'X_F5', '\xe4': 'X_E4', '\xe5': 'X_E5'}
 
 
-class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
+class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
     def __init__(self, programs, opts):
         self.programs = programs
         self.udf_names = set()
@@ -1280,6 +1282,10 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         em(f"cob_module_push({c_string(prog.ext_name)}, cob_argc);")
         if getattr(self.opts, 'stack_trace', True):
             em("cob_module_frames(cob_frames);")
+        dump = self.gen_dump_table(prog)
+        if dump is not None:
+            src = getattr(prog.loc, 'file', None) or self.opts.source_name or ''
+            em(f"cob_module_dump({dump[0]}, {dump[1]}, {c_string(str(src))});")
         if self.opts.trace:
             pd = getattr(prog, 'proc_loc', None) or prog.loc
             em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Entry", '
@@ -4816,6 +4822,12 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
             op = '-' if s.down else '+'
             if isinstance(it, IndexName):
                 em(f"{it.cname} {op}= (int){self.int_expr(s.value)};")
+            elif getattr(it, 'type', None) == T_POINTER:
+                # SET pointer UP BY n: the address moves n bytes (it used to
+                # be added to as if it were a number in DISPLAY form)
+                f = self.field(t)
+                em(f"cob_pointer_set({f}, (void *)((char *)cob_pointer_get({f}) {op} "
+                   f"(intptr_t)({self.int_expr(s.value)})));")
             else:
                 f = self.field(t)
                 fn = 'sub' if s.down else 'add'

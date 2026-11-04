@@ -19,7 +19,7 @@ PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
 RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
                'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c', 'cobrt_xml.c',
-               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c']
+               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c', 'cobrt_dump.c']
 VERSION = '1.0'
 
 
@@ -319,6 +319,10 @@ def main(argv=None):
                          "PERFORMs that led to it (a little faster PERFORM)")
     ap.add_argument('-fstack-trace', dest='stack_trace', action='store_true',
                     help='list the PERFORMs and CALLs that led to a runtime error (the default)')
+    ap.add_argument('-fdump', dest='dump', metavar='ALL|WS,LO,LS,FD',
+                    help='after a runtime error or a crash, write out the data of the '
+                         'program: ALL (also -fdump alone), or WORKING-STORAGE (WS), '
+                         'LOCAL-STORAGE (LO), LINKAGE (LS) and the files\' records (FD)')
     ap.add_argument('-fdefaultbyte', dest='defaultbyte', metavar='init|CHAR|0-255',
                     help='what WORKING-STORAGE without a VALUE clause starts as: init (spaces '
                          'and zeros by type, the default), one character, or a byte value')
@@ -390,6 +394,14 @@ def main(argv=None):
     ap.add_argument('--build-runtime', action='store_true', help='(re)build the runtime library and exit')
     ap.add_argument('-v', '--verbose', action='store_true')
     ap.add_argument('--version', action='version', version=f'YACCC {VERSION}')
+    # -fdump alone is -fdump=ALL: an optional value would take the source
+    # file's name that follows it
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if '--run' in argv:
+        k = argv.index('--run')
+        argv = ['-fdump=ALL' if a == '-fdump' else a for a in argv[:k]] + argv[k:]
+    else:
+        argv = ['-fdump=ALL' if a == '-fdump' else a for a in argv]
     args, unknown = ap.parse_known_args(argv)
     run_args = _split_run_args(ap, args, unknown)
 
@@ -451,6 +463,12 @@ def main(argv=None):
     opts.sticky_linkage = args.sticky_linkage
     opts.recursive_check = args.recursive_check
     opts.stack_trace = args.stack_trace
+    if args.dump:
+        from .dumpgen import parse_dump_scopes
+        try:
+            opts.dump = parse_dump_scopes(args.dump)
+        except ValueError as e:
+            ap.error(str(e))
     if args.not_intrinsic:
         opts.not_intrinsic = {n.strip().upper() for n in args.not_intrinsic.split(',') if n.strip()}
     if args.not_reserved or args.reserved:

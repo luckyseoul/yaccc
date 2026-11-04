@@ -144,6 +144,7 @@ def main():
     interop(work)
     tracing(work)
     crashes(work)
+    dumps(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -494,6 +495,142 @@ def crashes(work):
     out, err = p.communicate(timeout=60)
     check('an ignored SIGTERM stays ignored',
           subprocess.CompletedProcess(p.args, p.returncode, out, err), 0, 'SLEPT')
+
+
+DUMPED = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. DUMPMAIN.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 WS-REC.
+          05 WS-NAME     PIC X(10) VALUE "ALICE".
+          05 WS-AMT      PIC S9(5)V99 VALUE -12.5.
+          05 WS-PACK     PIC S9(7) COMP-3 VALUE 1234567.
+          05 WS-BADX     PIC X(3) VALUE "1A3".
+          05 WS-BAD REDEFINES WS-BADX PIC 9(3).
+          05 WS-TAB OCCURS 5 INDEXED BY TX.
+             10 WS-ITEM  PIC 9(3).
+             10 WS-FLAG  PIC X.
+       01 WS-N           PIC 99 VALUE 2.
+       01 WS-ODO.
+          05 WS-E PIC X(2) OCCURS 1 TO 9 DEPENDING ON WS-N.
+       01 WS-LOW         PIC X(6) VALUE LOW-VALUES.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           MOVE 1 TO WS-ITEM (1)
+           MOVE 7 TO WS-ITEM (2) WS-ITEM (3) WS-ITEM (4)
+           MOVE "Y" TO WS-FLAG (2) WS-FLAG (3) WS-FLAG (4)
+           SET TX TO 2
+           MOVE "AA" TO WS-E (1)
+           MOVE "BB" TO WS-E (2)
+           MOVE "XYZ" TO WS-LOW (2:3)
+           CALL "DUMPSUB" USING WS-REC.
+           STOP RUN.
+       END PROGRAM DUMPMAIN.
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. DUMPSUB.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "no-such-dir/x.dat"
+               ORGANIZATION IS SEQUENTIAL.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F.
+       01 R PIC X(10).
+       LOCAL-STORAGE SECTION.
+       01 LS-COUNT PIC 9(4) VALUE 17.
+       LINKAGE SECTION.
+       01 LK-REC.
+          05 LK-NAME PIC X(10).
+       01 LK-MISSING PIC X(5).
+       PROCEDURE DIVISION USING LK-REC LK-MISSING.
+       S-MAIN.
+           OPEN INPUT F.
+           GOBACK.
+       END PROGRAM DUMPSUB.
+'''
+
+
+def dumps(work):
+    """-fdump: after a runtime error, the data of each active program."""
+    import signal
+    with open(os.path.join(work, 'dumped.cbl'), 'w', encoding='latin-1') as f:
+        f.write(DUMPED)
+    exe = os.path.join(work, 'dumped')
+    r = run(['-fdump', 'dumped.cbl', '-o', exe], work)
+    check('-fdump builds', r, 0)
+    r = subprocess.run([exe], capture_output=True, text=True, cwd=work)
+    err = r.stderr
+    want = [
+        'cobrt: data of DUMPSUB (dumped.cbl)',
+        "  FD F ('no-such-dir/x.dat'), closed, status 35",
+        '  01 LS-COUNT                         9(4)              0017',
+        '     05 LK-NAME                       X(10)             "ALICE     "',
+        '  01 LK-MISSING                       X(5)              (no storage: not passed, or not allocated)',
+        'cobrt: data of DUMPMAIN (dumped.cbl)',
+        '     05 WS-AMT                        S9(5)V99          -00012.50',
+        '     05 WS-PACK                       S9(7) COMP-3      +1234567',
+        '     05 WS-BAD                        9(3) REDEFINES WS-BADX "1A3" (not numeric)',
+        '     05 WS-TAB (3 to 4): the same as (2)',
+        '        10 WS-ITEM (5)                9(3)              000',
+        '     05 WS-E (2)                                        "BB"',
+        '  01 WS-LOW                           X(6)              x"0058595A0000" ".XYZ.."',
+        '  INDEX TX                            of WS-TAB         2',
+    ]
+    lines = err.splitlines()
+    missing = [w for w in want if w not in lines]
+    check('the dump: every section, values as DISPLAY shows them',
+          r if not missing else subprocess.CompletedProcess(r.args, -1, '', '\n'.join(
+              ['missing: ' + m for m in missing] + lines)), 1)
+    heads = [l for l in lines if l.startswith('cobrt: data of ')]
+    check('the dump: the innermost program first',
+          r if heads == ['cobrt: data of DUMPSUB (dumped.cbl)', 'cobrt: data of DUMPMAIN (dumped.cbl)']
+          else subprocess.CompletedProcess(r.args, -1, '', '\n'.join(heads)), 1)
+    check('the dump: a table only as far as DEPENDING ON says', r, 1, None, 'WS-E (3)')
+    # COB_DUMP_FILE: appended to a file instead
+    dfile = os.path.join(work, 'dump.txt')
+    if os.path.exists(dfile):
+        os.unlink(dfile)
+    r = subprocess.run([exe], capture_output=True, text=True, cwd=work,
+                       env=dict(os.environ, COB_DUMP_FILE=dfile))
+    check('COB_DUMP_FILE: a note where it is', r, 1, f'cobrt: the data is in {dfile}', 'data of DUMPSUB')
+    text = open(dfile, encoding='latin-1').read() if os.path.exists(dfile) else ''
+    check('COB_DUMP_FILE: the dump is in the file',
+          r if 'cobrt: data of DUMPSUB (dumped.cbl)' in text else
+          subprocess.CompletedProcess(r.args, -1, text, ''), 1)
+    r = subprocess.run([exe], capture_output=True, text=True, cwd=work,
+                       env=dict(os.environ, COB_DUMP_FILE='NONE'))
+    check('COB_DUMP_FILE=NONE: no dump', r, 1, 'status = 35', 'data of')
+    # one section only
+    r = run(['-fdump=WS', 'dumped.cbl', '--run'], work)
+    check('-fdump=WS: WORKING-STORAGE', r, 1, 'WORKING-STORAGE SECTION')
+    check('-fdump=WS: nothing else', r, 1, None, 'LINKAGE SECTION')
+    r = run(['dumped.cbl', '--run'], work)
+    check('no dump without -fdump', r, 1, None, 'data of')
+    r = run(['-fdump=RD', 'dumped.cbl'], work)
+    check('-fdump=RD is refused', r, 2, 'REPORT SECTION is not dumped')
+    r = run(['-fdump=XX', 'dumped.cbl'], work)
+    check('-fdump: an unknown scope is refused', r, 2, "unknown scope 'XX'")
+    # Ctrl-\ (SIGQUIT) on a program that seems stuck: where it is, and its data
+    with open(os.path.join(work, 'sleeper.cbl'), 'w', encoding='latin-1') as f:
+        f.write(SLEEPER)
+    exe = os.path.join(work, 'sleeperd')
+    run(['-fdump=WS', 'sleeper.cbl', '-o', exe], work)
+    ready = os.path.join(work, 'ready.txt')
+    if os.path.exists(ready):
+        os.unlink(ready)
+    p = subprocess.Popen([exe, '60'], cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, preexec_fn=lambda: __import__('resource').setrlimit(
+                             __import__('resource').RLIMIT_CORE, (0, 0)))
+    import time
+    for _ in range(300):
+        if os.path.exists(ready) and os.path.getsize(ready) > 0:
+            break
+        time.sleep(0.1)
+    p.send_signal(signal.SIGQUIT)
+    out, err = p.communicate(timeout=60)
+    r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
+    check('SIGQUIT: the data', r, -signal.SIGQUIT, '  01 SECS')
 
 
 def module_ext():

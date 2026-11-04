@@ -25,7 +25,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
 - **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **72** differential test programs, compared with GnuCOBOL byte for byte:
+- **73** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
   run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
   baselines checked by hand).
@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **16,162** lines of Python in the compiler, standard library only — no parser
+- **16,360** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -105,7 +105,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 72 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 73 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -130,11 +130,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 67 of the 72 run and all 67 pass (the `.noref` ones against their
+  3.1.2, 68 of the 73 run and all 68 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 72 pass, built with gcc.
+All 73 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -260,6 +260,7 @@ COBOL* below):
 | `-fsticky-linkage` | a LINKAGE item keeps its address from one call to the next when the caller passes nothing for it |
 | `-fno-recursive-check` | allow a CALL of an active program that isn't RECURSIVE |
 | `-fno-stack-trace` | leave out the bookkeeping that lets a runtime error list the PERFORMs that led to it (a PERFORM a little faster; the CALLs are still listed) |
+| `-fdump[=ALL\|WS,LO,LS,FD]` | after a runtime error, a crash or SIGQUIT, write out the program's data: WORKING-STORAGE (`WS`), LOCAL-STORAGE (`LO`), LINKAGE (`LS`), the files and their records (`FD`), or all of them (`ALL`, also `-fdump` alone) |
 | `-ffilename-mapping` / `-fno-filename-mapping` | map ASSIGN names at OPEN through the environment and `COB_FILE_PATH` (the default), or use them as they stand |
 | `-fimplicit-init`, `-fentry-statement=ok` | accepted for cobc command lines: a COBOL program called from C always starts the runtime itself, and ENTRY is always accepted |
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
@@ -342,6 +343,7 @@ Runtime environment:
 | `COB_LS_SPLIT=Y` | a LINE SEQUENTIAL line longer than the record is read as several records (status 06), not cut short (status 04) |
 | `COB_SYNC=Y` | each change to a relative or indexed file waits until it is on the disk |
 | `COB_STACKTRACE=N` | a runtime error or a signal prints no stack trace, only its message |
+| `COB_DUMP_FILE` | the file a `-fdump` dump is appended to, instead of standard error; `NONE`: no dump |
 | `COB_SQL_DATABASE`, `COB_SQL_USER`, `COB_SQL_PASSWORD` | the database of a program that runs SQL without CONNECT |
 | `COB_SQL_TRACE=Y` | write each SQL statement and its SQLCODE to standard error |
 | `COB_SQL_SAVEPOINT=N` | PostgreSQL: no savepoint around each statement (faster; an error then spoils the unit of work) |
@@ -400,6 +402,59 @@ stack.cbl:6: note: PERFORM DO-CALL in paragraph MAIN-PARA of TRMAIN
 
 `COB_STACKTRACE=N` leaves the notes out; `-fno-stack-trace` compiles a
 program without the bookkeeping for its PERFORMs (one store per PERFORM).
+
+With `-fdump` the data follows: for each active program compiled with it, the
+innermost first, every item of the sections asked for, with its PICTURE and
+USAGE and its value. A number shows as DISPLAY shows it, with its decimal
+point; text is in quotes; other bytes are in hexadecimal (with the
+characters beside them), and a numeric item whose bytes aren't a number says
+so. A table's occurrences are listed up to its DEPENDING ON value, and a run
+of equal ones as one line. Each file's heading has its name, whether it is
+open and its last status:
+
+```
+cobrt: data of DUMPSUB (dumped.cbl)
+  FILE SECTION
+  FD F ('no-such-dir/x.dat'), closed, status 35
+  01 R                                X(10)             "          "
+  LOCAL-STORAGE SECTION
+  01 LS-COUNT                         9(4)              0017
+  LINKAGE SECTION
+  01 LK-REC
+     05 LK-NAME                       X(10)             "ALICE     "
+  01 LK-MISSING                       X(5)              (no storage: not passed, or not allocated)
+cobrt: data of DUMPMAIN (dumped.cbl)
+  WORKING-STORAGE SECTION
+  01 WS-REC
+     05 WS-NAME                       X(10)             "ALICE     "
+     05 WS-AMT                        S9(5)V99          -00012.50
+     05 WS-PACK                       S9(7) COMP-3      +1234567
+     05 WS-BADX                       X(3)              "1A3"
+     05 WS-BAD                        9(3) REDEFINES WS-BADX "1A3" (not numeric)
+     05 WS-TAB (1)                    OCCURS 5
+        10 WS-ITEM (1)                9(3)              001
+        10 WS-FLAG (1)                X                 " "
+     05 WS-TAB (2)
+        10 WS-ITEM (2)                9(3)              007
+        10 WS-FLAG (2)                X                 "Y"
+     05 WS-TAB (3 to 4): the same as (2)
+     05 WS-TAB (5)
+        10 WS-ITEM (5)                9(3)              000
+        10 WS-FLAG (5)                X                 " "
+  01 WS-N                             99                02
+  01 WS-ODO
+     05 WS-E (1)                      X(2) OCCURS 1 TO 9 DEPENDING ON WS-N "AA"
+     05 WS-E (2)                                        "BB"
+  01 WS-LOW                           X(6)              x"0058595A0000" ".XYZ.."
+  INDEXES
+  INDEX TX                            of WS-TAB         2
+```
+
+`COB_DUMP_FILE` sends it to a file instead (appended, with the time), and
+`COB_DUMP_FILE=NONE` turns it off without a new compile. SIGQUIT (Ctrl-\\)
+writes the stack trace and the dump of a program that seems stuck before
+ending it. The dump is off unless asked for, since a program's data can be
+anyone's personal data.
 
 A crash — a bad address (SIGSEGV, SIGBUS), an arithmetic trap in C code
 (SIGFPE) — or a request to stop (SIGINT, SIGTERM, SIGHUP, SIGQUIT) no longer
@@ -1132,8 +1187,8 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 16,162 lines of Python across seventeen files; the runtime it
-links against is 17,829 lines of C.
+The compiler is 16,360 lines of Python across eighteen files; the runtime it
+links against is 18,282 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
@@ -1142,13 +1197,14 @@ links against is 17,829 lines of C.
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 843) |
 | `lib/yaccc/data.py` | 663 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,591 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,603 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 381 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
 | `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 3,521 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `lib/yaccc/dumpgen.py` | 168 | `-fdump`: each program's data as a table the runtime walks after an error |
+| `runtime/cobrt_core.c` | 3,558 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,007 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,260 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
@@ -1162,7 +1218,8 @@ links against is 17,829 lines of C.
 | `runtime/cobrt_xmlp.c` | 901 | XML PARSE: the document read into events |
 | `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
 | `runtime/cobrt_sql.c` | 1,454 | embedded SQL on SQLite and PostgreSQL, their client libraries loaded at run time |
-| `runtime/cobrt.h` | 1,204 | runtime interface and inline fast paths |
+| `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
+| `runtime/cobrt.h` | 1,228 | runtime interface and inline fast paths |
 
 Design choices:
 

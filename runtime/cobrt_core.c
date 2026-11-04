@@ -108,6 +108,8 @@ static void on_signal(int sig)
 		fprintf(stderr, "cobrt: %s%s (signal %s)\n", sig_table[i].fatal ? "runtime error: " : "",
 		        sig_table[i].what, sig_table[i].name);
 		cob_stack_trace();
+		if (sig_table[i].fatal || sig == SIGQUIT)
+			cob_dump();
 	}
 	fflush(stderr);
 	signal(sig, SIG_DFL);
@@ -267,6 +269,7 @@ void cob_fatal(const char *fmt, ...)
 			fprintf(stderr, "libcob: error: %s\n", msg);
 			print_fatal_note();
 			cob_stack_trace();
+			cob_dump();
 		}
 		cob_run_exit_procs();
 		cob_close_all_files();
@@ -278,6 +281,7 @@ void cob_fatal(const char *fmt, ...)
 	fputc('\n', stderr);
 	print_fatal_note();
 	cob_stack_trace();
+	cob_dump();
 	cob_run_exit_procs();
 	cob_close_all_files();
 	fflush(stdout);
@@ -320,6 +324,7 @@ cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64
 		        "note: current maximum subscript for '%s': %lld\n",
 		        loc, name, (long long)sub, name, (long long)n);
 		cob_stack_trace();
+		cob_dump();
 		cob_run_exit_procs();
 		cob_close_all_files();
 		exit(1);
@@ -2880,6 +2885,9 @@ typedef struct {
 	const int *sizes;
 	const cob_site *call_site;  /* the CALL that entered it, or NULL */
 	const cob_perform **fbase;  /* its PERFORM frames */
+	const cob_dump_item *dump;  /* -fdump: its data */
+	int ndump;
+	const char *src;
 } cob_frame_info;
 
 const cob_site *cob_call_site;
@@ -2907,6 +2915,7 @@ void cob_module_push(const char *name, int argc)
 		fr->name = name;
 		fr->call_site = cob_call_site;
 		fr->fbase = NULL;
+		fr->dump = NULL;
 		if (argc >= 0) {
 			fr->nargs = argc;
 			fr->sizes = cob_call_sizes;
@@ -2941,6 +2950,34 @@ void cob_module_frames(const cob_perform **base)
 {
 	if (frame_depth > 0 && frame_depth <= 256)
 		frames[frame_depth - 1].fbase = base;
+}
+
+/* -fdump: the program just entered describes its data */
+void cob_module_dump(const cob_dump_item *t, int n, const char *src)
+{
+	if (frame_depth > 0 && frame_depth <= 256) {
+		frames[frame_depth - 1].dump = t;
+		frames[frame_depth - 1].ndump = n;
+		frames[frame_depth - 1].src = src;
+	}
+}
+
+/* the active program at depth d (0: the outermost) and its -fdump table */
+int cob_frame_dump(int d, const char **name, const cob_dump_item **t, int *n, const char **src)
+{
+	int top = frame_depth < 256 ? frame_depth : 256;
+	if (d < 0 || d >= top)
+		return 0;
+	*name = frames[d].name;
+	*t = frames[d].dump;
+	*n = frames[d].ndump;
+	*src = frames[d].src;
+	return 1;
+}
+
+int cob_frame_depth(void)
+{
+	return frame_depth < 256 ? frame_depth : 256;
 }
 
 static int trace_lines;

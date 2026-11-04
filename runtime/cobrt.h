@@ -83,6 +83,30 @@ typedef struct {
 } cob_perform;
 extern const cob_site *cob_call_site;   /* the CALL under way, until the callee starts */
 void cob_module_frames(const cob_perform **base);
+
+/* -fdump: a program's data, described for the dump after a runtime error.
+ * The entries are its sections' items in order, each record followed by the
+ * items under it (span counts them, the record included). */
+enum { COB_DUMP_ITEM, COB_DUMP_SECTION, COB_DUMP_FILE, COB_DUMP_INDEX, COB_DUMP_NOTE };
+typedef struct {
+	unsigned char kind;
+	unsigned char level;        /* an item: 1-49 or 77 */
+	unsigned char depth;        /* an item: 0 for a record, 1 for the items in it, ... */
+	unsigned char ptr;          /* a record: base is the address of its storage's pointer */
+	unsigned int span;          /* an item: entries in its subtree, itself included */
+	const char *name;           /* an item or index: its name (NULL: FILLER); a heading: its text */
+	const char *desc;           /* an item: PICTURE, USAGE, OCCURS, REDEFINES */
+	const void *base;           /* a record: its storage; an index: its int; a file: its cob_file */
+	size_t offset;              /* an item: from the start of its record */
+	size_t size;                /* an item: one occurrence */
+	unsigned int occurs;        /* an item: the table's size (0: not a table) */
+	int odo;                    /* an item: the entry of its DEPENDING ON item, or -1 */
+	const cob_attr *attr;       /* an elementary item: how to show it */
+} cob_dump_item;
+void cob_module_dump(const cob_dump_item *t, int n, const char *src);
+void cob_dump(void);
+int cob_frame_depth(void);
+int cob_frame_dump(int d, const char **name, const cob_dump_item **t, int *n, const char **src);
 void cob_stack_trace(void);
 #define COB_STACK_SIZE 512
 #define COB_FRAMES_CLEAR 32     /* frames NULL from a program's start */
