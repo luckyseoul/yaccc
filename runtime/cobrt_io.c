@@ -1641,9 +1641,18 @@ again:
 		void *m = mmap(NULL, J_HDR, PROT_READ | (s->writable ? PROT_WRITE : 0), MAP_SHARED, s->fd, 0);
 		if (m != MAP_FAILED) {
 			s->map = m;
-			if (s->writable)
-				__atomic_store_n((cob_u64 *)(void *)(s->map + 24), (cob_u64)s->log_end,
-						 __ATOMIC_RELEASE);
+			/* the journal's end as far as this OPEN read it: only ever
+			   raised, because another connector may have appended since,
+			   and an end set back would let a connector that has read
+			   that far think there is nothing new (a lost update) */
+			if (s->writable) {
+				cob_u64 *end = (cob_u64 *)(void *)(s->map + 24);
+				cob_u64 cur = __atomic_load_n(end, __ATOMIC_ACQUIRE);
+				while (cur < (cob_u64)s->log_end &&
+				       !__atomic_compare_exchange_n(end, &cur, (cob_u64)s->log_end, 0,
+								    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+					;
+			}
 		}
 	}
 	f->open_mode = mode;

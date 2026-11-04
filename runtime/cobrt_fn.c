@@ -5,6 +5,7 @@
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 /* an invalid argument: EC-ARGUMENT-FUNCTION, and zero as the result (as GnuCOBOL) */
 static cob_dec arg_error(void)
@@ -676,4 +677,211 @@ cob_field *cob_fn_hex_of(const cob_field *f)
 		r->data[2 * i + 1] = (unsigned char)hx[f->data[i] & 15];
 	}
 	return r;
+}
+
+/* ================================================================ COBOL 2023 / IBM 6.4
+ *
+ * HEX-TO-CHAR undoes HEX-OF; BIT-OF and BIT-TO-CHAR are the same for bits.
+ * UUID4 is a random (version 4) UUID, as Enterprise COBOL writes one.
+ */
+static int hexval(unsigned char c)
+{
+	return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+	       c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* the bytes a string of hex digit pairs stands for; a digit that isn't one
+ * counts as 0, a trailing odd digit as its high half */
+cob_field *cob_fn_hex_to_char(const cob_field *f)
+{
+	size_t n = f->size;
+	while (n > 0 && f->data[n - 1] == ' ')
+		n--;
+	cob_field *r = cob_tmp_field((n + 1) / 2, &cob_attr_alnum);
+	for (size_t i = 0; i < r->size; i++) {
+		int hi = hexval(f->data[2 * i]);
+		int lo = 2 * i + 1 < n ? hexval(f->data[2 * i + 1]) : 0;
+		r->data[i] = (unsigned char)(((hi < 0 ? 0 : hi) << 4) | (lo < 0 ? 0 : lo));
+	}
+	return r;
+}
+
+cob_field *cob_fn_bit_of(const cob_field *f)
+{
+	cob_field *r = cob_tmp_field(f->size * 8, &cob_attr_alnum);
+	for (size_t i = 0; i < f->size; i++)
+		for (int b = 0; b < 8; b++)
+			r->data[8 * i + (size_t)b] = (f->data[i] >> (7 - b)) & 1 ? '1' : '0';
+	return r;
+}
+
+/* the bytes a string of 0 and 1 stands for, eight bits a byte (the last one
+ * filled out with zeros) */
+cob_field *cob_fn_bit_to_char(const cob_field *f)
+{
+	size_t n = f->size;
+	while (n > 0 && f->data[n - 1] == ' ')
+		n--;
+	cob_field *r = cob_tmp_field((n + 7) / 8, &cob_attr_alnum);
+	memset(r->data, 0, r->size);
+	for (size_t i = 0; i < n; i++)
+		if (f->data[i] == '1')
+			r->data[i / 8] |= (unsigned char)(0x80 >> (i % 8));
+	return r;
+}
+
+cob_field *cob_fn_uuid4(void)
+{
+	unsigned char b[16];
+	FILE *fp = fopen("/dev/urandom", "rb");
+	size_t got = fp ? fread(b, 1, sizeof b, fp) : 0;
+	if (fp)
+		fclose(fp);
+	if (got != sizeof b) {
+		/* no /dev/urandom: the clock and the process, mixed */
+		struct timeval tv;
+		gettimeofday(&tv, NULL);
+		unsigned long long x = (unsigned long long)tv.tv_sec * 1000003u ^ (unsigned long long)tv.tv_usec ^
+				       ((unsigned long long)getpid() << 32);
+		for (size_t i = 0; i < sizeof b; i++) {
+			x ^= x << 13;
+			x ^= x >> 7;
+			x ^= x << 17;
+			b[i] = (unsigned char)(x >> 24);
+		}
+	}
+	b[6] = (unsigned char)((b[6] & 0x0F) | 0x40);      /* version 4 */
+	b[8] = (unsigned char)((b[8] & 0x3F) | 0x80);      /* the RFC 4122 variant */
+	static const char hx[] = "0123456789abcdef";
+	cob_field *r = cob_tmp_field(36, &cob_attr_alnum);
+	size_t o = 0;
+	for (int i = 0; i < 16; i++) {
+		if (i == 4 || i == 6 || i == 8 || i == 10)
+			r->data[o++] = '-';
+		r->data[o++] = (unsigned char)hx[b[i] >> 4];
+		r->data[o++] = (unsigned char)hx[b[i] & 15];
+	}
+	return r;
+}
+
+/* ---------------------------------------------------------------- UTF-8
+ *
+ * Enterprise COBOL's functions for UTF-8 data in alphanumeric items: ULENGTH
+ * counts characters, UPOS gives the byte where the nth begins and UWIDTH its
+ * bytes, USUBSTR takes characters, UVALID gives the byte of the first that
+ * isn't valid UTF-8 (0 when all are) and USUPPLEMENTARY the byte of the first
+ * outside the Basic Multilingual Plane (four bytes; 0 when there is none). A
+ * byte that doesn't begin a valid character counts as one character.
+ */
+static int u8_len(const unsigned char *p, size_t n)
+{
+	unsigned c = p[0], cp;
+	int len;
+	if (c < 0x80)
+		return 1;
+	if (c >= 0xC2 && c <= 0xDF) {
+		len = 2;
+		cp = c & 0x1F;
+	} else if (c >= 0xE0 && c <= 0xEF) {
+		len = 3;
+		cp = c & 0x0F;
+	} else if (c >= 0xF0 && c <= 0xF4) {
+		len = 4;
+		cp = c & 0x07;
+	} else {
+		return 0;
+	}
+	if ((size_t)len > n)
+		return 0;
+	for (int i = 1; i < len; i++) {
+		if ((p[i] & 0xC0) != 0x80)
+			return 0;
+		cp = cp << 6 | (p[i] & 0x3F);
+	}
+	if (len == 3 && (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF)))
+		return 0;
+	if (len == 4 && (cp < 0x10000 || cp > 0x10FFFF))
+		return 0;
+	return len;
+}
+
+static size_t u8_step(const unsigned char *p, size_t n)
+{
+	int l = u8_len(p, n);
+	return l ? (size_t)l : 1;
+}
+
+/* the byte offset of character k (0-based) and its width; -1 past the end */
+static long u8_offset(const cob_field *f, cob_s64 k, size_t *width)
+{
+	size_t i = 0;
+	for (cob_s64 c = 0; i < f->size; c++) {
+		size_t w = u8_step(f->data + i, f->size - i);
+		if (c == k) {
+			if (width)
+				*width = w;
+			return (long)i;
+		}
+		i += w;
+	}
+	return -1;
+}
+
+cob_dec cob_fn_ulength(const cob_field *f)
+{
+	cob_s64 c = 0;
+	for (size_t i = 0; i < f->size; c++)
+		i += u8_step(f->data + i, f->size - i);
+	return cob_d_int(c);
+}
+
+cob_dec cob_fn_upos(const cob_field *f, cob_dec n)
+{
+	cob_s64 k = cob_d_to_int(n);
+	long at = k >= 1 ? u8_offset(f, k - 1, NULL) : -1;
+	return cob_d_int(at < 0 ? 0 : at + 1);
+}
+
+cob_dec cob_fn_uwidth(const cob_field *f, cob_dec n)
+{
+	cob_s64 k = cob_d_to_int(n);
+	size_t w = 0;
+	long at = k >= 1 ? u8_offset(f, k - 1, &w) : -1;
+	return cob_d_int(at < 0 ? 0 : (cob_s64)w);
+}
+
+cob_field *cob_fn_usubstr(const cob_field *f, cob_dec start, cob_dec count, int has_count)
+{
+	cob_s64 s = cob_d_to_int(start), m = has_count ? cob_d_to_int(count) : -1;
+	long a = s >= 1 ? u8_offset(f, s - 1, NULL) : -1;
+	if (a < 0 || (has_count && m <= 0))
+		return cob_tmp_field(0, &cob_attr_alnum);
+	size_t e = (size_t)a;
+	for (cob_s64 c = 0; e < f->size && (m < 0 || c < m); c++)
+		e += u8_step(f->data + e, f->size - e);
+	cob_field *r = cob_tmp_field(e - (size_t)a, &cob_attr_alnum);
+	memcpy(r->data, f->data + a, r->size);
+	return r;
+}
+
+cob_dec cob_fn_uvalid(const cob_field *f)
+{
+	for (size_t i = 0; i < f->size;) {
+		int l = u8_len(f->data + i, f->size - i);
+		if (!l)
+			return cob_d_int((cob_s64)i + 1);
+		i += (size_t)l;
+	}
+	return cob_d_int(0);
+}
+
+cob_dec cob_fn_usupplementary(const cob_field *f)
+{
+	for (size_t i = 0; i < f->size;) {
+		int l = u8_len(f->data + i, f->size - i);
+		if (l == 4)
+			return cob_d_int((cob_s64)i + 1);
+		i += l ? (size_t)l : 1;
+	}
+	return cob_d_int(0);
 }

@@ -25,9 +25,10 @@ $ ./yaccc examples/mandelbrot.cbl --run
 - **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **68** differential test programs, compared with GnuCOBOL byte for byte:
+- **69** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
-  run, such as JSON PARSE and XML PARSE, against baselines checked by hand).
+  run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
+  baselines checked by hand).
 - **527** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
   `cobc` byte for byte.
 - **1** NIST test that cannot pass unattended. OBNC1M prints
@@ -104,7 +105,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 68 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 69 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -117,8 +118,8 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
 - `make test` compares each program's output and every file it writes against
   recorded GnuCOBOL 3.1.2 baselines. The exceptions are `advmix`, `rw1`, `dbg2`
   and `dbg5`, cases where YACCC deliberately differs from GnuCOBOL, and
-  `jsonparse1`, `xmlparse1` and `genocc1`, which use what GnuCOBOL 3.1.2 doesn't
-  have; their baselines were verified by hand.
+  `jsonparse1`, `xmlparse1`, `genocc1` and `fnutf8`, which use what GnuCOBOL
+  3.1.2 doesn't have; their baselines were verified by hand.
 - Four tests added with the fixes below (`dirord`, `occurs01`, `rwsrc`, `rwlimit`)
   had no live `cobc` to record from, so their baselines were checked by hand
   against the standard. `rwlimit` is marked `.noref` because `cobc` rejects
@@ -128,11 +129,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 63 of the 68 run and all 63 pass (the `.noref` ones against their
+  3.1.2, 64 of the 69 run and all 64 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 68 pass, built with gcc.
+All 69 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -804,24 +805,36 @@ EC-DATA-PTR-NULL for a null pointer and clearing the last exception on
 success. A `Z"..."` literal ends with a NUL, which is what makes them useful
 together.
 
-**Intrinsic functions (103).** ABS, ACOS, ANNUITY, ASIN, ATAN, BYTE-LENGTH,
-CHAR, COMBINED-DATETIME, CONCAT, CONCATENATE, COS, CURRENCY-SYMBOL, CURRENT-
-DATE, DATE-OF-INTEGER, DATE-TO-YYYYMMDD, DAY-OF-INTEGER, DAY-TO-YYYYDDD, E,
+**Intrinsic functions (113).** ABS, ACOS, ANNUITY, ASIN, ATAN, BIT-OF,
+BIT-TO-CHAR, BYTE-LENGTH, CHAR, COMBINED-DATETIME, CONCAT, CONCATENATE,
+CONTENT-LENGTH, CONTENT-OF, COS, CURRENCY-SYMBOL, CURRENT-DATE,
+DATE-OF-INTEGER, DATE-TO-YYYYMMDD, DAY-OF-INTEGER, DAY-TO-YYYYDDD, E,
 EXCEPTION-FILE, EXCEPTION-LOCATION, EXCEPTION-STATEMENT, EXCEPTION-STATUS, EXP,
 EXP10, FACTORIAL, FORMATTED-CURRENT-DATE, FORMATTED-DATE, FORMATTED-DATETIME,
-FORMATTED-TIME, FRACTION-PART, HEX-OF, HIGHEST-ALGEBRAIC, INTEGER, INTEGER-OF-
-BOOLEAN, INTEGER-OF-DATE, INTEGER-OF-DAY, INTEGER-OF-FORMATTED-DATE, INTEGER-
-PART, LENGTH, LOCALE-COMPARE, LOCALE-DATE, LOCALE-TIME, LOCALE-TIME-FROM-
-SECONDS, LOG, LOG10, LOWER-CASE, LOWEST-ALGEBRAIC, MAX, MEAN, MEDIAN, MIDRANGE,
-MIN, MOD, MODULE-CALLER-ID, MODULE-DATE, MODULE-FORMATTED-DATE, MODULE-ID,
-MODULE-NAME, MODULE-PATH, MODULE-SOURCE, MODULE-TIME, MONETARY-DECIMAL-POINT,
-MONETARY-THOUSANDS-SEPARATOR, NUMERIC-DECIMAL-POINT, NUMERIC-THOUSANDS-
-SEPARATOR, NUMVAL, NUMVAL-C, NUMVAL-F, ORD, ORD-MAX, ORD-MIN, PI, PRESENT-VALUE,
-RANDOM, RANGE, REM, REVERSE, SECONDS-FROM-FORMATTED-TIME, SECONDS-PAST-MIDNIGHT,
-SIGN, SIN, SQRT, STANDARD-DEVIATION, STORED-CHAR-LENGTH, SUBSTITUTE, SUBSTITUTE-
-CASE, SUM, TAN, TEST-DATE-YYYYMMDD, TEST-DAY-YYYYDDD, TEST-FORMATTED-DATETIME,
-TEST-NUMVAL, TEST-NUMVAL-C, TEST-NUMVAL-F, TRIM, TRIML, TRIMR, UPPER-CASE,
-VARIANCE, WHEN-COMPILED, YEAR-TO-YYYY.
+FORMATTED-TIME, FRACTION-PART, HEX-OF, HEX-TO-CHAR, HIGHEST-ALGEBRAIC, INTEGER,
+INTEGER-OF-BOOLEAN, INTEGER-OF-DATE, INTEGER-OF-DAY, INTEGER-OF-FORMATTED-DATE,
+INTEGER-PART, LENGTH, LOCALE-COMPARE, LOCALE-DATE, LOCALE-TIME,
+LOCALE-TIME-FROM-SECONDS, LOG, LOG10, LOWER-CASE, LOWEST-ALGEBRAIC, MAX, MEAN,
+MEDIAN, MIDRANGE, MIN, MOD, MODULE-CALLER-ID, MODULE-DATE,
+MODULE-FORMATTED-DATE, MODULE-ID, MODULE-NAME, MODULE-PATH, MODULE-SOURCE,
+MODULE-TIME, MONETARY-DECIMAL-POINT, MONETARY-THOUSANDS-SEPARATOR,
+NUMERIC-DECIMAL-POINT, NUMERIC-THOUSANDS-SEPARATOR, NUMVAL, NUMVAL-C, NUMVAL-F,
+ORD, ORD-MAX, ORD-MIN, PI, PRESENT-VALUE, RANDOM, RANGE, REM, REVERSE,
+SECONDS-FROM-FORMATTED-TIME, SECONDS-PAST-MIDNIGHT, SIGN, SIN, SQRT,
+STANDARD-DEVIATION, STORED-CHAR-LENGTH, SUBSTITUTE, SUBSTITUTE-CASE, SUM, TAN,
+TEST-DATE-YYYYMMDD, TEST-DAY-YYYYDDD, TEST-FORMATTED-DATETIME, TEST-NUMVAL,
+TEST-NUMVAL-C, TEST-NUMVAL-F, TRIM, TRIML, TRIMR, ULENGTH, UPOS, UPPER-CASE,
+USUBSTR, USUPPLEMENTARY, UUID4, UVALID, UWIDTH, VARIANCE, WHEN-COMPILED,
+YEAR-TO-YYYY.
+
+HEX-TO-CHAR, BIT-OF, BIT-TO-CHAR and UUID4 are COBOL 2023's and Enterprise
+COBOL 6.4's (UUID4 is a random version 4 UUID, in lower case). ULENGTH, UPOS,
+UWIDTH, USUBSTR, UVALID and USUPPLEMENTARY are Enterprise COBOL's functions
+for UTF-8 text in an alphanumeric item: they count characters, not bytes
+(`FUNCTION ULENGTH(FUNCTION TRIM(X))` is the number of characters in X, and
+`FUNCTION USUBSTR(X 3 2)` its third and fourth), UVALID gives the byte where
+X stops being valid UTF-8 (0 when it never does) and USUPPLEMENTARY the byte of
+its first character outside the Basic Multilingual Plane.
 
 The trigonometric, logarithmic and exponential functions, SQRT, ANNUITY,
 PRESENT-VALUE, VARIANCE, STANDARD-DEVIATION and `**` with a non-integer

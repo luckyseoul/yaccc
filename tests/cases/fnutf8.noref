@@ -1,0 +1,3 @@
+GnuCOBOL 3.1 has none of these functions. Compared only against the recorded
+baseline (fnutf8.expected), checked by hand: UTF-8 positions counted from the
+bytes, UUID4's version digit and hyphens.

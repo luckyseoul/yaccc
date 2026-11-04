@@ -2376,6 +2376,10 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
             return f"cob_fn_length({F(0)})"
         if name == 'ORD':
             return f"cob_fn_ord({F(0)})"
+        if name in ('ULENGTH', 'UVALID', 'USUPPLEMENTARY'):
+            return f"cob_fn_{name.lower()}({F(0)})"
+        if name in ('UPOS', 'UWIDTH'):
+            return f"cob_fn_{name.lower()}({F(0)}, {D(1)})"
         if name in ('NUMVAL', 'NUMVAL-F', 'NUMVAL-C', 'TEST-NUMVAL', 'TEST-NUMVAL-F', 'TEST-NUMVAL-C'):
             kind = 2 if name.endswith('-F') else 1 if name.endswith('-C') else 0
             fn = 'cob_fn_test_numval' if name.startswith('TEST-') else 'cob_fn_numval'
@@ -2485,6 +2489,13 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
             return f"cob_fn_module_name({c_string(self.prog.name)})"
         if name == 'HEX-OF':
             return f"cob_fn_hex_of({F(0)})"
+        if name in ('HEX-TO-CHAR', 'BIT-OF', 'BIT-TO-CHAR'):
+            return f"cob_fn_{name.lower().replace('-', '_')}({F(0)})"
+        if name == 'UUID4':
+            return "cob_fn_uuid4()"
+        if name == 'USUBSTR':
+            n = self.dec(a[2]) if len(a) > 2 else 'cob_d_int(0)'
+            return f"cob_fn_usubstr({F(0)}, {self.dec(a[1])}, {n}, {1 if len(a) > 2 else 0})"
         if name in ('CONCATENATE', 'CONCAT', 'SUBSTITUTE', 'SUBSTITUTE-CASE'):
             pre, n, arr = self.expand_all_args(a, 'F')
             fn = {'CONCATENATE': 'cob_fn_concatenate', 'CONCAT': 'cob_fn_concatenate',

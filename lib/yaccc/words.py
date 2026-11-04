@@ -134,4 +134,8 @@ FUNCTIONS = {
     'CURRENCY-SYMBOL': ('X', 0, 0), 'MONETARY-DECIMAL-POINT': ('X', 0, 0),
     'MONETARY-THOUSANDS-SEPARATOR': ('X', 0, 0), 'NUMERIC-DECIMAL-POINT': ('X', 0, 0),
     'NUMERIC-THOUSANDS-SEPARATOR': ('X', 0, 0),
+    # COBOL 2023 and Enterprise COBOL 6.4: bits and hex, a UUID, UTF-8 data
+    'HEX-TO-CHAR': ('X', 1, 1), 'BIT-OF': ('X', 1, 1), 'BIT-TO-CHAR': ('X', 1, 1),
+    'UUID4': ('X', 0, 0), 'ULENGTH': ('N', 1, 1), 'UPOS': ('N', 2, 2), 'UWIDTH': ('N', 2, 2),
+    'USUBSTR': ('X', 2, 3), 'UVALID': ('N', 1, 1), 'USUPPLEMENTARY': ('N', 1, 1),
 }
