@@ -143,6 +143,7 @@ def main():
     diagnostics(work)
     interop(work)
     tracing(work)
+    crashes(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -312,6 +313,187 @@ def tracing(work):
     check('... and nothing after', r, 0, None, 'DISPLAY')
     r = run(['traced.cbl', '--run'], work)
     check('no trace without -ftrace', r, 0, None, 'Program-Id:')
+
+
+STACK = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TRMAIN.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           DISPLAY "START".
+           PERFORM DO-CALL.
+           STOP RUN.
+       DO-CALL.
+           CALL "TRSUB".
+       END PROGRAM TRMAIN.
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TRSUB.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "no-such-dir/x.dat"
+               ORGANIZATION IS SEQUENTIAL.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F.
+       01 R PIC X(10).
+       PROCEDURE DIVISION.
+       S-MAIN.
+           PERFORM S-OPEN THRU S-OPEN-EXIT.
+           GOBACK.
+       S-OPEN.
+           PERFORM S-REAL.
+       S-OPEN-EXIT.
+           EXIT.
+       S-REAL.
+           OPEN INPUT F.
+       END PROGRAM TRSUB.
+'''
+
+LOOPS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LOOPS.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           PERFORM AGAIN.
+           STOP RUN.
+       AGAIN.
+           PERFORM AGAIN.
+'''
+
+# a bad address: what was displayed before the crash still comes out
+CRASH = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CRASH.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 P USAGE POINTER.
+       LINKAGE SECTION.
+       01 L PIC X(10).
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           DISPLAY "BEFORE".
+           SET P TO NULL.
+           SET P UP BY 16.
+           SET ADDRESS OF L TO P.
+           PERFORM BOOM.
+           DISPLAY "AFTER".
+           STOP RUN.
+       BOOM.
+           MOVE "XXXXXXXXXX" TO L.
+'''
+
+# writes a record, says it is ready, and sleeps: a signal then ends it
+SLEEPER = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. SLEEPER.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "kept.txt"
+               ORGANIZATION IS LINE SEQUENTIAL.
+           SELECT G ASSIGN TO "ready.txt"
+               ORGANIZATION IS LINE SEQUENTIAL.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F.
+       01 R PIC X(20).
+       FD G.
+       01 RG PIC X(5).
+       WORKING-STORAGE SECTION.
+       01 SECS PIC 9(3).
+       PROCEDURE DIVISION.
+           ACCEPT SECS FROM ARGUMENT-VALUE.
+           OPEN OUTPUT F.
+           MOVE "RECORD ONE" TO R.
+           WRITE R.
+           OPEN OUTPUT G.
+           MOVE "READY" TO RG.
+           WRITE RG.
+           CLOSE G.
+           CALL "C$SLEEP" USING SECS.
+           CLOSE F.
+           DISPLAY "SLEPT".
+           STOP RUN.
+'''
+
+
+def crashes(work):
+    """A runtime error lists the PERFORMs and CALLs that led to it; a crash
+    or a signal says what ended the program, and what it wrote is kept."""
+    import signal
+    import time
+
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+
+    def notes(r):
+        return [l for l in r.stderr.splitlines() if ': note: ' in l]
+
+    write('stack.cbl', STACK)
+    r = run(['stack.cbl', '--run'], work)
+    check('runtime error names the error', r, 1, 'file not found (status = 35) for file F')
+    want = ['stack.cbl:27: note: PERFORM S-REAL in paragraph S-OPEN of TRSUB',
+            'stack.cbl:24: note: PERFORM S-OPEN THRU S-OPEN-EXIT in paragraph S-MAIN of TRSUB',
+            'stack.cbl:9: note: CALL "TRSUB" in paragraph DO-CALL of TRMAIN',
+            'stack.cbl:6: note: PERFORM DO-CALL in paragraph MAIN-PARA of TRMAIN']
+    got = notes(r)
+    check('stack trace: PERFORMs and CALLs, innermost first',
+          r if got == want else subprocess.CompletedProcess(r.args, -1, r.stdout,
+                                                            r.stderr + f"\ngot {got}"), 1)
+    exe = os.path.join(work, 'stackx')
+    run(['stack.cbl', '-o', exe], work)
+    env = dict(os.environ, COB_STACKTRACE='N')
+    r = subprocess.run([exe], capture_output=True, text=True, env=env, cwd=work)
+    check('COB_STACKTRACE=N leaves the trace out', r, 1, 'status = 35', ': note: ')
+    r = run(['-fno-stack-trace', 'stack.cbl', '--run'], work)
+    check('-fno-stack-trace: no PERFORMs', r, 1, None, 'note: PERFORM')
+    check('-fno-stack-trace: still the CALL', r, 1, 'note: CALL "TRSUB"')
+
+    write('loops.cbl', LOOPS)
+    r = run(['loops.cbl', '--run'], work)
+    check('PERFORM overflow', r, 1, 'PERFORM stack overflow')
+    check('a PERFORM repeated in a row is counted, not listed',
+          r, 1, 'loops.cbl:8: note: PERFORM AGAIN in paragraph AGAIN of LOOPS, 510 times')
+
+    write('crash.cbl', CRASH)
+    exe = os.path.join(work, 'crashx')
+    run(['crash.cbl', '-o', exe], work)
+    r = subprocess.run([exe], capture_output=True, text=True, cwd=work)
+    check('SIGSEGV: a message', r, -signal.SIGSEGV,
+          'cobrt: runtime error: attempt to reference unallocated memory (signal SIGSEGV)')
+    check('SIGSEGV: where', r, -signal.SIGSEGV, 'crash.cbl:14: note: PERFORM BOOM')
+    check('SIGSEGV: output before it is kept', r, -signal.SIGSEGV, 'BEFORE')
+
+    write('sleeper.cbl', SLEEPER)
+    exe = os.path.join(work, 'sleeper')
+    run(['sleeper.cbl', '-o', exe], work)
+
+    def started(secs, preexec=None):
+        ready = os.path.join(work, 'ready.txt')
+        if os.path.exists(ready):
+            os.unlink(ready)
+        p = subprocess.Popen([exe, str(secs)], cwd=work, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, preexec_fn=preexec)
+        for _ in range(300):
+            if os.path.exists(ready) and os.path.getsize(ready) > 0:
+                break
+            time.sleep(0.1)
+        return p
+
+    p = started(60)
+    p.send_signal(signal.SIGTERM)
+    out, err = p.communicate(timeout=60)
+    r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
+    check('SIGTERM: a message', r, -signal.SIGTERM, 'cobrt: terminated (signal SIGTERM)')
+    with open(os.path.join(work, 'kept.txt'), encoding='latin-1') as f:
+        kept = f.read()
+    check('SIGTERM: the record written is kept',
+          r if kept == 'RECORD ONE\n' else subprocess.CompletedProcess(p.args, -1, kept, ''),
+          -signal.SIGTERM)
+    # a signal the program was started with ignored stays ignored (nohup)
+    p = started(2, lambda: signal.signal(signal.SIGTERM, signal.SIG_IGN))
+    p.send_signal(signal.SIGTERM)
+    out, err = p.communicate(timeout=60)
+    check('an ignored SIGTERM stays ignored',
+          subprocess.CompletedProcess(p.args, p.returncode, out, err), 0, 'SLEPT')
 
 
 def module_ext():

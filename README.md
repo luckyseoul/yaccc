@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **14,730** lines of Python in the compiler, standard library only — no parser
+- **16,162** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -259,6 +259,7 @@ COBOL* below):
 | `-fdefaultbyte=init\|C\|N` | what WORKING-STORAGE without a VALUE clause starts as: spaces and zeros by type (`init`, the default), a character, or a byte value |
 | `-fsticky-linkage` | a LINKAGE item keeps its address from one call to the next when the caller passes nothing for it |
 | `-fno-recursive-check` | allow a CALL of an active program that isn't RECURSIVE |
+| `-fno-stack-trace` | leave out the bookkeeping that lets a runtime error list the PERFORMs that led to it (a PERFORM a little faster; the CALLs are still listed) |
 | `-ffilename-mapping` / `-fno-filename-mapping` | map ASSIGN names at OPEN through the environment and `COB_FILE_PATH` (the default), or use them as they stand |
 | `-fimplicit-init`, `-fentry-statement=ok` | accepted for cobc command lines: a COBOL program called from C always starts the runtime itself, and ENTRY is always accepted |
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
@@ -340,6 +341,7 @@ Runtime environment:
 | `COB_PRE_LOAD` | modules to load at start-up, `:`-separated, so CALL finds the programs and ENTRY points they hold |
 | `COB_LS_SPLIT=Y` | a LINE SEQUENTIAL line longer than the record is read as several records (status 06), not cut short (status 04) |
 | `COB_SYNC=Y` | each change to a relative or indexed file waits until it is on the disk |
+| `COB_STACKTRACE=N` | a runtime error or a signal prints no stack trace, only its message |
 | `COB_SQL_DATABASE`, `COB_SQL_USER`, `COB_SQL_PASSWORD` | the database of a program that runs SQL without CONNECT |
 | `COB_SQL_TRACE=Y` | write each SQL statement and its SQLCODE to standard error |
 | `COB_SQL_SAVEPOINT=N` | PostgreSQL: no savepoint around each statement (faster; an error then spoils the unit of work) |
@@ -382,6 +384,34 @@ STATUS or USE procedure, print `cobrt: runtime error: file:line: ...` and exit
 with status 1. A file error names both the name the program gave and the file
 it became, when mapping changed it:
 `... for file TEST-FILE ('FILENAMEX' => ./nosubhere/FILENAMEX)`.
+
+The message is followed by how the program got there: each PERFORM and CALL
+that is still active, the innermost first, as a note at its own line, the way
+a C compiler gives an error's context (so an editor or IDE can step through
+them, and a PERFORM that performs itself is given once with its count):
+
+```
+cobrt: runtime error: stack.cbl:31: file not found (status = 35) for file F ('no-such-dir/x.dat')
+stack.cbl:27: note: PERFORM S-REAL in paragraph S-OPEN of TRSUB
+stack.cbl:24: note: PERFORM S-OPEN THRU S-OPEN-EXIT in paragraph S-MAIN of TRSUB
+stack.cbl:9: note: CALL "TRSUB" in paragraph DO-CALL of TRMAIN
+stack.cbl:6: note: PERFORM DO-CALL in paragraph MAIN-PARA of TRMAIN
+```
+
+`COB_STACKTRACE=N` leaves the notes out; `-fno-stack-trace` compiles a
+program without the bookkeeping for its PERFORMs (one store per PERFORM).
+
+A crash — a bad address (SIGSEGV, SIGBUS), an arithmetic trap in C code
+(SIGFPE) — or a request to stop (SIGINT, SIGTERM, SIGHUP, SIGQUIT) no longer
+loses what the program wrote: what is in the buffers of its sequential files
+and of standard output is written out, the message says what ended it
+(`cobrt: runtime error: attempt to reference unallocated memory (signal
+SIGSEGV)`, `cobrt: terminated (signal SIGTERM)`), with the stack trace, and a
+screen section's terminal is put back. Then the signal takes its default
+action, so the program still ends by it: a shell sees the signal, Ctrl-C stops
+a script that ran the program, and a core file is written where the system
+writes one. A signal the program was started with ignored (`nohup`), or one
+that C code linked into it handles, is left alone.
 
 With `-ftraceall` and `READY TRACE` (or `COB_SET_TRACE=Y`), a program reports
 where it goes, in GnuCOBOL's layout:
@@ -1089,6 +1119,12 @@ All of these were checked against GnuCOBOL 3.1.2:
     not conform, and as GnuCOBOL 3.2 does with `COB_LS_SPLIT` off (3.2 splits
     the line into several records by default; `COB_LS_SPLIT=Y` does that
     here). GnuCOBOL 3.1.2 drops the rest of the line with status 00.
+13. **A signal that ends the program** (SIGTERM, SIGINT, SIGSEGV, ...) is
+    raised again once the files are flushed and the message is out, so the
+    program ends by the signal. GnuCOBOL 3.1.2 closes the files too (warning
+    about each "implicit CLOSE") but then exits with the signal's number as an
+    ordinary status (15 for SIGTERM), which a shell can't tell from a program
+    that chose to return 15, and which keeps a script running after Ctrl-C.
 
 ## How it works
 
@@ -1096,8 +1132,8 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 16,063 lines of Python across seventeen files; the runtime it
-links against is 17,049 lines of C.
+The compiler is 16,162 lines of Python across seventeen files; the runtime it
+links against is 17,829 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
@@ -1106,27 +1142,27 @@ links against is 17,049 lines of C.
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 843) |
 | `lib/yaccc/data.py` | 663 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,502 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,591 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 381 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
 | `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `runtime/cobrt_core.c` | 3,333 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,521 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
-| `runtime/cobrt_io.c` | 2,918 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
-| `runtime/cobrt_scr.c` | 1,130 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
+| `runtime/cobrt_io.c` | 3,007 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_scr.c` | 1,260 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
 | `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
-| `runtime/cobrt_fn.c` | 679 | intrinsic functions |
+| `runtime/cobrt_fn.c` | 887 | intrinsic functions |
 | `runtime/cobrt_math.c` | 729 | 640-bit fixed point for SQRT, EXP, LOG, the trigonometric functions and `**` |
 | `runtime/cobrt_dt.c` | 729 | FORMATTED-DATE/TIME/DATETIME and the other COBOL 2014 date functions, locale functions |
-| `runtime/cobrt_sys.c` | 1,056 | library routines (CBL_..., C$...), `-ftrace` output |
+| `runtime/cobrt_sys.c` | 1,175 | library routines (CBL_..., C$...), `-ftrace` output |
 | `runtime/cobrt_xml.c` | 567 | XML GENERATE |
 | `runtime/cobrt_xmlp.c` | 901 | XML PARSE: the document read into events |
 | `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
 | `runtime/cobrt_sql.c` | 1,454 | embedded SQL on SQLite and PostgreSQL, their client libraries loaded at run time |
-| `runtime/cobrt.h` | 1,158 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,204 | runtime interface and inline fast paths |
 
 Design choices:
 

@@ -314,6 +314,11 @@ def main(argv=None):
     ap.add_argument('-fno-recursive-check', dest='recursive_check', action='store_false', default=True,
                     help='allow a CALL of an active program that is not RECURSIVE '
                          '(it shares its storage with the active call)')
+    ap.add_argument('-fno-stack-trace', dest='stack_trace', action='store_false', default=True,
+                    help="leave out the bookkeeping that lets a runtime error list the "
+                         "PERFORMs that led to it (a little faster PERFORM)")
+    ap.add_argument('-fstack-trace', dest='stack_trace', action='store_true',
+                    help='list the PERFORMs and CALLs that led to a runtime error (the default)')
     ap.add_argument('-fdefaultbyte', dest='defaultbyte', metavar='init|CHAR|0-255',
                     help='what WORKING-STORAGE without a VALUE clause starts as: init (spaces '
                          'and zeros by type, the default), one character, or a byte value')
@@ -445,6 +450,7 @@ def main(argv=None):
     opts.sign = args.sign
     opts.sticky_linkage = args.sticky_linkage
     opts.recursive_check = args.recursive_check
+    opts.stack_trace = args.stack_trace
     if args.not_intrinsic:
         opts.not_intrinsic = {n.strip().upper() for n in args.not_intrinsic.split(',') if n.strip()}
     if args.not_reserved or args.reserved:

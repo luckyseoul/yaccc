@@ -347,6 +347,9 @@ class Runner:
                 return 'SKIP', 'shell command'
             env = dict(os.environ)
             env.pop('COB_SET_DEBUG', None)
+            # GnuCOBOL 3.1.2 prints no stack trace after a runtime error, and
+            # its tests compare standard error
+            env.setdefault('COB_STACKTRACE', 'N')
 
             while words and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', words[0]):
                 k, v = words.pop(0).split('=', 1)

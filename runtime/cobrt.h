@@ -62,11 +62,30 @@ static inline int cob_is_num_type(int t)
 }
 
 /* PERFORM stack */
-struct cob_frame {
-	int perform_through;
-	void *return_address;
-};
+/* A PERFORM or CALL statement, for the stack a runtime error prints */
+typedef struct {
+	const char *where;          /* file:line */
+	const char *what;           /* "PERFORM A THRU B", "CALL \"SUB\"", ... */
+	const char *in;             /* "paragraph P" or "section S" it is in, or NULL */
+	int dynamic;                /* a CALL of a data item: the name it held is added */
+} cob_site;
+/* A PERFORM statement: the paragraph or section whose end returns, where it
+ * returns to, and the statement itself. One of these is static in the
+ * program for each PERFORM, and a frame of the PERFORM stack is a pointer to
+ * it. The frame above the top one is NULL (the first COB_FRAMES_CLEAR are
+ * cleared at the program's start, a push past them clears the next, and a
+ * return clears its own), so the stack can be walked from its base without
+ * the program's frame pointer. */
+typedef struct {
+	int through;
+	void *ret;
+	const cob_site *site;
+} cob_perform;
+extern const cob_site *cob_call_site;   /* the CALL under way, until the callee starts */
+void cob_module_frames(const cob_perform **base);
+void cob_stack_trace(void);
 #define COB_STACK_SIZE 512
+#define COB_FRAMES_CLEAR 32     /* frames NULL from a program's start */
 
 /* ------------------------------------------------------------ globals */
 extern cob_field cob_fig_space, cob_fig_zero, cob_fig_high, cob_fig_low,
@@ -551,6 +570,7 @@ void cob_ensure_init(void);
 int cob_c_argc(int declared);
 void cob_call_init(void);
 void cob_close_all_files(void);
+void cob_flush_files(void);         /* a signal ends the run unit: written data kept */
 void cob_call_system(const cob_field *cmd);
 int cob_switch_get(int n);
 void cob_switch_set(int n, int v);
@@ -903,6 +923,7 @@ void cob_scr_color_item(cob_scr_item *it, int v);
 void cob_scr_set_crt_status(cob_field *f);
 void cob_scr_set_cursor(cob_field *f);
 int cob_scr_escape_key(void);
+void cob_scr_signal(void);          /* a signal ends the run unit: the terminal back */
 extern cob_field cob_crt_status_reg;
 size_t cob_display_text(const cob_field *f, char *buf, size_t sz);
 

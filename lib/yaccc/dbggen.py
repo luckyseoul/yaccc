@@ -217,7 +217,7 @@ class DebugGen:
         em.ind += 1
         em(fill)
         em("cob_dbg_busy = 1;")
-        self.perform_section(dsec)
+        self.perform_section(dsec, 'USE FOR DEBUGGING')
         em("cob_dbg_busy = 0;")
         em.ind -= 1
         em("}")

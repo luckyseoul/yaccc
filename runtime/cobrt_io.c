@@ -1847,6 +1847,18 @@ void cob_close_all_files(void)
 		cob_close(open_list);
 }
 
+/* A signal is ending the run unit, with no CLOSE to come: the records
+ * written to sequential files are flushed out of their buffers (relative and
+ * indexed files are written through, so nothing of theirs is waiting). Only
+ * fflush, nothing that allocates: this runs in a signal handler. */
+void cob_flush_files(void)
+{
+	for (cob_file *f = open_list; f; f = f->next_open)
+		if ((f->organization == COB_ORG_SEQUENTIAL || f->organization == COB_ORG_LINE_SEQ)
+		    && f->fp && f->fp != stdin && f->fp != stdout)
+			fflush(f->fp);
+}
+
 /* ================================================================ sequential */
 
 static int read_seq(cob_file *f)

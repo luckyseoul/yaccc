@@ -370,10 +370,32 @@ static struct sigaction old_actions[4];
 static void raw_signal(int sig)
 {
 	tcsetattr(0, TCSANOW, &saved_tio);
+	raw_on = 0;
 	fputs("\033[0m\r\n", stdout);
 	fflush(stdout);
-	signal(sig, SIG_DFL);
+	/* then what the signal did before raw mode -- the runtime's handler
+	 * (files flushed, where the program was), or the default -- once this
+	 * handler returns and the signal is unblocked */
+	for (int i = 0; i < 4; i++)
+		if (raw_signals[i] == sig) {
+			sigaction(sig, &old_actions[i], NULL);
+			break;
+		}
 	raise(sig);
+}
+
+/* a signal is ending the run unit: the terminal as it was before the
+ * screen section had it, so the message that follows can be read */
+void cob_scr_signal(void)
+{
+	if (raw_on) {
+		tcsetattr(0, TCSANOW, &saved_tio);
+		raw_on = 0;
+	}
+	if (scr_used) {
+		fputs("\033[0m\r\n", stdout);
+		fflush(stdout);
+	}
 }
 
 static void raw_mode(int on)
@@ -388,8 +410,11 @@ static void raw_mode(int on)
 		memset(&sa, 0, sizeof sa);
 		sa.sa_handler = raw_signal;
 		sigemptyset(&sa.sa_mask);
-		for (int i = 0; i < 4; i++)
-			sigaction(raw_signals[i], &sa, &old_actions[i]);
+		for (int i = 0; i < 4; i++) {
+			sigaction(raw_signals[i], NULL, &old_actions[i]);
+			if (old_actions[i].sa_handler != SIG_IGN)   /* nohup's SIGHUP stays ignored */
+				sigaction(raw_signals[i], &sa, NULL);
+		}
 		t = saved_tio;
 		/* no line editing and no echo; signals (Ctrl-C) still work */
 		t.c_lflag &= (tcflag_t) ~(ICANON | ECHO);

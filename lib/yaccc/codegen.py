@@ -98,6 +98,7 @@ class Options:
         self.sticky_linkage = False  # LINKAGE items keep their addresses between calls
         self.defaultbyte = None      # -fdefaultbyte: WORKING-STORAGE without VALUE starts as this byte
         self.recursive_check = True  # EC-PROGRAM-RECURSIVE-CALL for a program that isn't RECURSIVE
+        self.stack_trace = True      # PERFORM frames a runtime error can list (-fno-stack-trace)
         self.emit_main = True        # an executable's main(); not for -c or -m
         self.export_c = False        # C entry points, for C code that calls COBOL
 
@@ -223,6 +224,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         self.udf_names = set()
         self.opts = opts
         self.glob = []
+        self.performs = []          # the program's static cob_perform declarations
         self.funcs = []
         self.protos = []
         self.attr_cache = {}
@@ -568,6 +570,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         ctx = ProgCtx(prog)
         self.ctx = ctx
         self.prog = prog
+        self.performs = []
+        self.cur_para = self.cur_section = None
         ctx.cname = self.prog_syms[id(prog)]
         ctx.coll = None
         if prog.collating:
@@ -1274,6 +1278,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
             em("cob_entry_reentry = 0;")
         em(f"{active}++;")
         em(f"cob_module_push({c_string(prog.ext_name)}, cob_argc);")
+        if getattr(self.opts, 'stack_trace', True):
+            em("cob_module_frames(cob_frames);")
         if self.opts.trace:
             pd = getattr(prog, 'proc_loc', None) or prog.loc
             em(f'if (cob_trace_on) cob_trace_point({self.trace_args()}, "Entry", '
@@ -1386,6 +1392,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
             em("return (int)cob_get_int(&cob_return_code);")
         if gdecls:
             self.cur_section = None
+            self.cur_para = None
             em.label("L_decl_entry")
             em("switch (cob_decl_which) {")
             for sec in gdecls:
@@ -1402,8 +1409,12 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         out.append(f"/* PROGRAM-ID. {prog.name} */")
         out.append(f"static int {ctx.cname}(int cob_argc, unsigned char **cob_argv)")
         out.append('{')
-        out.append('\tstruct cob_frame cob_frames[COB_STACK_SIZE];')
-        out.append('\tstruct cob_frame *frame_ptr = cob_frames;')
+        out.append('\tconst cob_perform *cob_frames[COB_STACK_SIZE + 1];')
+        out.append('\tconst cob_perform **frame_ptr = cob_frames;')
+        # the base frame returns nowhere (L_exit keeps clang happy)
+        out.append('\tstatic const cob_perform cob_perform_base = { 0, &&L_exit, NULL };')
+        out.extend('\t' + d for d in self.performs)
+        self.performs = []
         for sym, size, r in ctx.local_blocks + ctx.link_blocks:
             if prog.is_recursive:
                 out.append(f'\tunsigned char *{sym};')
@@ -1416,8 +1427,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         if self.seg_tracking:
             out.append('\tint cob_seg = -1;')
         out.append('\t(void)cob_argv;')
-        out.append('\tframe_ptr->perform_through = 0;')
-        out.append('\tframe_ptr->return_address = &&L_exit;   /* never used; keeps clang happy */')
+        out.append('\tcob_frames[0] = &cob_perform_base;')
+        if getattr(self.opts, 'stack_trace', True):
+            out.append('\tmemset(cob_frames + 1, 0, COB_FRAMES_CLEAR * sizeof cob_frames[0]);')
         out.extend(body.lines)
         out.append('}')
         out.append('')
@@ -2786,9 +2798,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
                     self.stmt(st)
                 em.label(end)
             em.label(para.end_label)
-            em(f"if (frame_ptr->perform_through == {para.id}) goto *frame_ptr->return_address;")
+            em(f"if ((*frame_ptr)->through == {para.id}) goto *(*frame_ptr)->ret;")
         em.label(sec.end_label)
-        em(f"if (frame_ptr->perform_through == {sec.id}) goto *frame_ptr->return_address;")
+        em(f"if ((*frame_ptr)->through == {sec.id}) goto *(*frame_ptr)->ret;")
 
     def stmts(self, lst):
         if lst:
@@ -3733,7 +3745,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         em(f"cob_xml_parse_start({self.field(s.doc)});")
         em("while (cob_xml_parse_next()) {")
         em.ind += 1
-        self.perform_call(s.proc, s.thru, cause='PERFORM')
+        self.perform_call(s.proc, s.thru, cause='XML')
         em("if (cob_xml_parse_after())")
         em("\tbreak;")
         em.ind -= 1
@@ -4270,18 +4282,70 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         return f"!{c}" if ob.neg else c
 
     # ---------------------------------------------------------------- PERFORM
+    def cur_proc_desc(self):
+        """'paragraph P' or 'section S': where the statement being generated is."""
+        para = getattr(self, 'cur_para', None)
+        sect = getattr(self, 'cur_section', None)
+        if para is not None and para.name:
+            return f"paragraph {para.name}"
+        if sect is not None and sect.name:
+            return f"section {sect.name}"
+        return None
+
+    def site(self, what, dynamic=False):
+        """A static cob_site for the PERFORM or CALL being generated, for a
+        runtime error's stack trace."""
+        inn = self.cur_proc_desc()
+        key = (str(self.cur_loc), what, inn, dynamic)
+        sites = self.__dict__.setdefault('_sites', {})
+        sym = sites.get(key)
+        if sym is None:
+            sym = self.sym('cob_site_')
+            self.glob.append(f"static const cob_site {sym} = {{{self.locstr()}, {c_string(what)}, "
+                             f"{c_string(inn) if inn else 'NULL'}, {1 if dynamic else 0}}};")
+            sites[key] = sym
+        return sym
+
+    def frame_push(self, target, what, ret):
+        em = self.em
+        pf = self.sym('cob_pf_')
+        self.performs.append(f"static const cob_perform {pf} = {{ {target.id}, &&{ret}, &{self.site(what)} }};")
+        if getattr(self.opts, 'stack_trace', True):
+            # the frames up to COB_FRAMES_CLEAR start NULL; past them, a push
+            # clears the next itself
+            em(f"if (++frame_ptr >= cob_frames + COB_FRAMES_CLEAR) {{")
+            em(f"\tif (frame_ptr == cob_frames + COB_STACK_SIZE) cob_perform_overflow({self.locstr()});")
+            em("\tframe_ptr[1] = NULL;")
+            em("}")
+        else:
+            em(f"if (++frame_ptr == cob_frames + COB_STACK_SIZE) cob_perform_overflow({self.locstr()});")
+        em(f"*frame_ptr = &{pf};")
+
+    def frame_pop(self):
+        # a return clears its frame, so a walk from the base stops at the top
+        # (only the stack trace walks the frames)
+        if getattr(self.opts, 'stack_trace', True):
+            self.em("*frame_ptr-- = NULL;")
+        else:
+            self.em("frame_ptr--;")
+
+    PERFORM_WHAT = {'PERFORM': 'PERFORM', 'SORT_IN': 'SORT INPUT PROCEDURE',
+                    'SORT_OUT': 'SORT OUTPUT PROCEDURE', 'MERGE_OUT': 'MERGE OUTPUT PROCEDURE',
+                    'XML': 'XML PARSE PROCESSING PROCEDURE'}
+
     def perform_call(self, first, last, cause='PERFORM'):
         em = self.em
         t1 = self.resolve_proc(first)
         t2 = self.resolve_proc(last) if last else t1
         ret = self.new_label('R')
-        em(f"if (++frame_ptr == cob_frames + COB_STACK_SIZE) cob_perform_overflow({self.locstr()});")
-        em(f"frame_ptr->perform_through = {t2.id};")
-        em(f"frame_ptr->return_address = &&{ret};")
-        self.dbg_emit_cause(cause)
+        what = f"{self.PERFORM_WHAT.get(cause, 'PERFORM')} {t1.name}"
+        if t2 is not t1:
+            what += f" THRU {t2.name}"
+        self.frame_push(t2, what, ret)
+        self.dbg_emit_cause('PERFORM' if cause == 'XML' else cause)
         em(f"goto {t1.label};")
         em.label(ret)
-        em("frame_ptr--;")
+        self.frame_pop()
         if self.seg_tracking and self.cur_section is not None:
             em(f"cob_seg = {self.cur_section.segment};")
 
@@ -4884,6 +4948,12 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
         return None
 
     # ---------------------------------------------------------------- CALL
+    def call_site(self, s):
+        if isinstance(s.prog, StrLit):
+            return self.site(f'CALL "{s.prog.value.decode("latin-1").strip()}"')
+        name = getattr(s.prog, 'name', None) or 'program'
+        return self.site(f"CALL {name}", dynamic=True)
+
     def g_Call(self, s):
         it = None
         if isinstance(s.prog, StrLit):
@@ -5023,10 +5093,13 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
                 em(f"cob_call_modes = (const signed char[]){{{', '.join(modes)}}};")
             else:
                 em("cob_call_modes = NULL;")
+            em(f"cob_call_site = &{self.call_site(s)};")
             em(f"cob_s64 cob_rc64 = cob_ce.fn ? (cob_s64)cob_ce.fn({n}, cob_av) : cob_call_c(cob_ce.cfn, {n}, cob_av);")
             em("int cob_rc = (int)cob_rc64;")
         else:
+            em(f"cob_call_site = &{self.call_site(s)};")
             em(f"int cob_rc = cob_fn({n}, cob_av);")
+        em("cob_call_site = NULL;")
         em("if (cob_call_rejected) {")
         em.ind += 1
         em(f"cob_exc_where(&{self.loc_sym(s)});")
@@ -5252,15 +5325,13 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen):
             em.ind -= 1
             em("}")
 
-    def perform_section(self, sec):
+    def perform_section(self, sec, what='USE'):
         em = self.em
         ret = self.new_label('R')
-        em(f"if (++frame_ptr == cob_frames + COB_STACK_SIZE) cob_perform_overflow({self.locstr()});")
-        em(f"frame_ptr->perform_through = {sec.id};")
-        em(f"frame_ptr->return_address = &&{ret};")
+        self.frame_push(sec, f"{what} section {sec.name}", ret)
         em(f"goto {sec.label};")
         em.label(ret)
-        em("frame_ptr--;")
+        self.frame_pop()
         if getattr(self, 'seg_tracking', False) and self.cur_section is not None:
             em(f"cob_seg = {self.cur_section.segment};")
 

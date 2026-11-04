@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <strings.h>
+#include <signal.h>
 
 /* ================================================================ globals */
 
@@ -53,6 +54,93 @@ __attribute__((constructor)) static void init_pow10(void)
 int cob_initialized;
 int cob_sign_ebcdic;
 
+/* ================================================================ signals
+ *
+ * A signal that ends the run unit -- a crash (SIGSEGV, SIGBUS, SIGFPE,
+ * SIGILL), or a request to stop (SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGPIPE)
+ * -- no longer loses what the program wrote: the sequential files' buffers
+ * and standard output are flushed, a message says what ended it, with the
+ * stack trace, and then the signal is raised again with its default action,
+ * so the process ends by it as before (a shell sees the signal, a core is
+ * written where one would be). A signal the program was started with
+ * ignored, or that C code set a handler for, is left alone. */
+static const struct {
+	int sig;
+	const char *name;
+	const char *what;           /* NULL: no message (SIGPIPE) */
+	int fatal;                  /* a runtime error, not a request */
+} sig_table[] = {
+	{ SIGSEGV, "SIGSEGV", "attempt to reference unallocated memory", 1 },
+	{ SIGBUS, "SIGBUS", "attempt to reference memory that cannot be accessed", 1 },
+	{ SIGFPE, "SIGFPE", "arithmetic exception", 1 },
+	{ SIGILL, "SIGILL", "illegal instruction", 1 },
+	{ SIGINT, "SIGINT", "interrupted", 0 },
+	{ SIGTERM, "SIGTERM", "terminated", 0 },
+	{ SIGHUP, "SIGHUP", "hangup", 0 },
+	{ SIGQUIT, "SIGQUIT", "quit", 0 },
+	{ SIGPIPE, "SIGPIPE", NULL, 0 },
+};
+#define N_SIGS ((int)(sizeof sig_table / sizeof sig_table[0]))
+
+static volatile sig_atomic_t in_signal;
+
+static void on_signal(int sig)
+{
+	if (in_signal) {
+		/* a second signal while the first is handled: end at once */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	in_signal = 1;
+	/* the handling must not hang the process: if it does, SIGALRM ends it */
+	signal(SIGALRM, SIG_DFL);
+	alarm(10);
+	int i = 0;
+	while (i < N_SIGS && sig_table[i].sig != sig)
+		i++;
+	cob_scr_signal();
+	cob_flush_files();
+	if (i < N_SIGS && sig_table[i].what) {
+		fflush(stdout);
+		if (!sig_table[i].fatal && isatty(2))
+			fputc('\n', stderr);           /* past the ^C */
+		fprintf(stderr, "cobrt: %s%s (signal %s)\n", sig_table[i].fatal ? "runtime error: " : "",
+		        sig_table[i].what, sig_table[i].name);
+		cob_stack_trace();
+	}
+	fflush(stderr);
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
+static void install_signals(void)
+{
+	/* a stack of its own, so a stack overflow can still be reported */
+	static int alt_done;
+	if (!alt_done) {
+		stack_t ss;
+		ss.ss_size = 65536;
+		ss.ss_sp = malloc(ss.ss_size);
+		ss.ss_flags = 0;
+		if (ss.ss_sp && sigaltstack(&ss, NULL) == 0)
+			alt_done = 1;
+	}
+	for (int i = 0; i < N_SIGS; i++) {
+		struct sigaction old;
+		if (sigaction(sig_table[i].sig, NULL, &old) != 0)
+			continue;
+		if ((old.sa_flags & SA_SIGINFO) || old.sa_handler != SIG_DFL)
+			continue;
+		struct sigaction sa;
+		memset(&sa, 0, sizeof sa);
+		sa.sa_handler = on_signal;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_ONSTACK | SA_RESETHAND | SA_NODEFER;
+		sigaction(sig_table[i].sig, &sa, NULL);
+	}
+}
+
 void cob_init(int argc, char **argv)
 {
 	g_argc = argc;
@@ -65,6 +153,10 @@ void cob_init(int argc, char **argv)
 	const char *tr = getenv("COB_SET_TRACE");
 	if (tr && *tr && strchr("YyTt1", tr[0]))
 		cob_trace_on = 1;
+	/* a COBOL main program; a C program that calls COBOL keeps its own
+	 * signal handling */
+	if (argc > 0)
+		install_signals();
 	cob_call_init();
 }
 
@@ -174,6 +266,7 @@ void cob_fatal(const char *fmt, ...)
 		if (more) {
 			fprintf(stderr, "libcob: error: %s\n", msg);
 			print_fatal_note();
+			cob_stack_trace();
 		}
 		cob_run_exit_procs();
 		cob_close_all_files();
@@ -184,6 +277,7 @@ void cob_fatal(const char *fmt, ...)
 	fputs(msg, stderr);
 	fputc('\n', stderr);
 	print_fatal_note();
+	cob_stack_trace();
 	cob_run_exit_procs();
 	cob_close_all_files();
 	fflush(stdout);
@@ -225,6 +319,8 @@ cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64
 		fprintf(stderr, "libcob: %s: error: subscript of '%s' out of bounds: %lld\n"
 		        "note: current maximum subscript for '%s': %lld\n",
 		        loc, name, (long long)sub, name, (long long)n);
+		cob_stack_trace();
+		cob_run_exit_procs();
 		cob_close_all_files();
 		exit(1);
 	}
@@ -2782,7 +2878,11 @@ typedef struct {
 	const char *name;
 	int nargs;
 	const int *sizes;
+	const cob_site *call_site;  /* the CALL that entered it, or NULL */
+	const cob_perform **fbase;  /* its PERFORM frames */
 } cob_frame_info;
+
+const cob_site *cob_call_site;
 
 static cob_frame_info frames[256];
 static int frame_depth;
@@ -2805,6 +2905,8 @@ void cob_module_push(const char *name, int argc)
 	if (frame_depth < 256) {
 		cob_frame_info *fr = &frames[frame_depth];
 		fr->name = name;
+		fr->call_site = cob_call_site;
+		fr->fbase = NULL;
 		if (argc >= 0) {
 			fr->nargs = argc;
 			fr->sizes = cob_call_sizes;
@@ -2820,6 +2922,7 @@ void cob_module_push(const char *name, int argc)
 		}
 	}
 	cob_call_sizes = NULL;
+	cob_call_site = NULL;
 	/* cob_call_arg_omitted is deliberately not cleared here: the caller sets it
 	 * immediately before the call, and this push happens inside the callee */
 	frame_depth++;
@@ -2831,6 +2934,87 @@ void cob_module_pop(void)
 	if (frame_depth > 0)
 		frame_depth--;
 	set_ncp();
+}
+
+/* the program just entered: where its PERFORM frames are, for the stack trace */
+void cob_module_frames(const cob_perform **base)
+{
+	if (frame_depth > 0 && frame_depth <= 256)
+		frames[frame_depth - 1].fbase = base;
+}
+
+static int trace_lines;
+#define TRACE_MAX 60
+
+/* room for one more note: a long trace (deep recursion) is cut short */
+static int trace_room(void)
+{
+	if (trace_lines < TRACE_MAX) {
+		trace_lines++;
+		return 1;
+	}
+	if (trace_lines++ == TRACE_MAX)
+		fputs("note: (the rest of the stack is not shown)\n", stderr);
+	return 0;
+}
+
+static void trace_note(const cob_site *s, const char *prog, const char *callee, int times)
+{
+	if (!trace_room())
+		return;
+	fprintf(stderr, "%s: note: %s", s->where, s->what);
+	if (s->dynamic && callee)
+		fprintf(stderr, " (\"%s\")", callee);
+	if (s->in)
+		fprintf(stderr, " in %s of %s", s->in, prog ? prog : "?");
+	else
+		fprintf(stderr, " in %s", prog ? prog : "?");
+	if (times > 1)
+		fprintf(stderr, ", %d times", times);
+	fputc('\n', stderr);
+}
+
+/* one program's PERFORMs, the innermost first; one repeated in a row (a
+ * PERFORM of the paragraph it is in) is given once, with its count */
+static void trace_performs(const cob_frame_info *fr)
+{
+	const cob_perform **base = fr->fbase;
+	if (!base)
+		return;
+	int n = 0;
+	while (n < COB_STACK_SIZE - 1 && base[n + 1])
+		n++;
+	for (int i = n; i >= 1; ) {
+		const cob_perform *p = base[i];
+		int j = i;
+		while (j > 1 && base[j - 1] == p)
+			j--;
+		if (p->site)
+			trace_note(p->site, fr->name, NULL, i - j + 1);
+		i = j - 1;
+	}
+}
+
+/* After a runtime error or a fatal signal: how the run unit got where it
+ * was, the innermost first -- each PERFORM and CALL a note at its own line,
+ * as a C compiler gives an error's context, so an editor can step through
+ * them. COB_STACKTRACE=N leaves it out. */
+void cob_stack_trace(void)
+{
+	const char *e = getenv("COB_STACKTRACE");
+	if (e && *e && (strchr("NnFf0", e[0]) || !strcasecmp(e, "off")))
+		return;
+	int top = frame_depth < 256 ? frame_depth : 256;
+	trace_lines = 0;
+	if (top > 0 && cob_call_site)
+		/* a routine that isn't a COBOL program is running */
+		trace_note(cob_call_site, frames[top - 1].name, NULL, 1);
+	for (int d = top - 1; d >= 0; d--) {
+		trace_performs(&frames[d]);
+		if (frames[d].call_site && d > 0)
+			trace_note(frames[d].call_site, frames[d - 1].name, frames[d].name, 1);
+	}
+	fflush(stderr);
 }
 
 int cob_frame_nargs(void)
