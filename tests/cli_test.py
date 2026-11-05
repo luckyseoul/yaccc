@@ -150,6 +150,7 @@ def main():
     variable_files(work)
     static_calls(work)
     runner(work)
+    cobc_options2(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1070,6 +1071,71 @@ def runner(work):
     check('a recursive include', r, 1, 'loop.cfg: recursive inclusion')
     r = cfg_run('nothere.cfg')
     check('a configuration file that is not there', r, 1, 'nothere.cfg: No such file or directory')
+
+
+WIDE = ('       IDENTIFICATION DIVISION.\n'
+        '       PROGRAM-ID. WIDE.\n'
+        '       PROCEDURE DIVISION.\n'
+        '           DISPLAY "COLUMNS SEVENTY-THREE TO EIGHTY ARE PROGRAM TEXT" "-OK"\n'
+        '           STOP RUN.\n')
+
+THREE_ERRS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ERRS3.
+       PROCEDURE DIVISION.
+           MOVE 1 TO NOPE1.
+           MOVE 1 TO NOPE2.
+           MOVE 1 TO NOPE3.
+           STOP RUN.
+'''
+
+FREEFMT = '''IDENTIFICATION DIVISION.
+PROGRAM-ID. FREEF.
+PROCEDURE DIVISION.
+DISPLAY "FREE OK".
+STOP RUN.
+'''
+
+
+def cobc_options2(work):
+    """More of cobc's command line: -j, -q, -info, -P, -F, -ftext-column,
+    -fmax-errors, -ftsymbols."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+    r = run(['-j', 'cliarg.cbl'], work)
+    check('-j: build and run', r, 0, 'NARGS=+000000000')
+    r = run(['-job=one two', 'cliarg.cbl'], work)
+    check('-job=ARGS: its arguments, one string', r, 0, 'NARGS=+000000002')
+    r = run(['-q', '-brief', 'cliarg.cbl', '-o', 'quiet'], work)
+    check('-q, -brief', r, 0)
+    r = run(['-info'], work)
+    check('-info: how YACCC is set up, no source needed', r, 0, 'COB_LIBRARY_PATH')
+    r = run(['-P', 'cliarg.cbl', '-o', 'plist'], work)
+    check('-P: the listing as SOURCE.lst',
+          r if os.path.exists(os.path.join(work, 'cliarg.lst')) else
+          subprocess.CompletedProcess(r.args, -1, '', 'no cliarg.lst'), 0)
+    os.makedirs(os.path.join(work, 'lists'), exist_ok=True)
+    r = run(['-P=lists', '-ftsymbols', 'cliarg.cbl', '-o', 'plist'], work)
+    check('-P=DIR: the listing in DIR',
+          r if os.path.exists(os.path.join(work, 'lists', 'cliarg.lst')) else
+          subprocess.CompletedProcess(r.args, -1, '', 'no lists/cliarg.lst'), 0)
+    write('freef.cbl', FREEFMT)
+    r = run(['-F', 'freef.cbl', '--run'], work)
+    check('-F: free format', r, 0, 'FREE OK')
+    write('wide.cbl', WIDE)
+    r = run(['wide.cbl', '--run'], work)
+    check('past column 72 is cut without -ftext-column', r, 1, 'outside the program text')
+    r = run(['-ftext-column=80', 'wide.cbl', '--run'], work)
+    check('-ftext-column=80: columns 73-80 are program text', r, 0,
+          'COLUMNS SEVENTY-THREE TO EIGHTY ARE PROGRAM TEXT-OK')
+    r = run(['-ftext-column=60', 'wide.cbl'], work)
+    check('-ftext-column below 72 is refused', r, 2, 'from 72 to 255')
+    write('errs3.cbl', THREE_ERRS)
+    r = run(['errs3.cbl'], work)
+    check('three errors, all reported', r, 1, "'NOPE3' is not defined")
+    r = run(['-fmax-errors=2', 'errs3.cbl'], work)
+    check('-fmax-errors=2: two, then it stops', r, 1, 'too many errors (2)')
+    check('... and not the third', r, 1, None, "'NOPE3'")
 
 
 def module_ext():

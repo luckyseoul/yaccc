@@ -90,6 +90,29 @@ def build_runner(cc, verbose=False):
     return runner
 
 
+def show_info(cc):
+    """-i / -info: how this YACCC is set up, as cobc -info shows its own."""
+    import platform
+    print(f"YACCC {VERSION}")
+    print(f"  compiler     {os.path.dirname(os.path.dirname(os.path.abspath(__file__)))}")
+    print(f"  runtime      {RUNTIME_DIR} (library in {runtime_lib_dir()})")
+    try:
+        first = subprocess.run([cc, '--version'], capture_output=True, text=True).stdout.splitlines()
+        print(f"  C compiler   {cc}: {first[0] if first else '?'}")
+    except OSError:
+        print(f"  C compiler   {cc}: not found")
+    print(f"  Python       {platform.python_version()} on {platform.system()} {platform.machine()}")
+    print(f"  modules      {MODULE_EXT}")
+    print("  environment")
+    for name in ('COBCPY', 'COB_LIBRARY_PATH', 'COB_PRE_LOAD', 'COB_FILE_PATH', 'COB_RUNTIME_CONFIG',
+                 'COB_CONFIG_DIR', 'COB_VARSEQ_FORMAT', 'COB_LS_FIXED', 'COB_LS_NULLS', 'COB_LS_SPLIT',
+                 'COB_SYNC', 'COB_STACKTRACE', 'COB_DUMP_FILE', 'COB_SET_TRACE', 'COB_TRACE_FILE',
+                 'COB_CURRENT_DATE', 'CC'):
+        v = os.environ.get(name)
+        print(f"    {name:<20} {v if v is not None else '(not set)'}")
+    return 0
+
+
 def run_module(argv):
     """yacccrun [-c FILE] PROGRAM|PATH [ARGUMENT...]: run a program from a
     module yaccc -m built, as cobcrun does."""
@@ -506,6 +529,23 @@ def main(argv=None):
                     help='the collating sequence of a program that names none')
     ap.add_argument('-fmfcomment', dest='mfcomment', action='store_true',
                     help="'*' or '/' in column 1 makes a fixed-format line a comment")
+    ap.add_argument('-j', '-job', dest='job', nargs='?', const='', default=None, metavar='ARGS',
+                    help='run the program after building it, with ARGS (one string, split as a '
+                         'shell would) as its arguments: cobc\'s -j; --run takes them as words')
+    ap.add_argument('-q', '-brief', dest='brief', action='store_true',
+                    help='no display of the commands run (the default; -v shows them)')
+    ap.add_argument('-i', '-info', dest='info', action='store_true',
+                    help='show how YACCC is set up: its version, C compiler, runtime and the '
+                         'environment variables it reads, then exit')
+    ap.add_argument('-P', dest='plisting', nargs='?', const='', default=None, metavar='DIR|FILE',
+                    help='write the listing (as -t) to FILE, or SOURCE.lst in DIR or here')
+    ap.add_argument('-ftsymbols', dest='tsymbols', action='store_true',
+                    help='the data map in the listing (it always has one)')
+    ap.add_argument('-ftext-column', dest='text_column', type=int, metavar='72..255',
+                    help='the right margin of fixed-format source: the program text is columns '
+                         '8 to this one (72 by default)')
+    ap.add_argument('-fmax-errors', dest='max_errors', type=int, metavar='N',
+                    help='the errors a compile reports before it stops (20 by default)')
     ap.add_argument('-fdump', dest='dump', metavar='ALL|WS,LO,LS,FD',
                     help='after a runtime error or a crash, write out the data of the '
                          'program: ALL (also -fdump alone), or WORKING-STORAGE (WS), '
@@ -539,7 +579,7 @@ def main(argv=None):
                          'directives, as free-format COBOL (to -o FILE or standard output)')
     ap.add_argument('-fsyntax-only', dest='syntax_only', action='store_true',
                     help='check the program and report errors; write nothing')
-    ap.add_argument('-free', '--free', dest='fmt', action='store_const', const='free', help='free-format source')
+    ap.add_argument('-free', '--free', '-F', dest='fmt', action='store_const', const='free', help='free-format source')
     ap.add_argument('-fixed', '--fixed', dest='fmt', action='store_const', const='fixed', help='fixed-format source')
     ap.add_argument('-I', dest='include', action='append', default=[], help='copybook directory')
     ap.add_argument('-D', dest='define', action='append', default=[], metavar='NAME[=VALUE]',
@@ -584,7 +624,8 @@ def main(argv=None):
     # -fdump alone is -fdump=ALL: an optional value would take the source
     # file's name that follows it
     argv = list(sys.argv[1:] if argv is None else argv)
-    bare = {'-fdump': '-fdump=ALL', '-W': '-Wall', '-save-temps': '-save-temps=.'}
+    bare = {'-fdump': '-fdump=ALL', '-W': '-Wall', '-save-temps': '-save-temps=.',
+            '-j': '-job=', '-job': '-job=', '-P': '-P='}
     k = argv.index('--run') if '--run' in argv else len(argv)
     head = []
     i = 0
@@ -607,6 +648,8 @@ def main(argv=None):
             return 1
         print(f"runtime library built: {os.path.join(runtime_lib_dir(), 'libcobrt.a')}")
         return 0
+    if args.info:
+        return show_info(args.cc)
     if not args.sources:
         ap.error('no source files given')
     # a positional token that is not a readable file is usually an argument
@@ -705,6 +748,25 @@ def main(argv=None):
         source.MF_COMMENT = True
     opts.xref = args.xref
     opts.listing = args.listing or args.listing_wide
+    if args.plisting is not None and not opts.listing:
+        # -P[=DIR|FILE]: the listing, beside the source's name in DIR
+        base = os.path.splitext(os.path.basename(args.sources[0]))[0] + '.lst' if args.sources else 'yaccc.lst'
+        pl = args.plisting
+        opts.listing = os.path.join(pl, base) if pl and os.path.isdir(pl) else (pl or base)
+    if args.text_column is not None:
+        if not 72 <= args.text_column <= 255:
+            ap.error(f"-ftext-column={args.text_column}: the margin is a column from 72 to 255")
+        from . import source
+        source.set_text_column(args.text_column)
+    if args.max_errors is not None:
+        if args.max_errors < 1:
+            ap.error(f"-fmax-errors={args.max_errors}: at least 1")
+        DIAG.max_errors = args.max_errors
+    if args.job is not None:
+        # -j: build and run, the ARGS one string as cobc takes them
+        import shlex
+        args.run = True
+        run_args[:0] = shlex.split(args.job)
     if args.dump:
         from .dumpgen import parse_dump_scopes
         try:

@@ -66,7 +66,8 @@ class CompileError(Exception):
             for ln in (self.loc.line, self.loc.line - 1):
                 cut = _CUT.get((self.loc.file, ln))
                 if cut:
-                    out += (f"\n  note: line {ln} runs past column 72; in fixed-format source "
+                    from . import source
+                    out += (f"\n  note: line {ln} runs past column {source.TEXT_COLUMN}; in fixed-format source "
                             f"'{cut.strip()}' is outside the program text and ignored")
                     break
         return out
@@ -97,6 +98,7 @@ class Diagnostics:
         self.no_warnings = False
         self.warn_off = set()
         self.warn_errors = False
+        self.max_errors = MAX_ERRORS     # -fmax-errors
 
     def error(self, e, loc=None):
         if not isinstance(e, CompileError):
@@ -108,8 +110,8 @@ class Diagnostics:
             return
         self.items.append(('error', e))
         self.nerrors += 1
-        if self.nerrors >= MAX_ERRORS:
-            self.items.append(('error', CompileError(f"too many errors ({MAX_ERRORS}); stopping")))
+        if self.nerrors >= self.max_errors:
+            self.items.append(('error', CompileError(f"too many errors ({self.max_errors}); stopping")))
             raise ErrorsReported()
 
     def warn(self, msg, loc=None, name='others'):

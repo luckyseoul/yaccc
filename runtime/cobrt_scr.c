@@ -1034,10 +1034,15 @@ void cob_scr_display_special(int what, int line, int col, int fg, int bg)
 }
 
 /* ACCEPT TIMEOUT n: the next ACCEPT ends with CRT STATUS 8001 when no key
- * comes for n seconds */
-void cob_scr_set_timeout(int seconds)
+ * comes for n units: seconds, or what COB_TIMEOUT_SCALE says, as in
+ * GnuCOBOL -- 0 seconds (Micro Focus's, the default), 1 tenths (ACUCOBOL's),
+ * 2 hundredths, 3 thousandths */
+void cob_scr_set_timeout(int n)
 {
-	timeout_ms = seconds < 0 ? -1 : (long)seconds * 1000;
+	static const long unit_ms[] = { 1000, 100, 10, 1 };
+	const char *e = getenv("COB_TIMEOUT_SCALE");
+	int k = e && e[0] >= '0' && e[0] <= '3' && !e[1] ? e[0] - '0' : 0;
+	timeout_ms = n < 0 ? -1 : (long)n * unit_ms[k];
 }
 
 int cob_scr_accept_field(cob_field *f, int line, int col, int attrs, int fg, int bg, int prompt,

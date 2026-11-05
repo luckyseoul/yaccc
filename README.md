@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,008** lines of Python in the compiler, standard library only — no parser
+- **17,082** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -270,7 +270,14 @@ cobc's options that build scripts carry over work the same way:
 
 | Option | Effect |
 |---|---|
+| `-j`, `-job[=ARGS]` | build and run the program, ARGS (one string, split as a shell would) its arguments |
+| `-i`, `-info` | show how YACCC is set up: version, C compiler, runtime, and the environment variables it reads |
+| `-q`, `-brief` | no display of the commands run (the default; `-v` shows them) |
+| `-F` | free-format source (`-free`) |
+| `-ftext-column=N` | the right margin of fixed-format source: program text is columns 8 to N (72 to 255; 72 by default) |
+| `-fmax-errors=N` | the errors a compile reports before it stops (20 by default) |
 | `-t FILE`, `-T FILE` | write a listing of the compile to FILE (below); `-T` is the same, as the listing is never cut to a page width |
+| `-P[=DIR\|FILE]`, `-ftsymbols` | the listing in FILE, or as SOURCE.lst in DIR or here; it always has the data map `-ftsymbols` asks for |
 | `-Xref` | add a cross-reference to the listing (with no `-t`, the listing is `SOURCE.lst`) |
 | `-A OPTIONS`, `-Q OPTIONS` | options for the C compiler and for the link, split as a shell would; each may be repeated |
 | `-save-temps[=DIR]` | keep the generated C, in DIR or the current directory |
@@ -369,6 +376,7 @@ Runtime environment:
 | `COB_TRACE_FILE` | write the trace to this file instead of standard error (`+file` appends) |
 | `COB_TRACE_FORMAT` | the layout of a trace line: `%P` program, `%S` what is traced (`Paragraph: NAME`), `%L` line, `%F` source file; default `Program-Id:  %P%S Line: %L` |
 | `COB_LIBRARY_PATH` | directories, `:`-separated, where CALL looks for a module `NAME.so` before the current directory |
+| `COB_TIMEOUT_SCALE=0\|1\|2\|3` | the unit of ACCEPT ... TIMEOUT: a second (0, the default), a tenth (1), a hundredth (2), a thousandth (3), as in GnuCOBOL |
 | `COB_RUNTIME_CONFIG` | a file of these settings, read when the program starts, in GnuCOBOL's `runtime.cfg` format (below); without it, `COB_CONFIG_DIR/runtime.cfg` when `COB_CONFIG_DIR` is set |
 | `COB_PRE_LOAD` | modules to load at start-up, `:`-separated, so CALL finds the programs and ENTRY points they hold |
 | `COB_LS_SPLIT=Y` | a LINE SEQUENTIAL line longer than the record is read as several records (status 06), not cut short (status 04) |
@@ -686,7 +694,9 @@ and nothing to configure.
   input, 8001 TIMEOUT. `ACCEPT x FROM ESCAPE KEY` gives the same code, and
   ON EXCEPTION runs for any key but Enter. CURSOR IS (or
   `IS SPECIAL-NAMES CURSOR`) says where an ACCEPT starts and is set to
-  where it ended; `TIMEOUT n` ends an ACCEPT after n seconds without a key.
+  where it ended; `TIMEOUT n` ends an ACCEPT after n seconds without a key
+(`COB_TIMEOUT_SCALE` as in GnuCOBOL: 1 makes the unit a tenth of a second,
+2 a hundredth, 3 a thousandth).
 
 Runtime variables: `COB_SCREEN_EXCEPTIONS=Y` lets Page Up, Page Down, Up
 on the first field, Down on the last and Escape end an ACCEPT;
@@ -1301,12 +1311,12 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 17,008 lines of Python across nineteen files; the runtime it
-links against is 18,907 lines of C.
+The compiler is 17,082 lines of Python across nineteen files; the runtime it
+links against is 18,912 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
-| `lib/yaccc/source.py` | 366 | reference formats, continuations, directives, comment-entries, debugging lines |
+| `lib/yaccc/source.py` | 376 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 731 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 850) |
@@ -1322,7 +1332,7 @@ links against is 18,907 lines of C.
 | `runtime/cobrt_core.c` | 3,575 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,187 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
-| `runtime/cobrt_scr.c` | 1,260 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
+| `runtime/cobrt_scr.c` | 1,265 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
 | `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
 | `runtime/cobrt_fn.c` | 887 | intrinsic functions |

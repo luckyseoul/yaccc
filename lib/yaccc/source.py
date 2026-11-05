@@ -11,7 +11,16 @@ ID_COMMENT_PARAS = {'AUTHOR', 'INSTALLATION', 'DATE-WRITTEN', 'DATE-COMPILED',
 ID_PARAS = ID_COMMENT_PARAS | {'PROGRAM-ID', 'IDENTIFICATION', 'ID', 'ENVIRONMENT',
                                'DATA', 'PROCEDURE', 'FUNCTION-ID', 'END'}
 
-TEXT_WIDTH = 65   # columns 8..72
+# fixed format: the program text is columns 8 to TEXT_COLUMN (72, or what
+# -ftext-column says); TEXT_WIDTH is its width
+TEXT_COLUMN = 72
+TEXT_WIDTH = TEXT_COLUMN - 7
+
+
+def set_text_column(n):
+    global TEXT_COLUMN, TEXT_WIDTH
+    TEXT_COLUMN = n
+    TEXT_WIDTH = n - 7
 
 # a logical line that is nothing but a COPY statement, ending in a period
 _COPY_STMT = re.compile(r'\s*COPY\s', re.I)
@@ -184,15 +193,16 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
             if len(raw) < 7:
                 continue
             ind = raw[6]
-            text = raw[7:72] if mode == 'fixed' else raw[7:]
+            text = raw[7:TEXT_COLUMN] if mode == 'fixed' else raw[7:]
             if ind in '*/':
                 continue
-            if mode == 'fixed' and len(raw) > 72 and raw[72:].strip():
+            if mode == 'fixed' and len(raw) > TEXT_COLUMN and raw[TEXT_COLUMN:].strip():
                 # columns 73-80 hold sequence or identification text; code
-                # that runs past column 72 is silently cut, which makes for
-                # baffling errors, so an error there says so
-                note_cut(path, idx + 1, raw[72:])
-                if len(raw.rstrip()) > 80 and not raw[72:].lstrip().startswith('*>'):
+                # that runs past column 72 (or -ftext-column's) is silently
+                # cut, which makes for baffling errors, so an error there says so
+                note_cut(path, idx + 1, raw[TEXT_COLUMN:])
+                if len(raw.rstrip()) > max(80, TEXT_COLUMN) and \
+                        not raw[TEXT_COLUMN:].lstrip().startswith('*>'):
                     overlong.append(idx + 1)
             st = raw[6:].lstrip() if ind == '>' else text.lstrip()
             if st.startswith('>>') or (ind == '>' and raw[6:8] == '>>'):
@@ -270,9 +280,9 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
             emit(LogicalLine(text, loc, not raw[:1].isspace() and raw != '', len(text)))
     if overlong:
         more = f" (and {len(overlong) - 1} more line{'s' if len(overlong) > 2 else ''})" if len(overlong) > 1 else ''
-        DIAG.warn(f"text runs past column 80{more}; in fixed-format source everything after "
-                  f"column 72 is ignored (-free selects free format)", Loc(path, overlong[0]),
-                  'column-overflow')
+        DIAG.warn(f"text runs past column {max(80, TEXT_COLUMN)}{more}; in fixed-format source "
+                  f"everything after column {TEXT_COLUMN} is ignored (-free selects free format, "
+                  f"-ftext-column moves the margin)", Loc(path, overlong[0]), 'column-overflow')
     _join_trailing_hyphen(out)
     _strip_comment_entries(out, fmt)
     return out, regions
