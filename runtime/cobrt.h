@@ -363,6 +363,16 @@ void cob_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 
  * itself, which error procedures and tests compare) */
 void cob_fatal_note(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void cob_perform_overflow(const char *loc) __attribute__((noreturn));
+
+/* -fprof (runtime/cobrt_prof.c): an entry per section and paragraph */
+typedef struct {
+	const char *prog, *source, *section, *para;
+	int line;
+	int kind;                     /* 1 a section, 0 a paragraph */
+	unsigned long long calls, ns;
+} cob_prof_entry;
+void cob_prof_register(cob_prof_entry *t, int n, int *done);
+void cob_prof_switch(cob_prof_entry *e, int count);
 int cob_perform_osvs(const cob_perform ***fp, const cob_perform **base, int id);
 cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *obj, const char *table,
                     const char *loc);

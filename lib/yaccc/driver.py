@@ -19,7 +19,8 @@ PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
 RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
                'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c', 'cobrt_xml.c',
-               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c', 'cobrt_dump.c', 'cobrt_conf.c']
+               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c', 'cobrt_dump.c', 'cobrt_conf.c',
+               'cobrt_prof.c']
 VERSION = '1.0'
 
 
@@ -665,6 +666,9 @@ def main(argv=None):
                     choices=['ok', 'warning', 'error'],
                     help='B#101, O#777, X#FF and H#FF as numeric literals, as ACUCOBOL has them '
                          '(-std=acu allows them)')
+    ap.add_argument('-fprof', dest='prof', action='store_true',
+                    help='profile the run: the calls and the time of every section and paragraph '
+                         'written as CSV when it ends, to prof-PROGRAM.csv or $COB_PROF_FILE')
     ap.add_argument('-fodoslide', dest='odoslide', action='store_true', default=None,
                     help='every table with OCCURS DEPENDING ON takes its current size, and what '
                          'follows it in the record moves up with it: IBM Enterprise COBOL\'s '
@@ -777,6 +781,7 @@ def main(argv=None):
     opts.space_raw = d.space_raw
     if args.dpc_in_data is not None:
         opts.dpc_in_data = args.dpc_in_data
+    opts.prof = args.prof
     opts.odoslide = bool(args.odoslide)
     opts.odoslide_set = args.odoslide is not None
     opts.check = args.check

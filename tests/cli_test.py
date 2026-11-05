@@ -156,6 +156,7 @@ def main():
     binary_options(work)
     register_literal_assign(work)
     move_ibm(work)
+    profiling(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1530,6 +1531,76 @@ def move_ibm(work):
     check('... which -std=ibm sets', r, 0, '[********]')
     r = run(['-std=ibm', '-fno-move-ibm', 'mvc.cbl', '--run'], work)
     check('-fno-move-ibm over -std=ibm', r, 0, '[**BCDEFG]')
+
+
+PROF_MAIN = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PROFMAIN.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 S PIC 9(9) VALUE 0.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           PERFORM WORK-PARA 10 TIMES.
+           PERFORM CHECK-PARA.
+           CALL "PROFSUB".
+           DISPLAY "S=" S.
+           STOP RUN.
+       WORK-PARA.
+           ADD 1 TO S.
+       CHECK-PARA.
+           IF S = 0
+              PERFORM NEVER-PARA
+           END-IF.
+       NEVER-PARA.
+           DISPLAY "NEVER".
+       END PROGRAM PROFMAIN.
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PROFSUB.
+       PROCEDURE DIVISION.
+       SUB-SECTION SECTION.
+       SUB-PARA.
+           GOBACK.
+       END PROGRAM PROFSUB.
+'''
+
+
+def profiling(work):
+    """-fprof: each section's and paragraph's calls and time, as CSV."""
+    def file_result(path):
+        if os.path.exists(path):
+            with open(path) as f:
+                return subprocess.CompletedProcess([], 0, f.read(), '')
+        return subprocess.CompletedProcess([], -1, '', f'no {path}')
+    with open(os.path.join(work, 'profmain.cbl'), 'w', encoding='latin-1') as f:
+        f.write(PROF_MAIN)
+    out = os.path.join(work, 'prof-PROFMAIN.csv')
+    if os.path.exists(out):
+        os.remove(out)
+    r = run(['profmain.cbl', '--run'], work)
+    check('without -fprof no profile is written', r if not os.path.exists(out) else
+          subprocess.CompletedProcess(r.args, -1, '', 'a profile was written'), 0, 'S=000000010')
+    r = run(['-fprof', 'profmain.cbl', '--run'], work)
+    check('-fprof: the program runs as before', r, 0, 'S=000000010')
+    prof = file_result(out)
+    check('... and writes prof-PROGRAM.csv', prof, 0,
+          'program,section,paragraph,line,kind,calls,time-ms,percent')
+    check('... a paragraph PERFORMed ten times: ten calls', prof, 0, 'PROFMAIN,,WORK-PARA,13,paragraph,10,')
+    check('... one never run: none', prof, 0, 'PROFMAIN,,NEVER-PARA,19,paragraph,0,0.000,0.00')
+    check('... a CALLed program\'s section, with its paragraphs', prof, 0,
+          'PROFSUB,SUB-SECTION,,25,section,1,')
+    old = os.environ.get('COB_PROF_FILE')
+    os.environ['COB_PROF_FILE'] = 'run-$$.csv'
+    try:
+        r = run(['-fprof', 'profmain.cbl', '--run'], work)
+    finally:
+        if old is None:
+            del os.environ['COB_PROF_FILE']
+        else:
+            os.environ['COB_PROF_FILE'] = old
+    named = [n for n in os.listdir(work) if n.startswith('run-') and n.endswith('.csv')
+             and n[4:-4].isdigit()]
+    check('COB_PROF_FILE names the file, $$ the process', r if named else
+          subprocess.CompletedProcess(r.args, -1, '', 'no run-PID.csv'), 0)
 
 
 def module_ext():

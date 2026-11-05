@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,660** lines of Python in the compiler, standard library only — no parser
+- **17,745** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -295,6 +295,7 @@ cobc's options that build scripts carry over work the same way:
 | `-fassign-clause=dynamic\|mf\|external\|ibm` | what `ASSIGN word` names (see *Dialects*) |
 | `-fnot-register=NAME` | NAME (`TALLY`, `RETURN-CODE`, ...) is an ordinary word rather than a special register |
 | `-facu-literals=ok` | ACUCOBOL's `B#`, `O#`, `X#` and `H#` numeric literals |
+| `-fprof` | profile the run: each section's and paragraph's calls and own time, written as CSV when it ends (see below) |
 | `-fodoslide`, `-fno-odoslide` | every table with OCCURS DEPENDING ON takes its current size and what follows it in the record moves up (IBM's layout; Micro Focus's `$SET ODOSLIDE` does the same), or not (the default; see *OCCURS DEPENDING ON*) |
 | `-fcomplex-odo` | accepted: a table with OCCURS DEPENDING ON may be followed by other items, or nested, without it |
 | `-fperform-osvs`, `-farithmetic-osvs`, `-fmove-ibm` | OS/VS PERFORM returns, intermediate precision, and IBM's overlapping MOVE (see *Dialects*; `-std=ibm` sets all three) |
@@ -446,6 +447,7 @@ Runtime environment:
 | `COB_VARSEQ_FORMAT=0\|1\|2\|3` | the header before each record of a variable-length SEQUENTIAL file, as GnuCOBOL has it: two bytes big-endian then two zero bytes (0, the default), four bytes big-endian (1), four bytes in the machine's order (2), two bytes big-endian (3) |
 | `COB_SYNC=Y` | each change to a relative or indexed file waits until it is on the disk |
 | `COB_STACKTRACE=N` | a runtime error or a signal prints no stack trace, only its message |
+| `COB_PROF_FILE` | the file a `-fprof` profile is written to (`$$` the process id) instead of `prof-PROGRAM.csv` |
 | `COB_DUMP_FILE` | the file a `-fdump` dump is appended to, instead of standard error; `NONE`: no dump |
 | `COB_SQL_DATABASE`, `COB_SQL_USER`, `COB_SQL_PASSWORD` | the database of a program that runs SQL without CONNECT |
 | `COB_SQL_TRACE=Y` | write each SQL statement and its SQLCODE to standard error |
@@ -654,6 +656,32 @@ Breakpoint 1 at 0x2bea: file payroll.cbl, line 120.
 Breakpoint 1, prog_1 (...) at payroll.cbl:120
 120            DISPLAY "TOTAL: " WS-TOTAL.
 ```
+
+With `-fprof`, a run says where its time went. When it ends, the calls and
+the time of every section and paragraph of the programs compiled with
+`-fprof` are written as CSV to `prof-PROGRAM.csv` (PROGRAM the main program),
+or to the file `COB_PROF_FILE` names (`$$` in it becomes the process id). A
+paragraph's time is its own: what it PERFORMs and the programs it CALLs are
+counted where their procedures are. A section adds up its paragraphs. A
+procedure that never ran shows no calls, so the profile is a coverage
+report too:
+
+```
+$ ./yaccc -fprof examples/payroll.cbl && ./payroll > /dev/null
+$ cat prof-PAYROLL.csv
+program,section,paragraph,line,kind,calls,time-ms,percent
+PAYROLL,,0000-MAIN,113,paragraph,1,0.069,29.14
+PAYROLL,2000-PRODUCE-REPORT,,123,section,1,0.137,57.83
+PAYROLL,2000-PRODUCE-REPORT,2000-START,124,paragraph,1,0.137,57.79
+PAYROLL,2000-PRODUCE-REPORT,2000-EXIT,145,paragraph,1,0.000,0.03
+PAYROLL,2100-SUBROUTINES,,148,section,0,0.031,13.01
+PAYROLL,2100-SUBROUTINES,2100-RETURN-RECORD,149,paragraph,13,0.001,0.43
+PAYROLL,2100-SUBROUTINES,2200-COMPUTE-PAY,154,paragraph,12,0.009,3.85
+...
+```
+
+Each entry and return reads the clock once, which costs little: the
+Mandelbrot example runs in the same 40 ms with it.
 
 ## Calling C, and C calling COBOL
 
@@ -1395,7 +1423,7 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 17,660 lines of Python across twenty files; the runtime it
+The compiler is 17,660 lines of Python across twenty-one files; the runtime it
 links against is 18,997 lines of C.
 
 | File | Lines | Role |
@@ -1405,13 +1433,14 @@ links against is 18,997 lines of C.
 | `lib/yaccc/directives.py` | 497 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,206 | recursive-descent parser to the AST (`nodes.py`, 852) |
 | `lib/yaccc/data.py` | 705 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,935 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,944 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
 | `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `lib/yaccc/dumpgen.py` | 148 | `-fdump`: each program's data as a table the runtime walks after an error |
+| `lib/yaccc/profgen.py` | 71 | `-fprof`: each program's table of sections and paragraphs, and the switches between them |
 | `lib/yaccc/odogen.py` | 197 | OCCURS DEPENDING ON at run time: the current size of a variable group, the place of the items after a variable table |
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
 | `runtime/cobrt_core.c` | 3,643 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
@@ -1428,10 +1457,11 @@ links against is 18,997 lines of C.
 | `runtime/cobrt_xmlp.c` | 901 | XML PARSE: the document read into events |
 | `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
 | `runtime/cobrt_sql.c` | 1,454 | embedded SQL on SQLite and PostgreSQL, their client libraries loaded at run time |
+| `runtime/cobrt_prof.c` | 126 | `-fprof`: the time charged to each procedure, and the CSV written at the end of the run |
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
 | `runtime/cobrt_conf.c` | 394 | runtime configuration files (`COB_RUNTIME_CONFIG`), GnuCOBOL's `runtime.cfg` format |
 | `runtime/yacccrun.c` | 30 | the `yacccrun` program: a module's program run as the main program |
-| `runtime/cobrt.h` | 1,249 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,259 | runtime interface and inline fast paths |
 
 Design choices:
 

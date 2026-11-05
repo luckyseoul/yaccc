@@ -15,6 +15,7 @@ from .nodes import *
 from .dbggen import DebugGen
 from .dumpgen import DumpGen
 from .odogen import OdoLayout, storage_children
+from .profgen import ProfGen
 from .rwgen import ReportWriterGen
 from .scrgen import ScreenGen
 from .sqlgen import SqlGen
@@ -222,10 +223,12 @@ SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_
                          '\xf4': 'X_F4', '\xf5': 'X_F5', '\xe4': 'X_E4', '\xe5': 'X_E5'}
 
 
-class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
+class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, ProfGen):
     def __init__(self, programs, opts):
         self.programs = programs
+        self.opts = opts
         self.odo_init()
+        self.prof_init()
         self.udf_names = set()
         self.opts = opts
         # -Xref: every reference to a data item or procedure, as it resolves
@@ -1528,6 +1531,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
                f'{it.size}, &{self.item_attr(it)}), cob_chain_arg({i}));')
         rebind_at = len(em.lines)
         decls = [s for s in prog.declaratives]
+        # -fprof: the program's procedures, registered as it starts them
+        self.prof_begin(prog, decls + list(prog.sections))
         if decls:
             em("goto L_start;")
             for sec in decls:
@@ -3018,6 +3023,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
         sec.end_label = f"{sec.label}_end"
         em(f"/* SECTION {sec.name or '(unnamed)'} */")
         em.label(sec.label)
+        self.prof_enter(sec)
         self.seg_enter(sec)
         self.dbg_label(sec)
         if self.opts.trace and sec.name:
@@ -3028,6 +3034,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
             para.end_label = f"{para.label}_end"
             em(f"/* PARAGRAPH {para.name or '(unnamed)'} */")
             em.label(para.label)
+            self.prof_enter(para)
             self.seg_enter(sec)
             self.dbg_label(para)
             if self.opts.trace and para.name:
@@ -4628,6 +4635,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
         em(f"goto {t1.label};")
         em.label(ret)
         self.frame_pop()
+        self.prof_resume()
         if self.seg_tracking and self.cur_section is not None:
             em(f"cob_seg = {self.cur_section.segment};")
 
@@ -5426,6 +5434,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
             em(f"cob_call_site = &{self.call_site(s)};")
             em(f"int cob_rc = cob_fn({n}, cob_av);")
         em("cob_call_site = NULL;")
+        self.prof_resume()
         em("if (cob_call_rejected) {")
         em.ind += 1
         em(f"cob_exc_where(&{self.loc_sym(s)});")
