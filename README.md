@@ -25,7 +25,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
 - **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **73** differential test programs, compared with GnuCOBOL byte for byte:
+- **77** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
   run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
   baselines checked by hand).
@@ -105,7 +105,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 73 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 77 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
@@ -130,11 +130,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 68 of the 73 run and all 68 pass (the `.noref` ones against their
+  3.1.2, 72 of the 77 run and all 72 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 73 pass, built with gcc.
+All 77 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -366,6 +366,9 @@ Runtime environment:
 | `COB_LIBRARY_PATH` | directories, `:`-separated, where CALL looks for a module `NAME.so` before the current directory |
 | `COB_PRE_LOAD` | modules to load at start-up, `:`-separated, so CALL finds the programs and ENTRY points they hold |
 | `COB_LS_SPLIT=Y` | a LINE SEQUENTIAL line longer than the record is read as several records (status 06), not cut short (status 04) |
+| `COB_LS_FIXED=Y` | a LINE SEQUENTIAL record is written at its full length, trailing spaces kept |
+| `COB_LS_NULLS=Y` | in a LINE SEQUENTIAL record, a character below space is written after a NUL and read back from the two, so a record can hold any byte, a newline too |
+| `COB_VARSEQ_FORMAT=0\|1\|2\|3` | the header before each record of a variable-length SEQUENTIAL file, as GnuCOBOL has it: two bytes big-endian then two zero bytes (0, the default), four bytes big-endian (1), four bytes in the machine's order (2), two bytes big-endian (3) |
 | `COB_SYNC=Y` | each change to a relative or indexed file waits until it is on the disk |
 | `COB_STACKTRACE=N` | a runtime error or a signal prints no stack trace, only its message |
 | `COB_DUMP_FILE` | the file a `-fdump` dump is appended to, instead of standard error; `NONE`: no dump |
@@ -952,11 +955,19 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - Organizations: sequential (fixed and variable length), line sequential,
   relative, and indexed with alternate keys and duplicates (duplicates are
   returned in WRITE/REWRITE order).
+- Sequential and line sequential files are GnuCOBOL's byte for byte, so a
+  file one compiler's program writes the other's reads: a variable-length
+  record follows a header in the format `COB_VARSEQ_FORMAT` chooses, two
+  bytes big-endian and two zero bytes by default. A file in the four-byte
+  format YACCC used to write is recognised by its first header and read,
+  extended and rewritten in that format.
 - Line sequential: a line ends at LF or CR LF; a READ of a line longer than
   the record gets what fits and status 04 when the rest wasn't only spaces,
   or, with `COB_LS_SPLIT=Y` (GnuCOBOL 3.2's option), reads the rest as the
   next records, with status 06 for each one that more follows. A WRITE drops
-  the record's trailing spaces.
+  the record's trailing spaces, unless `COB_LS_FIXED=Y`; with
+  `COB_LS_NULLS=Y` a record can hold any byte (GnuCOBOL's options, measured
+  against cobc).
 - Access modes: sequential, random and dynamic.
 - FILE STATUS codes follow the standard, including 04/05/07/14/24/35/38/41–49.
 
@@ -1254,6 +1265,9 @@ All of these were checked against GnuCOBOL 3.1.2:
     about each "implicit CLOSE") but then exits with the signal's number as an
     ordinary status (15 for SIGTERM), which a shell can't tell from a program
     that chose to return 15, and which keeps a script running after Ctrl-C.
+14. **REWRITE of a variable-length SEQUENTIAL record** of the length it was
+    read with replaces it. GnuCOBOL 3.1.2 refuses it with status 44 (record
+    overflow) whatever the length.
 
 ## How it works
 
@@ -1262,7 +1276,7 @@ compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
 The compiler is 16,883 lines of Python across nineteen files; the runtime it
-links against is 18,283 lines of C.
+links against is 18,464 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
@@ -1281,7 +1295,7 @@ links against is 18,283 lines of C.
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
 | `runtime/cobrt_core.c` | 3,559 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
-| `runtime/cobrt_io.c` | 3,007 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_io.c` | 3,187 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,260 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
 | `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
@@ -1294,7 +1308,7 @@ links against is 18,283 lines of C.
 | `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
 | `runtime/cobrt_sql.c` | 1,454 | embedded SQL on SQLite and PostgreSQL, their client libraries loaded at run time |
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
-| `runtime/cobrt.h` | 1,228 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,229 | runtime interface and inline fast paths |
 
 Design choices:
 

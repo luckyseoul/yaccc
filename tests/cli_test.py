@@ -147,6 +147,7 @@ def main():
     dumps(work)
     listings(work)
     cobc_options(work)
+    variable_files(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -855,6 +856,79 @@ def cobc_options(work):
     check('-fec of a check YACCC does not compile in or out', r, 2, 'range checks')
     r = run(['-fstack-check', '-fsource-location', '-ffold-copy=LOWER', 'cliarg.cbl', '--run'], work)
     check('-fstack-check, -fsource-location, -ffold-copy', r, 0, 'NARGS=')
+
+
+VARREAD = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. VARREAD.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "old.dat"
+               ORGANIZATION IS SEQUENTIAL.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F RECORD VARYING FROM 1 TO 20 DEPENDING ON L.
+       01 R PIC X(20).
+       WORKING-STORAGE SECTION.
+       01 L PIC 99.
+       01 EOF-FLAG PIC X VALUE "N".
+       PROCEDURE DIVISION.
+           OPEN I-O F.
+           READ F.
+           READ F.
+           MOVE "defghij" TO R.
+           REWRITE R.
+           CLOSE F.
+           OPEN EXTEND F.
+           MOVE "END" TO R. MOVE 3 TO L. WRITE R.
+           CLOSE F.
+           OPEN INPUT F.
+           PERFORM UNTIL EOF-FLAG = "Y"
+               READ F AT END MOVE "Y" TO EOF-FLAG
+                 NOT AT END DISPLAY L " [" R (1:L) "]"
+               END-READ
+           END-PERFORM.
+           CLOSE F.
+           STOP RUN.
+'''
+
+
+def variable_files(work):
+    """Variable-length SEQUENTIAL files: a file in the format YACCC wrote
+    before it followed GnuCOBOL's is still read, extended and rewritten in
+    that format; REWRITE keeps each format's header."""
+    import struct
+    with open(os.path.join(work, 'varread.cbl'), 'w', encoding='latin-1') as f:
+        f.write(VARREAD)
+    exe = os.path.join(work, 'varread')
+    r = run(['varread.cbl', '-o', exe], work)
+    check('a variable-length file program builds', r, 0)
+    want = '03 [ABC]\n07 [defghij]\n03 [END]\n'
+    headers = {
+        'the old format (four bytes, machine order)': lambda n: struct.pack('<I', n),
+        'format 0 (the default)': lambda n: struct.pack('>H', n) + b'\0\0',
+    }
+    for label, hdr in headers.items():
+        data = hdr(3) + b'ABC' + hdr(7) + b'DEFGHIJ'
+        path = os.path.join(work, 'old.dat')
+        with open(path, 'wb') as f:
+            f.write(data)
+        r = subprocess.run([exe], capture_output=True, text=True, cwd=work)
+        check(f'variable-length records in {label}: read, rewritten, extended',
+              r if r.stdout == want else subprocess.CompletedProcess(r.args, -1, r.stdout, r.stderr), 0)
+        with open(path, 'rb') as f:
+            back = f.read()
+        check(f'... and still in {label}',
+              r if back == hdr(3) + b'ABC' + hdr(7) + b'defghij' + hdr(3) + b'END' else
+              subprocess.CompletedProcess(r.args, -1, repr(back), ''), 0)
+    # COB_VARSEQ_FORMAT=3: two-byte headers, REWRITE at the right place
+    path = os.path.join(work, 'old.dat')
+    with open(path, 'wb') as f:
+        f.write(struct.pack('>H', 3) + b'ABC' + struct.pack('>H', 7) + b'DEFGHIJ')
+    r = subprocess.run([exe], capture_output=True, text=True, cwd=work,
+                       env=dict(os.environ, COB_VARSEQ_FORMAT='3'))
+    check('COB_VARSEQ_FORMAT=3: read, rewritten, extended',
+          r if r.stdout == want else subprocess.CompletedProcess(r.args, -1, r.stdout, r.stderr), 0)
 
 
 def module_ext():

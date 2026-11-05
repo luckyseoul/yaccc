@@ -804,6 +804,61 @@ static int ls_split(void)
 	return v;
 }
 
+/* COB_LS_FIXED=Y: a LINE SEQUENTIAL record is written at its full length,
+ * trailing spaces kept (GnuCOBOL's option of the same name) */
+static int ls_fixed(void)
+{
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("COB_LS_FIXED");
+		v = e && *e && (strchr("YyTt1", e[0]) != NULL || strcasecmp(e, "on") == 0);
+	}
+	return v;
+}
+
+/* COB_LS_NULLS=Y: in a LINE SEQUENTIAL record, a character below space is
+ * written after a NUL, and read back from a NUL and the character after it,
+ * so a record may hold any byte, a newline among them (GnuCOBOL's option;
+ * the bytes measured against cobc 3.1.2) */
+static int ls_nulls(void)
+{
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("COB_LS_NULLS");
+		v = e && *e && (strchr("YyTt1", e[0]) != NULL || strcasecmp(e, "on") == 0);
+	}
+	return v;
+}
+
+/* the bytes of a LINE SEQUENTIAL record, as COB_LS_NULLS has them */
+static void ls_put(cob_file *f, const unsigned char *rec, size_t n)
+{
+	if (!ls_nulls()) {
+		fwrite(rec, 1, n, f->fp);
+		return;
+	}
+	size_t from = 0;
+	for (size_t i = 0; i < n; i++)
+		if (rec[i] < ' ') {
+			fwrite(rec + from, 1, i - from, f->fp);
+			fputc(0, f->fp);
+			fputc(rec[i], f->fp);
+			from = i + 1;
+		}
+	fwrite(rec + from, 1, n - from, f->fp);
+}
+
+/* how much of a LINE SEQUENTIAL record is written: up to its last non-space,
+ * or all of it with COB_LS_FIXED */
+static size_t ls_len(const unsigned char *rec, size_t n)
+{
+	if (ls_fixed())
+		return n;
+	while (n && rec[n - 1] == ' ')
+		n--;
+	return n;
+}
+
 static void ls_drop_carry(cob_file *f)
 {
 	free(f->ls_carry);
@@ -1679,6 +1734,114 @@ again:
 	return set_st(f, st);
 }
 
+/* ---------------------------------------------------------------- variable-length records
+ *
+ * A record of a SEQUENTIAL file whose records vary in length comes after a
+ * header that holds its length, in one of GnuCOBOL's four formats, which
+ * COB_VARSEQ_FORMAT chooses (the bytes measured against cobc 3.1.2):
+ *   0  two bytes, big-endian, then two zero bytes (the default)
+ *   1  four bytes, big-endian
+ *   2  four bytes in the machine's order
+ *   3  two bytes, big-endian
+ * so a file one compiler writes the other reads. A file opened for reading
+ * or extending whose first header cannot be in the chosen format but is a
+ * valid length in format 2 -- what YACCC wrote before it followed GnuCOBOL
+ * -- is read and extended in format 2. */
+static int varseq_fmt(void)
+{
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("COB_VARSEQ_FORMAT");
+		v = e && e[0] >= '0' && e[0] <= '3' && !e[1] ? e[0] - '0' : 0;
+	}
+	return v;
+}
+
+static size_t varseq_hdr(int fmt)
+{
+	return fmt == 3 ? 2 : 4;
+}
+
+static void varseq_put(FILE *fp, int fmt, uint32_t l)
+{
+	unsigned char h[4];
+	switch (fmt) {
+	case 1:
+		h[0] = (unsigned char)(l >> 24);
+		h[1] = (unsigned char)(l >> 16);
+		h[2] = (unsigned char)(l >> 8);
+		h[3] = (unsigned char)l;
+		fwrite(h, 1, 4, fp);
+		break;
+	case 2:
+		fwrite(&l, 4, 1, fp);
+		break;
+	case 3:
+		h[0] = (unsigned char)(l >> 8);
+		h[1] = (unsigned char)l;
+		fwrite(h, 1, 2, fp);
+		break;
+	default:
+		h[0] = (unsigned char)(l >> 8);
+		h[1] = (unsigned char)l;
+		h[2] = h[3] = 0;
+		fwrite(h, 1, 4, fp);
+		break;
+	}
+}
+
+/* a header's length; -1 when it is not one in that format */
+static long varseq_len(int fmt, const unsigned char *h)
+{
+	switch (fmt) {
+	case 1:
+		return (long)((uint32_t)h[0] << 24 | (uint32_t)h[1] << 16 | (uint32_t)h[2] << 8 | h[3]);
+	case 2: {
+		uint32_t l;
+		memcpy(&l, h, 4);
+		return (long)l;
+	}
+	case 3:
+		return (long)(h[0] << 8 | h[1]);
+	default:
+		return h[2] || h[3] ? -1 : (long)(h[0] << 8 | h[1]);
+	}
+}
+
+/* the next record's length: 1, or 0 at the end of the file, -1 for a
+ * header that isn't one */
+static int varseq_get(cob_file *f, uint32_t *l)
+{
+	unsigned char h[4];
+	size_t n = varseq_hdr(f->varfmt);
+	if (fread(h, 1, n, f->fp) != n)
+		return 0;
+	long v = varseq_len(f->varfmt, h);
+	if (v < 0)
+		return -1;
+	*l = (uint32_t)v;
+	return 1;
+}
+
+static int varseq_detect(cob_file *f, int fmt)
+{
+	int fd = open(f->path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return fmt;
+	unsigned char h[4];
+	ssize_t n = pread(fd, h, 4, 0);
+	close(fd);
+	if (n < 4)
+		return fmt;
+	long l = varseq_len(fmt, h);
+	if (l >= 1 && (size_t)l <= f->record_max)
+		return fmt;
+	long l2 = varseq_len(2, h);
+	if (fmt != 2 && l2 >= 1 && (size_t)l2 <= f->record_max)
+		return 2;
+	return fmt;
+}
+
 static int open_seq(cob_file *f, int mode)
 {
 	ls_drop_carry(f);
@@ -1744,6 +1907,8 @@ static int open_seq(cob_file *f, int mode)
 		close(fd);
 		return set_st(f, "30");
 	}
+	if (f->variable && f->organization == COB_ORG_SEQUENTIAL)
+		f->varfmt = (unsigned char)(mode == COB_OPEN_OUTPUT ? varseq_fmt() : varseq_detect(f, varseq_fmt()));
 	f->open_mode = mode;
 	link_open(f);
 	return set_st(f, st);
@@ -1895,7 +2060,16 @@ static int read_seq(cob_file *f)
 				f->at_end = 1;
 				return set_st(f, "10");
 			}
+			int esc = ls_nulls(), last_esc = 0;
 			while (c != EOF && c != '\n' && n < max) {
+				last_esc = 0;
+				if (esc && c == 0) {
+					/* COB_LS_NULLS: the byte after a NUL is data, a newline too */
+					c = getc(f->fp);
+					if (c == EOF)
+						break;
+					last_esc = 1;
+				}
 				rec[n++] = (unsigned char)c;
 				c = getc(f->fp);
 			}
@@ -1908,6 +2082,11 @@ static int read_seq(cob_file *f)
 				size_t cap = 256, len = 0;
 				unsigned char *rest = cob_malloc(cap);
 				while (c != EOF && c != '\n') {
+					if (esc && c == 0) {
+						c = getc(f->fp);
+						if (c == EOF)
+							break;
+					}
 					if (len == cap) {
 						cap *= 2;
 						rest = realloc(rest, cap);
@@ -1931,7 +2110,7 @@ static int read_seq(cob_file *f)
 					st = "04";
 				}
 				free(rest);
-			} else if (n > 0 && rec[n - 1] == '\r') {
+			} else if (n > 0 && rec[n - 1] == '\r' && !last_esc) {
 				n--;
 			}
 		}
@@ -1946,7 +2125,10 @@ static int read_seq(cob_file *f)
 	size_t sz = max;
 	if (f->variable) {
 		uint32_t l;
-		if (fread(&l, 4, 1, f->fp) != 1) {
+		int got = varseq_get(f, &l);
+		if (got < 0)
+			return set_st(f, "30");     /* not a record header: not this format */
+		if (!got) {
 			f->at_end = 1;
 			return set_st(f, "10");
 		}
@@ -1991,7 +2173,7 @@ static void lin_print(cob_file *f, const unsigned char *rec, size_t n)
 {
 	if (f->linage_lines)
 		fputc('\n', f->fp);
-	fwrite(rec, 1, n, f->fp);
+	ls_put(f, rec, n);
 	f->linage_lines = 1;
 }
 
@@ -2058,7 +2240,7 @@ static int write_linage(cob_file *f, const unsigned char *rec, size_t n, int whe
 		if (lines == 0) {
 			if (f->linage_lines)
 				fputc('\r', f->fp);
-			fwrite(rec, 1, n, f->fp);
+			ls_put(f, rec, n);
 			f->linage_lines = 1;
 		} else {
 			/* AFTER ADVANCING: the record goes on the current line and
@@ -2090,18 +2272,14 @@ static int write_seq(cob_file *f, size_t recsize, int adv_when, int adv_lines)
 		recsize = l < 0 ? 0 : (l > (cob_s64)f->record_max ? f->record_max : (size_t)l);
 	}
 	if (f->organization == COB_ORG_LINE_SEQ && f->linage_ctr) {
-		size_t n = recsize;
-		while (n && rec[n - 1] == ' ')
-			n--;
+		size_t n = ls_len(rec, recsize);
 		int rc = write_linage(f, rec, n, adv_when, adv_lines);
 		if (f->fp == stdout)
 			fflush(stdout);
 		return rc;
 	}
 	if (f->organization == COB_ORG_LINE_SEQ) {
-		size_t n = recsize;
-		while (n && rec[n - 1] == ' ')
-			n--;
+		size_t n = ls_len(rec, recsize);
 		if (adv_when == COB_ADV_AFTER) {
 			if (adv_lines == COB_ADV_PAGE)
 				fputc('\f', f->fp);
@@ -2109,7 +2287,7 @@ static int write_seq(cob_file *f, size_t recsize, int adv_when, int adv_lines)
 				fputc('\r', f->fp);
 			else
 				put_nl(f, adv_lines);
-			fwrite(rec, 1, n, f->fp);
+			ls_put(f, rec, n);
 			f->linage_lines = 1;
 		} else {
 			/* a line left open by AFTER ADVANCING is terminated first by a
@@ -2118,7 +2296,7 @@ static int write_seq(cob_file *f, size_t recsize, int adv_when, int adv_lines)
 			 * printer would (and as GnuCOBOL and Micro Focus do) */
 			if (f->linage_lines && adv_when != COB_ADV_BEFORE)
 				fputc('\n', f->fp);
-			fwrite(rec, 1, n, f->fp);
+			ls_put(f, rec, n);
 			if (adv_when == COB_ADV_BEFORE && adv_lines == COB_ADV_PAGE)
 				fputc('\f', f->fp);
 			else if (adv_when == COB_ADV_BEFORE && adv_lines == 0)
@@ -2140,7 +2318,9 @@ static int write_seq(cob_file *f, size_t recsize, int adv_when, int adv_lines)
 		if (l < (cob_s64)f->record_min || l > (cob_s64)f->record_max || l < 1)
 			return set_st(f, "44");
 		uint32_t l32 = (uint32_t)l;
-		fwrite(&l32, 4, 1, f->fp);
+		if (l32 > 65535 && (f->varfmt == 0 || f->varfmt == 3))
+			return set_st(f, "44");     /* more than the two-byte header holds */
+		varseq_put(f->fp, f->varfmt, l32);
 		fwrite(rec, 1, l32, f->fp);
 	} else {
 		fwrite(rec, 1, f->record_max, f->fp);
@@ -2167,7 +2347,7 @@ static int rewrite_seq(cob_file *f, size_t recsize)
 	if (nsize != f->cur_size)
 		return set_st(f, "44");
 	long cur = ftell(f->fp);
-	fseek(f->fp, f->last_pos + (f->variable ? 4 : 0), SEEK_SET);
+	fseek(f->fp, f->last_pos + (long)(f->variable ? varseq_hdr(f->varfmt) : 0), SEEK_SET);
 	fwrite(f->record, 1, nsize, f->fp);
 	fflush(f->fp);
 	fseek(f->fp, cur, SEEK_SET);

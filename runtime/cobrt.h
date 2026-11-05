@@ -1109,6 +1109,7 @@ typedef struct cob_file {
 	void *holder;             /* the process's file-level locks (cobrt_io.c) */
 	unsigned char *ls_carry;  /* LINE SEQUENTIAL, COB_LS_SPLIT: the rest of a long line */
 	size_t ls_carry_len, ls_carry_at;
+	unsigned char varfmt;     /* variable-length SEQUENTIAL: COB_VARSEQ_FORMAT of this file */
 } cob_file;
 /* SHARING (cob_file.sharing) */
 #define COB_SHARE_NONE      0   /* no clause: INPUT shares, a sequential file opened
