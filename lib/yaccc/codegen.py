@@ -100,6 +100,7 @@ class Options:
         self.defaultbyte = None      # -fdefaultbyte: WORKING-STORAGE without VALUE starts as this byte
         self.recursive_check = True  # EC-PROGRAM-RECURSIVE-CALL for a program that isn't RECURSIVE
         self.stack_trace = True      # PERFORM frames a runtime error can list (-fno-stack-trace)
+        self.static_call = False     # -fstatic-call: a CALL literal's program must be linked in
         self.dump = None             # -fdump: the sections whose data a runtime error writes out
         self.emit_main = True        # an executable's main(); not for -c or -m
         self.export_c = False        # C entry points, for C code that calls COBOL
@@ -5140,8 +5141,11 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             if sym == 'NULL':
                 fn = "(cob_prog_fn)NULL"
             if dynamic:
-                # not in this compile: another object, a module, or C
-                em(f"cob_callee cob_ce = cob_lookup_name({c_string(name)}, {self.weak_symbol(name)});")
+                # not in this compile: another object, a module, or C; with
+                # -fstatic-call it must be linked in, so the link fails without it
+                ref = self.static_symbol(name) if getattr(self.opts, 'static_call', False) \
+                    else self.weak_symbol(name)
+                em(f"cob_callee cob_ce = cob_lookup_name({c_string(name)}, {ref});")
         else:
             it = None
             try:
@@ -5267,6 +5271,23 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             sym = self.sym('cob_weak_')
             self.protos.append(f'extern void {sym}(void) COB_ASM_NAME("{cname}") __attribute__((weak));')
             self.weak_syms[cname] = sym
+        return f"(void *){sym}"
+
+    def static_symbol(self, name):
+        """-fstatic-call: a reference to the C function a CALL literal names,
+        which the link must find (in an object file, a library, or C code
+        linked in), as cobc's static calls need it to; a name that is no C
+        identifier stays a run-time lookup."""
+        cname = c_identifier(name)
+        if cname is None:
+            return self.weak_symbol(name)
+        if not hasattr(self, 'static_syms'):
+            self.static_syms = {}
+        sym = self.static_syms.get(cname)
+        if sym is None:
+            sym = self.sym('cob_static_')
+            self.protos.append(f'extern void {sym}(void) COB_ASM_NAME("{cname}");')
+            self.static_syms[cname] = sym
         return f"(void *){sym}"
 
     def call_system_routine(self, s, name):

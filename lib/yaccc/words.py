@@ -93,7 +93,7 @@ USAGES = {
 # kind: 'N' numeric, 'X' alphanumeric, 'M' max/min (type of args)
 FUNCTIONS = {
     'ABS': ('N', 1, 1), 'ACOS': ('N', 1, 1), 'ANNUITY': ('N', 2, 2), 'ASIN': ('N', 1, 1),
-    'ATAN': ('N', 1, 1), 'BYTE-LENGTH': ('N', 1, 1), 'CHAR': ('X', 1, 1),
+    'ATAN': ('N', 1, 1), 'BYTE-LENGTH': ('N', 1, 1), 'LENGTH-AN': ('N', 1, 1), 'CHAR': ('X', 1, 1),
     'CONCATENATE': ('X', 1, 999), 'COS': ('N', 1, 1), 'CURRENT-DATE': ('X', 0, 0),
     'DATE-OF-INTEGER': ('N', 1, 1), 'DATE-TO-YYYYMMDD': ('N', 1, 3),
     'DAY-OF-INTEGER': ('N', 1, 1), 'DAY-TO-YYYYDDD': ('N', 1, 3), 'E': ('N', 0, 0),

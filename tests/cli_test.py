@@ -148,6 +148,7 @@ def main():
     listings(work)
     cobc_options(work)
     variable_files(work)
+    static_calls(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -929,6 +930,50 @@ def variable_files(work):
                        env=dict(os.environ, COB_VARSEQ_FORMAT='3'))
     check('COB_VARSEQ_FORMAT=3: read, rewritten, extended',
           r if r.stdout == want else subprocess.CompletedProcess(r.args, -1, r.stdout, r.stderr), 0)
+
+
+STATIC_MAIN = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. SMAIN.
+       PROCEDURE DIVISION.
+           CALL "SSUB-ONE"
+           DISPLAY "BACK IN MAIN"
+           STOP RUN.
+'''
+
+STATIC_SUB = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. SSUB-ONE.
+       PROCEDURE DIVISION.
+           DISPLAY "IN SSUB-ONE"
+           GOBACK.
+'''
+
+
+def static_calls(work):
+    """-fstatic-call: a CALL literal's program has to be linked in."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+    write('smain.cbl', STATIC_MAIN)
+    write('ssub.cbl', STATIC_SUB)
+    r = run(['-c', 'ssub.cbl', '-o', 'ssub.o'], work)
+    check('-c a subprogram', r, 0)
+    r = run(['-fstatic-call', '-c', '-x', 'smain.cbl', '-o', 'smain.o'], work)
+    check('-fstatic-call: the main program', r, 0)
+    r = run(['smain.o', 'ssub.o', '-o', 'smain'], work)
+    check('-fstatic-call: linked with its subprogram', r, 0)
+    if r.returncode == 0:
+        res = subprocess.run([os.path.join(work, 'smain')], capture_output=True, text=True, cwd=work)
+        check('-fstatic-call: the CALL reaches it', res, 0, 'IN SSUB-ONE')
+    r = run(['smain.o', '-o', 'smain2'], work)
+    check('-fstatic-call: without it the link fails', r, 1, 'SSUB__ONE')
+    r = run(['smain.cbl', '-o', 'smain3'], work)
+    check('without -fstatic-call it links', r, 0)
+    res = subprocess.run([os.path.join(work, 'smain3')], capture_output=True, text=True, cwd=work)
+    check('... and the CALL fails when it runs', res, 1, 'SSUB-ONE')
+    r = run(['-std=ibm-strict', 'cliarg.cbl', '-o', 'strict'], work)
+    check('-std=ibm-strict: ibm, with a note', r, 0, 'the choices of ibm')
+    r = run(['-std=mvs', 'cliarg.cbl', '-o', 'mvs'], work)
+    check('-std=mvs: ibm', r, 0)
 
 
 def module_ext():

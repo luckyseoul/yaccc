@@ -60,12 +60,19 @@ class AllLit(Expr):
     is_zero: bool = False
 
 
+# another name for an intrinsic function, as cobc accepts it
+FUNCTION_ALIASES = {'LENGTH-AN': 'BYTE-LENGTH'}
+
+
 @dataclass(eq=False)
 class FuncCall(Expr):
     name: str
     args: List[Any]
     refmod: Optional[tuple]
     loc: Loc
+
+    def __post_init__(self):
+        self.name = FUNCTION_ALIASES.get(self.name, self.name)
 
 
 @dataclass(eq=False)

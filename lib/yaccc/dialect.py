@@ -47,7 +47,15 @@ _ALIASES = {
     'mf': 'mf', 'microfocus': 'mf', 'micro-focus': 'mf',
     'ibm': 'ibm', 'ibm-cobol': 'ibm',
     'acu': 'acu', 'acucobol': 'acu',
+    # cobc's other names for these: MVS is IBM's mainframe COBOL, and a
+    # -strict dialect is the same choices with the vendor's own words only
+    'mvs': 'ibm',
+    'ibm-strict': 'ibm', 'mvs-strict': 'ibm', 'mf-strict': 'mf', 'acu-strict': 'acu',
 }
+
+# a -strict dialect: YACCC makes its choices, but still accepts the
+# extensions the strict one would reject
+STRICT = {'ibm-strict', 'mvs-strict', 'mf-strict', 'acu-strict'}
 
 
 class Dialect:

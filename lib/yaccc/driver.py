@@ -421,6 +421,12 @@ def main(argv=None):
     ap.add_argument('-ffold-copy', dest='fold_copy', type=str.upper, choices=['UPPER', 'LOWER'],
                     help="a copybook's name is looked for as written, in upper case and in lower "
                          "case, whichever this says")
+    ap.add_argument('-fstatic-call', dest='static_call', action='store_true', default=False,
+                    help='a CALL literal names a program or C function that is linked in: '
+                         'the link fails without it, rather than the CALL')
+    ap.add_argument('-fno-static-call', dest='static_call', action='store_false',
+                    help='a CALL literal that is not in the compile is looked for when it runs '
+                         '(the default)')
     ap.add_argument('-fsingle-quote', dest='single_quote', action='store_true',
                     help="QUOTE is an apostrophe (')")
     ap.add_argument('-fdefault-colseq', dest='default_colseq', type=str.upper,
@@ -560,6 +566,9 @@ def main(argv=None):
         ap.error(f"unknown dialect '{args.std}'; known: "
                  + ', '.join(dialect.accepted_names()))
     d = opts.dialect
+    if (args.std or '').lower().strip() in dialect.STRICT:
+        print(f"yaccc: note: -std={args.std}: the choices of {d.name}; extensions a strict "
+              f"dialect rejects are still accepted", file=sys.stderr)
     opts.binary_size = args.binary_size or d.binary_size
     opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
     opts.pretty_display = d.pretty_display if args.pretty_display is None else args.pretty_display
@@ -618,6 +627,7 @@ def main(argv=None):
         words.FIG_BYTES['QUOTE'] = b"'"
         codegen.FIG_FIELD['QUOTE'] = '&cob_fig_apos'
     opts.default_colseq = args.default_colseq
+    opts.static_call = args.static_call
     if args.mfcomment:
         from . import source
         source.MF_COMMENT = True

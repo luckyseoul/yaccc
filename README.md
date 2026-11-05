@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **16,883** lines of Python in the compiler, standard library only — no parser
+- **16,929** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -280,6 +280,7 @@ cobc's options that build scripts carry over work the same way:
 | `-Werror` | a warning fails the compile |
 | `-d`, `-debug` | every run-time check (subscripts, reference modification, OCCURS DEPENDING ON) and the stack trace, whatever `--no-check` says |
 | `-fec=NAME`, `-fno-ec=NAME` | those range checks on or off: `EC-ALL`, `EC-BOUND`, `EC-BOUND-SUBSCRIPT`, `EC-BOUND-REF-MOD`, `EC-BOUND-ODO` (the other checks are always made) |
+| `-fstatic-call` | a CALL literal names a program or C function that is linked in (an object file, a library): the link fails without it, rather than the CALL when it runs. `-fno-static-call` (the default) looks for it then, in the run unit, then C, then a loadable module |
 | `-fsingle-quote` | the figurative constant QUOTE is an apostrophe |
 | `-fdefault-colseq=EBCDIC\|ASCII\|NATIVE` | the collating sequence of a program that names none |
 | `-fmfcomment` | `*` or `/` in column 1 makes a fixed-format line a comment, as Micro Focus allows |
@@ -314,9 +315,13 @@ conformance to a vendor's implementation: it sets the settings below, and
 |---|---|---|---|---|---|---|---|---|
 | `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no | no | no | no | on | no |
 | `gnu` (GnuCOBOL) | 2-4-8 | on | yes | no | no | no | on | no |
-| `ibm` | 2-4-8 | off | yes | yes | no | no | off | yes |
+| `ibm` (also `mvs`) | 2-4-8 | off | yes | yes | no | no | off | yes |
 | `mf` (Micro Focus) | 1-2-4-8 | off | yes | no | yes | no | on | no |
 | `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes | on | no |
+
+cobc's `-strict` names (`ibm-strict`, `mvs-strict`, `mf-strict`,
+`acu-strict`) select the same settings, with a note that the extensions a
+strict dialect would reject are still accepted.
 
 - **`binary-size`** — the byte widths `PIC 9(n) COMP` uses. Under `2-4-8`
   (IBM and the default here) a 2-digit COMP item occupies 2 bytes; under
@@ -987,7 +992,7 @@ EC-DATA-PTR-NULL for a null pointer and clearing the last exception on
 success. A `Z"..."` literal ends with a NUL, which is what makes them useful
 together.
 
-**Intrinsic functions (113).** ABS, ACOS, ANNUITY, ASIN, ATAN, BIT-OF,
+**Intrinsic functions (114).** ABS, ACOS, ANNUITY, ASIN, ATAN, BIT-OF,
 BIT-TO-CHAR, BYTE-LENGTH, CHAR, COMBINED-DATETIME, CONCAT, CONCATENATE,
 CONTENT-LENGTH, CONTENT-OF, COS, CURRENCY-SYMBOL, CURRENT-DATE,
 DATE-OF-INTEGER, DATE-TO-YYYYMMDD, DAY-OF-INTEGER, DAY-TO-YYYYDDD, E,
@@ -995,7 +1000,8 @@ EXCEPTION-FILE, EXCEPTION-LOCATION, EXCEPTION-STATEMENT, EXCEPTION-STATUS, EXP,
 EXP10, FACTORIAL, FORMATTED-CURRENT-DATE, FORMATTED-DATE, FORMATTED-DATETIME,
 FORMATTED-TIME, FRACTION-PART, HEX-OF, HEX-TO-CHAR, HIGHEST-ALGEBRAIC, INTEGER,
 INTEGER-OF-BOOLEAN, INTEGER-OF-DATE, INTEGER-OF-DAY, INTEGER-OF-FORMATTED-DATE,
-INTEGER-PART, LENGTH, LOCALE-COMPARE, LOCALE-DATE, LOCALE-TIME,
+INTEGER-PART, LENGTH, LENGTH-AN (cobc's other name for BYTE-LENGTH), LOCALE-COMPARE,
+LOCALE-DATE, LOCALE-TIME,
 LOCALE-TIME-FROM-SECONDS, LOG, LOG10, LOWER-CASE, LOWEST-ALGEBRAIC, MAX, MEAN,
 MEDIAN, MIDRANGE, MIN, MOD, MODULE-CALLER-ID, MODULE-DATE,
 MODULE-FORMATTED-DATE, MODULE-ID, MODULE-NAME, MODULE-PATH, MODULE-SOURCE,
@@ -1275,7 +1281,7 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 16,883 lines of Python across nineteen files; the runtime it
+The compiler is 16,929 lines of Python across nineteen files; the runtime it
 links against is 18,464 lines of C.
 
 | File | Lines | Role |
@@ -1283,9 +1289,9 @@ links against is 18,464 lines of C.
 | `lib/yaccc/source.py` | 366 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 731 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 843) |
+| `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 850) |
 | `lib/yaccc/data.py` | 690 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,700 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,721 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
