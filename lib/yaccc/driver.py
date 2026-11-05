@@ -19,7 +19,7 @@ PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
 RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
                'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c', 'cobrt_xml.c',
-               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c', 'cobrt_dump.c']
+               'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c', 'cobrt_dump.c', 'cobrt_conf.c']
 VERSION = '1.0'
 
 
@@ -64,6 +64,78 @@ def build_runtime(cc, verbose=False, force=False):
     finally:
         shutil.rmtree(objdir, ignore_errors=True)
     return lib
+
+
+def build_runner(cc, verbose=False):
+    """yacccrun, the program that runs a module's program (cobcrun's job):
+    built beside the runtime library, again whenever that is newer."""
+    lib = build_runtime(cc, verbose)
+    runner = os.path.join(os.path.dirname(lib), 'yacccrun')
+    src = os.path.join(RUNTIME_DIR, 'yacccrun.c')
+    if os.path.exists(runner) and os.path.getmtime(runner) >= max(os.path.getmtime(lib),
+                                                                  os.path.getmtime(src)):
+        return runner
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(lib), prefix='yacccrun.', suffix='.tmp')
+    os.close(fd)
+    try:
+        cmd = [cc, '-O2', '-std=gnu11', '-I', RUNTIME_DIR, src, '-o', tmp] + runtime_link_args(lib) \
+            + ['-lm', '-ldl']
+        if verbose:
+            print(' '.join(cmd), file=sys.stderr)
+        subprocess.run(cmd, check=True)
+        os.replace(tmp, runner)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return runner
+
+
+def run_module(argv):
+    """yacccrun [-c FILE] PROGRAM|PATH [ARGUMENT...]: run a program from a
+    module yaccc -m built, as cobcrun does."""
+    usage = ("usage: yacccrun [-c FILE] PROGRAM [ARGUMENT...]\n"
+             "  run PROGRAM from the module PROGRAM.so (found in COB_LIBRARY_PATH, then the\n"
+             "  current directory; a path to the module names its directory too), as a\n"
+             "  main program with the ARGUMENTs as its command line\n"
+             "  -c FILE, --config=FILE   runtime configuration (as COB_RUNTIME_CONFIG)")
+    args = list(argv)
+    env = dict(os.environ)
+    while args and args[0].startswith('-'):
+        a = args.pop(0)
+        if a in ('-h', '--help'):
+            print(usage)
+            return 0
+        if a in ('-V', '--version'):
+            print(f'yacccrun (YACCC {VERSION})')
+            return 0
+        if a == '-c' and args:
+            env['COB_RUNTIME_CONFIG'] = args.pop(0)
+        elif a.startswith('--config='):
+            env['COB_RUNTIME_CONFIG'] = a.split('=', 1)[1]
+        elif a == '--':
+            break
+        else:
+            print(f"yacccrun: unknown option '{a}'\n{usage}", file=sys.stderr)
+            return 2
+    if not args:
+        print(usage, file=sys.stderr)
+        return 2
+    prog = args.pop(0)
+    if '/' in prog or prog.endswith(MODULE_EXT):
+        # a path: its directory goes first in COB_LIBRARY_PATH
+        d = os.path.dirname(os.path.abspath(prog))
+        prog = os.path.basename(prog)
+        if prog.endswith(MODULE_EXT):
+            prog = prog[:-len(MODULE_EXT)]
+        env['COB_LIBRARY_PATH'] = d + (os.pathsep + env['COB_LIBRARY_PATH']
+                                       if env.get('COB_LIBRARY_PATH') else '')
+    cc = os.environ.get('CC') or (shutil.which('gcc') and 'gcc') or 'cc'
+    try:
+        runner = build_runner(cc)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"yacccrun: building the runner failed: {e}", file=sys.stderr)
+        return 1
+    os.execve(runner, [runner, prog] + args, env)
 
 
 def safe_build_runtime(cc, verbose=False, force=False):

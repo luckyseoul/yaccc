@@ -151,6 +151,7 @@ void cob_init(int argc, char **argv)
 	if (cob_initialized)
 		return;
 	cob_initialized = 1;
+	cob_runtime_config();       /* COB_RUNTIME_CONFIG: settings before anything reads them */
 	if (!isatty(1))
 		setvbuf(stdout, NULL, _IOFBF, 1 << 16);
 	const char *tr = getenv("COB_SET_TRACE");
@@ -2376,6 +2377,21 @@ int cob_cmp_dbl(double x, double y)
 }
 
 int cob_host_sign;      /* -std=ibm: sign F is valid in signed packed items */
+int cob_settings_fixed; /* an executable's main() set the settings below */
+
+/* A module's own compile settings, from its constructor, for a run unit no
+ * executable of YACCC's started -- yacccrun's, or C's: the first module
+ * loaded sets them, as main() does in an executable. */
+void cob_module_settings(int pretty, int host_sign, int sign_ebcdic, const char *when)
+{
+	if (cob_settings_fixed)
+		return;
+	cob_settings_fixed = 1;
+	cob_pretty_display = pretty;
+	cob_host_sign = host_sign;
+	cob_sign_ebcdic = sign_ebcdic;
+	cob_when_compiled = when;
+}
 int cob_pretty_display = 1;  /* DISPLAY writes a numeric item's point and a
                               * leading sign; -std=ibm / -fnotrunc turn it off */
 

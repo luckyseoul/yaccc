@@ -3,6 +3,7 @@ __pycache__/
 /build/
 /third_party/
 /runtime/libcobrt.a
+/runtime/yacccrun
 /runtime/*.o
 /runtime/*.tmp
 

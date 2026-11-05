@@ -504,6 +504,8 @@ int cob_cmp_alnum(const unsigned char *a, size_t al, const unsigned char *b, siz
 int cob_is_numeric(const cob_field *f);
 extern int cob_host_sign;
 extern int cob_pretty_display;
+extern int cob_settings_fixed;
+void cob_module_settings(int pretty, int host_sign, int sign_ebcdic, const char *when);
 int cob_cmp_float(const cob_field *a, const cob_field *b);
 int cob_cmp_dbl(double x, double y);
 double cob_dbl_div(double a, double b);
@@ -595,6 +597,7 @@ int cob_c_argc(int declared);
 void cob_call_init(void);
 void cob_close_all_files(void);
 void cob_flush_files(void);         /* a signal ends the run unit: written data kept */
+void cob_runtime_config(void);      /* COB_RUNTIME_CONFIG / runtime.cfg (cobrt_conf.c) */
 void cob_call_system(const cob_field *cmd);
 int cob_switch_get(int n);
 void cob_switch_set(int n, int v);

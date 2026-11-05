@@ -149,6 +149,7 @@ def main():
     cobc_options(work)
     variable_files(work)
     static_calls(work)
+    runner(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -974,6 +975,101 @@ def static_calls(work):
     check('-std=ibm-strict: ibm, with a note', r, 0, 'the choices of ibm')
     r = run(['-std=mvs', 'cliarg.cbl', '-o', 'mvs'], work)
     check('-std=mvs: ibm', r, 0)
+
+
+YACCCRUN = os.path.join(ROOT, 'yacccrun')
+
+HELLOMOD = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. HELLOMOD.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 A PIC X(10).
+       01 N PIC S9(3)V9 VALUE -12.5.
+       PROCEDURE DIVISION.
+           ACCEPT A FROM ARGUMENT-VALUE
+           DISPLAY "HELLO [" A "] " N
+           MOVE 7 TO RETURN-CODE
+           STOP RUN.
+'''
+
+CFGPROG = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CFGPROG.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "out.txt"
+               ORGANIZATION IS LINE SEQUENTIAL.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F.
+       01 R PIC X(6).
+       PROCEDURE DIVISION.
+           OPEN OUTPUT F. MOVE "AB" TO R. WRITE R. CLOSE F.
+           DISPLAY "RAN".
+           STOP RUN.
+'''
+
+
+def runner(work):
+    """yacccrun runs a module's program; COB_RUNTIME_CONFIG reads settings."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+
+    def yrun(args, cwd=work, env=None):
+        return subprocess.run([YACCCRUN] + args, capture_output=True, text=True, cwd=cwd,
+                              env=dict(os.environ, **(env or {})))
+    write('hellomod.cbl', HELLOMOD)
+    r = run(['-m', 'hellomod.cbl'], work)
+    check('-m builds a module', r, 0)
+    r = yrun(['hellomod', 'world'])
+    check('yacccrun PROGRAM ARG: the program runs, its RETURN-CODE the status', r, 7,
+          'HELLO [world     ] -012.5')
+    os.makedirs(os.path.join(work, 'mods'), exist_ok=True)
+    r = run(['-m', '-std=ibm', 'hellomod.cbl', '-o', os.path.join('mods', 'hellomod' + module_ext())], work)
+    r = yrun([os.path.join('mods', 'hellomod' + module_ext()), 'ibm'])
+    check('yacccrun PATH: the module there, with its own compile settings', r, 7, 'HELLO [ibm       ] 0125-')
+    r = yrun(['nosuchmod'])
+    check('yacccrun: a program that is nowhere', r, 1, "module 'nosuchmod' not found")
+    write('mods.cfg', f"library_path {os.path.join(work, 'mods')}\n")
+    r = yrun(['-c', os.path.join(work, 'mods.cfg'), 'hellomod', 'cfg'])
+    check('yacccrun -c FILE: a runtime configuration', r, 7, 'HELLO [cfg       ] 0125-')
+
+    # COB_RUNTIME_CONFIG with an executable, as cobc's runtime.cfg
+    write('cfgprog.cbl', CFGPROG)
+    exe = os.path.join(work, 'cfgprog')
+    run(['cfgprog.cbl', '-o', exe], work)
+    os.makedirs(os.path.join(work, 'cfgout'), exist_ok=True)
+    write('good.cfg', '# settings\nls_fixed true   # keep the spaces\n'
+                      'file_path ${CFG_OUT_DIR:-cfgout}\n')
+    write('top.cfg', 'include "good.cfg"\n')
+    out = os.path.join(work, 'cfgout', 'out.txt')
+
+    def cfg_run(cfg, extra=None):
+        if os.path.exists(out):
+            os.unlink(out)
+        env = dict(os.environ, COB_RUNTIME_CONFIG=cfg, **(extra or {}))
+        return subprocess.run([exe], capture_output=True, text=True, cwd=work, env=env)
+
+    def content():
+        return open(out, 'rb').read() if os.path.exists(out) else b''
+    r = cfg_run('top.cfg')
+    check('COB_RUNTIME_CONFIG: included settings, ${VAR:-default}',
+          r if content() == b'AB    \n' else subprocess.CompletedProcess(r.args, -1, repr(content()), r.stderr), 0)
+    r = cfg_run('top.cfg', {'COB_LS_FIXED': 'false'})
+    check('... the environment wins over the file',
+          r if content() == b'AB\n' else subprocess.CompletedProcess(r.args, -1, repr(content()), r.stderr), 0)
+    write('bad.cfg', '\nnosuchtag 1\nls_fixed maybe\n')
+    r = cfg_run('bad.cfg')
+    check('an unknown tag ends the run unit, every problem said', r, 1,
+          "bad.cfg:2: unknown configuration tag 'nosuchtag'")
+    check('... a bad value too', r, 1, "invalid value 'maybe' for configuration tag 'ls_fixed'")
+    write('loop.cfg', 'include "loop2.cfg"\n')
+    write('loop2.cfg', 'include "loop.cfg"\n')
+    r = cfg_run('loop.cfg')
+    check('a recursive include', r, 1, 'loop.cfg: recursive inclusion')
+    r = cfg_run('nothere.cfg')
+    check('a configuration file that is not there', r, 1, 'nothere.cfg: No such file or directory')
 
 
 def module_ext():

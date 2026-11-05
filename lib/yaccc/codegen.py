@@ -397,6 +397,12 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                            f'(void *)cob_cw_{sym});')
         for p, nm, alias in aliases:
             out.append(f'\tcob_register_entry({c_string(nm)}, {alias}, {p._cancel_sym}, (void *)cob_cw_{alias});')
+        if not self.opts.emit_main:
+            # a module or object file: its compile settings, for a run unit
+            # that no main() of ours started (yacccrun, or a C program)
+            out.append(f"\tcob_module_settings({1 if getattr(self.opts, 'pretty_display', True) else 0}, "
+                       f"{1 if getattr(self.opts, 'host_sign', False) else 0}, "
+                       f"{1 if getattr(self.opts, 'sign', 'ascii') == 'ebcdic' else 0}, {c_string(wc)});")
         out.append('}')
         out.append('')
         if not self.opts.emit_main:
@@ -411,6 +417,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         if getattr(self.opts, 'sign', 'ascii') == 'ebcdic':
             out.append('\tcob_sign_ebcdic = 1;')
         out.append(f'\tcob_when_compiled = {c_string(wc)};')
+        out.append('\tcob_settings_fixed = 1;')
         out.append(f'\tint rc = {self.prog_syms[id(main)]}(-1, NULL);')
         out.append('\tcob_stop_run(rc);')
         out.append('\treturn rc;')

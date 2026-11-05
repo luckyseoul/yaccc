@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **16,929** lines of Python in the compiler, standard library only — no parser
+- **17,008** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -369,6 +369,7 @@ Runtime environment:
 | `COB_TRACE_FILE` | write the trace to this file instead of standard error (`+file` appends) |
 | `COB_TRACE_FORMAT` | the layout of a trace line: `%P` program, `%S` what is traced (`Paragraph: NAME`), `%L` line, `%F` source file; default `Program-Id:  %P%S Line: %L` |
 | `COB_LIBRARY_PATH` | directories, `:`-separated, where CALL looks for a module `NAME.so` before the current directory |
+| `COB_RUNTIME_CONFIG` | a file of these settings, read when the program starts, in GnuCOBOL's `runtime.cfg` format (below); without it, `COB_CONFIG_DIR/runtime.cfg` when `COB_CONFIG_DIR` is set |
 | `COB_PRE_LOAD` | modules to load at start-up, `:`-separated, so CALL finds the programs and ENTRY points they hold |
 | `COB_LS_SPLIT=Y` | a LINE SEQUENTIAL line longer than the record is read as several records (status 06), not cut short (status 04) |
 | `COB_LS_FIXED=Y` | a LINE SEQUENTIAL record is written at its full length, trailing spaces kept |
@@ -381,6 +382,17 @@ Runtime environment:
 | `COB_SQL_TRACE=Y` | write each SQL statement and its SQLCODE to standard error |
 | `COB_SQL_SAVEPOINT=N` | PostgreSQL: no savepoint around each statement (faster; an error then spoils the unit of work) |
 | `COB_SQLITE_LIBRARY`, `COB_PQ_LIBRARY` | the path of libsqlite3 or libpq when it isn't found by its usual name |
+
+A runtime configuration file, as GnuCOBOL's `runtime.cfg`, holds the same
+settings as lines of `TAG VALUE`, the tag being the variable's name with or
+without `COB_` in either case (`ls_fixed true`, `file_path /data/in`). `#`
+starts a comment, a value may be quoted, and `${NAME}`, `${NAME:-default}` and
+`${NAME:default}` in a value are another variable's value. `setenv NAME VALUE`,
+`unsetenv NAME`, `reset TAG`, `include "FILE"` and `includeif "FILE"` work as
+in GnuCOBOL, and a variable already in the environment wins over the file. An
+unknown tag, a recursive include or a file that isn't there is a
+configuration error reported before the program starts, in cobc's words; a
+file shared with GnuCOBOL works, its tags YACCC has no use for accepted.
 
 Compile errors name the file and line and print the offending source line.
 One run reports every error it can: the parser goes on at the next sentence
@@ -601,6 +613,14 @@ initialise:
   each directory of `COB_LIBRARY_PATH` and then the current directory, and
   `COB_PRE_LOAD` loads modules at start-up. EXTERNAL items and files are
   shared between the executable and every module that declares them.
+- **Running a module.** `./yacccrun PROGRAM [ARGUMENT...]` does what cobcrun
+  does: it finds PROGRAM as CALL would and runs it as the main program, with
+  the arguments as its command line and its RETURN-CODE as the exit status.
+  A path (`./yacccrun lib/report.so 2026-10`) puts the module's directory
+  first in `COB_LIBRARY_PATH`, and `-c FILE` reads a runtime configuration.
+  A module carries its own compile settings (`-std=ibm`'s DISPLAY of numbers,
+  the sign convention, WHEN-COMPILED) for a run unit no executable of ours
+  started.
 
 When a CALL finds nothing, the error says where it looked, and when a module
 was found but could not be loaded, it says why — the case behind most of
@@ -1281,8 +1301,8 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 16,929 lines of Python across nineteen files; the runtime it
-links against is 18,464 lines of C.
+The compiler is 17,008 lines of Python across nineteen files; the runtime it
+links against is 18,907 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
@@ -1291,7 +1311,7 @@ links against is 18,464 lines of C.
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 850) |
 | `lib/yaccc/data.py` | 690 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,721 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,728 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
@@ -1299,7 +1319,7 @@ links against is 18,464 lines of C.
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `lib/yaccc/dumpgen.py` | 148 | `-fdump`: each program's data as a table the runtime walks after an error |
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
-| `runtime/cobrt_core.c` | 3,559 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,575 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,187 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,260 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
@@ -1314,7 +1334,9 @@ links against is 18,464 lines of C.
 | `runtime/cobrt_json.c` | 933 | JSON GENERATE and JSON PARSE |
 | `runtime/cobrt_sql.c` | 1,454 | embedded SQL on SQLite and PostgreSQL, their client libraries loaded at run time |
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
-| `runtime/cobrt.h` | 1,229 | runtime interface and inline fast paths |
+| `runtime/cobrt_conf.c` | 394 | runtime configuration files (`COB_RUNTIME_CONFIG`), GnuCOBOL's `runtime.cfg` format |
+| `runtime/yacccrun.c` | 30 | the `yacccrun` program: a module's program run as the main program |
+| `runtime/cobrt.h` | 1,232 | runtime interface and inline fast paths |
 
 Design choices:
 
@@ -1342,6 +1364,7 @@ Design choices:
 
 ```
 yaccc                compiler entry point
+yacccrun             runs a module's program, as cobcrun does
 LICENSE              MIT licence
 lib/yaccc/           front end and code generator (Python)
 runtime/             C runtime library

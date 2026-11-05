@@ -116,5 +116,5 @@ uninstall:
 	rm -rf $(INSTDIR)
 
 clean:
-	rm -rf build runtime/*.o runtime/libcobrt.a
+	rm -rf build runtime/*.o runtime/libcobrt.a runtime/yacccrun
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
