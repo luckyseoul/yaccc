@@ -352,6 +352,74 @@ def side_by_side(work):
           ['records 001201 counter 00001200', 'by group 001201 out of order 000000'])
 
 
+# ---------------------------------------------------------------- waiting for locks
+def waits(work):
+    """RETRY and READ WITH WAIT: P1 holds record X (or the whole file) for
+    a second; P2, started while it does, waits for it, or gives up when its
+    RETRY runs out."""
+    holder_rec = program('P1', 'idx', 'LOCK MODE MANUAL', '''           OPEN I-O F
+           MOVE "X" TO K
+           READ F WITH LOCK
+           DISPLAY "holding " FS UPON SYSERR
+           CALL "C$SLEEP" USING 1
+           CLOSE F
+''')
+    holder_file = program('P1F', 'idx', '', '''           OPEN I-O F WITH LOCK
+           DISPLAY "holding " FS UPON SYSERR
+           CALL "C$SLEEP" USING 1
+           CLOSE F
+''')
+
+    def p2(phrase, open_phrase=''):
+        return program('P2', 'idx', 'LOCK MODE MANUAL', f'''           OPEN I-O {open_phrase} F
+           DISPLAY "open " FS
+           IF FS = "00"
+               MOVE "X" TO K
+               READ F WITH LOCK {phrase}
+               DISPLAY "read " FS
+               CLOSE F
+           END-IF
+''')
+
+    def race(holder, waiter):
+        make_file(work, 'idx')
+        build(work, 'h', holder)
+        build(work, 'w', waiter)
+        h = subprocess.Popen([os.path.join(work, 'h')], cwd=work, stderr=subprocess.PIPE, text=True)
+        # the holder has the lock once it says so (on standard error, which
+        # is not buffered)
+        first = h.stderr.readline()
+        out = run(work, 'w')
+        h.communicate(timeout=60)
+        return [first.strip()] + lines(out)
+
+    check("waits: READ ... RETRY FOR 5 SECONDS gets the record once it is free",
+          race(holder_rec, p2('RETRY FOR 5 SECONDS')), ['holding 00', 'open 00', 'read 00'])
+    check("waits: READ WITH WAIT does too",
+          race(holder_rec, p2('WITH WAIT')), ['holding 00', 'open 00', 'read 00'])
+    check("waits: READ ... RETRY 3 TIMES gives up while it is held",
+          race(holder_rec, p2('RETRY 3 TIMES')), ['holding 00', 'open 00', 'read 51'])
+    check("waits: without RETRY the READ does not wait",
+          race(holder_rec, p2('')), ['holding 00', 'open 00', 'read 51'])
+    check("waits: OPEN RETRY FOREVER waits for a file opened WITH LOCK",
+          race(holder_file, p2('', 'RETRY FOREVER')), ['holding 00', 'open 00', 'read 00'])
+    check("waits: OPEN without RETRY does not",
+          race(holder_file, p2('')), ['holding 00', 'open 61'])
+    update = program('P2U', 'idx', 'LOCK MODE MANUAL', '''           OPEN I-O F
+           MOVE "X" TO K
+           READ F WITH NO LOCK
+           DISPLAY "read " FS
+           MOVE "new" TO D
+           REWRITE REC RETRY FOR 5 SECONDS
+           DISPLAY "rewrite " FS
+           DELETE F RECORD RETRY 50 TIMES
+           DISPLAY "delete " FS
+           CLOSE F
+''')
+    check("waits: REWRITE and DELETE ... RETRY wait for the record too",
+          race(holder_rec, update), ['holding 00', 'read 00', 'rewrite 00', 'delete 00'])
+
+
 # ---------------------------------------------------------------- the journal
 def journal(work):
     # a program killed without CLOSE: what it wrote is in the file
@@ -528,7 +596,7 @@ def one_process(work):
           ['G sees 00 Btwo', 'G sees 00 Cthr', 'child sees 00 Aone', 'F sees 00 Dfou'])
 
 
-SCENARIOS = [('sharing', sharing), ('locks', locks), ('side_by_side', side_by_side),
+SCENARIOS = [('sharing', sharing), ('locks', locks), ('waits', waits), ('side_by_side', side_by_side),
              ('journal', journal), ('one_process', one_process)]
 
 

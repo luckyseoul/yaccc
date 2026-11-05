@@ -5590,7 +5590,18 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
         if fi.external:
             for line in self.file_bindings(fi):
                 em(line)
-        em(f"int cob_io = {call};")
+        retry = getattr(getattr(self, 'cur_stmt', None), 'retry', None)
+        if retry is not None:
+            # RETRY / WITH WAIT: the statement again, after a pause, while
+            # another process holds the record (51) or the file (61)
+            how = {'TIMES': 1, 'SECONDS': 2, 'FOREVER': 3}[retry[0]]
+            n = self.int_expr(retry[1]) if retry[1] is not None else '0'
+            em("int cob_io;")
+            em("cob_s64 cob_rt = 0;")
+            em("unsigned long long cob_rs = 0;")
+            em(f"do cob_io = {call}; while (cob_io_retry(&{fi.sym}, {how}, {n}, &cob_rt, &cob_rs));")
+        else:
+            em(f"int cob_io = {call};")
         if getattr(self, 'cur_stmt', None) is not None:
             em(f"if (cob_io != COB_IO_OK) cob_exc_where(&{self.loc_sym(self.cur_stmt)});")
         if on_ok or (self.dbg_pending and self.dbg_pending['read']):

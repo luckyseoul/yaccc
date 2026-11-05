@@ -3439,13 +3439,9 @@ class Parser(SqlParser):
                 sharing = self._sharing_words()
                 continue
             if self.is_word('RETRY'):
-                # RETRY n TIMES / FOR n SECONDS / FOREVER: no waiting here
-                self.next()
-                while self.is_word('FOR', 'TIMES', 'SECONDS', 'FOREVER') or self.is_operand_start():
-                    if self.is_operand_start():
-                        self.parse_operand()
-                    else:
-                        self.next()
+                # RETRY n TIMES / FOR n SECONDS / FOREVER: wait for a file
+                # another process has (status 61)
+                st.retry = self._retry()
                 continue
             if not self.is_word('INPUT', 'OUTPUT', 'I-O', 'EXTEND'):
                 break
@@ -3455,6 +3451,9 @@ class Parser(SqlParser):
                 if self.accept('SHARING'):
                     self.accept('WITH')
                     sharing = self._sharing_words()
+                    continue
+                if self.is_word('RETRY'):
+                    st.retry = self._retry()
                     continue
                 if not self.is_user_word():
                     break
@@ -3510,7 +3509,11 @@ class Parser(SqlParser):
         if self.accept('INTO'):
             into = self.parse_identifier()
         lock = 0
-        while self.is_word('WITH', 'NO', 'LOCK', 'IGNORING', 'KEPT', 'WAIT'):
+        retry = None
+        while self.is_word('WITH', 'NO', 'LOCK', 'IGNORING', 'KEPT', 'WAIT', 'RETRY'):
+            if self.is_word('RETRY'):
+                retry = self._retry()
+                continue
             w = self.next().up
             if w == 'NO' or w == 'IGNORING':
                 lock = 2                # WITH NO LOCK, IGNORING LOCK
@@ -3518,11 +3521,16 @@ class Parser(SqlParser):
                 lock = 3                # WITH KEPT LOCK
             elif w == 'LOCK' and lock == 0:
                 lock = 1                # WITH LOCK
+            elif w == 'WAIT':
+                retry = ('FOREVER', None)   # WITH WAIT: until the record is free
         if self.accept('KEY'):
             self.accept('IS')
             key = self.parse_identifier()
+        if self.is_word('RETRY'):
+            retry = self._retry()
         st = Read(loc, f, direction, into, key, None, None, None, None)
         st.lock = lock
+        st.retry = retry
         while True:
             a, na = self._at_end()
             if a is not None:
@@ -3538,6 +3546,19 @@ class Parser(SqlParser):
                 break
         self._end('END-READ')
         return st
+
+    def _retry(self):
+        """RETRY n TIMES, RETRY FOR n SECONDS, RETRY FOREVER (COBOL 2014): how
+        long an I-O statement waits for a record or file another process has
+        locked. ('TIMES' | 'SECONDS' | 'FOREVER', expression or None)."""
+        if not self.accept('RETRY'):
+            return None
+        if self.accept('FOREVER'):
+            return ('FOREVER', None)
+        self.accept('FOR')
+        n = self.parse_expr()
+        how = self.expect('TIMES', 'SECONDS').up
+        return (how, n)
 
     def p_WRITE(self, loc):
         file_name = None
@@ -3567,6 +3588,14 @@ class Parser(SqlParser):
         st.file_name = file_name
         while True:
             progress = False
+            if self.is_word('RETRY'):
+                st.retry = self._retry()
+                progress = True
+            if self.is_word('WITH', 'NO', 'LOCK') and (self.is_word('LOCK') or self.is_word('LOCK', k=1)
+                                                       or self.is_word('LOCK', k=2)):
+                while self.is_word('WITH', 'NO', 'LOCK'):
+                    self.next()
+                progress = True
             if (self.is_word('AT') and self.is_word('END-OF-PAGE', 'EOP', k=1)) or self.is_word('END-OF-PAGE', 'EOP'):
                 self.accept('AT'); self.next()
                 st.eop = self.parse_statements()
@@ -3597,12 +3626,17 @@ class Parser(SqlParser):
         frm = None
         if self.accept('FROM'):
             frm = self.parse_operand()
-        while self.is_word('WITH', 'NO', 'LOCK'):
-            self.next()
+        retry = None
+        while self.is_word('WITH', 'NO', 'LOCK', 'RETRY'):
+            if self.is_word('RETRY'):
+                retry = self._retry()
+            else:
+                self.next()
         i, ni = self._invalid_key()
         self._end('END-REWRITE')
         st = Rewrite(loc, rec, frm, i, ni)
         st.file_name = file_name
+        st.retry = retry
         return st
 
     def p_DELETE(self, loc):
@@ -3616,9 +3650,12 @@ class Parser(SqlParser):
             return DeleteFile(loc, files)
         f = self.user_word('file name')
         self.accept('RECORD')
+        retry = self._retry()
         i, ni = self._invalid_key()
         self._end('END-DELETE')
-        return Delete(loc, f, i, ni)
+        st = Delete(loc, f, i, ni)
+        st.retry = retry
+        return st
 
     def p_START(self, loc):
         f = self.user_word('file name')
@@ -3629,9 +3666,12 @@ class Parser(SqlParser):
         elif self.accept('KEY'):
             op = self.parse_relop()
             key = self.parse_identifier()
+        retry = self._retry()
         i, ni = self._invalid_key()
         self._end('END-START')
-        return Start(loc, f, op, key, i, ni)
+        st = Start(loc, f, op, key, i, ni)
+        st.retry = retry
+        return st
 
     def p_SORT(self, loc):
         return self._sort_merge(loc, False)

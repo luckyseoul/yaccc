@@ -1166,6 +1166,7 @@ int cob_delete(cob_file *f);
 int cob_start(cob_file *f, int op, int key_index, size_t keylen);
 int cob_read_lock(cob_file *f, int next, int key_index, int lock);
 int cob_unlock(cob_file *f);
+int cob_io_retry(cob_file *f, int how, cob_s64 n, cob_s64 *tries, unsigned long long *since);
 void cob_unlock_all(void);
 void cob_io_unhandled(cob_file *f, int rc, const char *loc);
 #define COB_ADV_NONE   0

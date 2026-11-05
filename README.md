@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,805** lines of Python in the compiler, standard library only — no parser
+- **17,856** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -832,12 +832,19 @@ Several programs, and several processes, can have a file open at once:
   Another connector's READ in I-O mode, REWRITE or DELETE of a locked record
   gets status 51 (`READ ... WITH NO LOCK` reads it anyway); a READ in INPUT
   mode is never held up.
+- **Waiting.** A statement with COBOL 2014's RETRY phrase waits instead:
+  `RETRY n TIMES` tries n more times, a tenth of a second apart, `RETRY FOR
+  n SECONDS` keeps trying for n seconds, `RETRY FOREVER` until it gets
+  through, and `READ ... WITH WAIT` is RETRY FOREVER. OPEN waits so for a
+  file another process keeps to itself (61), and READ, WRITE, REWRITE,
+  DELETE and START for a locked record (51). Without it the status comes at
+  once.
 
 The locks are byte-range locks on the file itself (Linux open file
 description locks), so they go with the process however it ends. `make
 files-test` runs programs one after another, side by side and from each
 other through `CALL "SYSTEM"`: the sharing combinations above, record
-locks, four programs writing one indexed file at once and keeping a counter
+locks, waiting for them, four programs writing one indexed file at once and keeping a counter
 under a record lock without losing an update, a program killed before
 CLOSE, compaction, files in the earlier formats, and one program with a file
 open through two SELECTs and a called program. Of GnuCOBOL's 13 sharing and
@@ -1319,8 +1326,6 @@ literal.
 - Indexed files in BDB or VBISAM format: YACCC's own format is a journal (see
   *Files shared between programs*), and an indexed file's records are held
   in memory while it is open, which suits files up to a few million records.
-- Waiting for a lock: a locked record or file is reported at once (status
-  51 or 61); OPEN's RETRY phrase and READ's WAIT are accepted and don't wait.
 
 ## Differences from GnuCOBOL
 
@@ -1435,9 +1440,9 @@ links against is 18,997 lines of C.
 | `lib/yaccc/source.py` | 376 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 753 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 497 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 4,216 | recursive-descent parser to the AST (`nodes.py`, 852) |
+| `lib/yaccc/parser.py` | 4,256 | recursive-descent parser to the AST (`nodes.py`, 852) |
 | `lib/yaccc/data.py` | 705 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,965 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,976 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
@@ -1449,7 +1454,7 @@ links against is 18,997 lines of C.
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
 | `runtime/cobrt_core.c` | 3,643 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
-| `runtime/cobrt_io.c` | 3,187 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
+| `runtime/cobrt_io.c` | 3,219 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,265 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
 | `runtime/cobrt_rw.c` | 536 | Report Writer control system: the line cursor, paging, control breaks, INITIATE/GENERATE/TERMINATE |
 | `runtime/cobrt_str.c` | 460 | STRING, UNSTRING, INSPECT |
@@ -1465,7 +1470,7 @@ links against is 18,997 lines of C.
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
 | `runtime/cobrt_conf.c` | 394 | runtime configuration files (`COB_RUNTIME_CONFIG`), GnuCOBOL's `runtime.cfg` format |
 | `runtime/yacccrun.c` | 30 | the `yacccrun` program: a module's program run as the main program |
-| `runtime/cobrt.h` | 1,259 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,260 | runtime interface and inline fast paths |
 
 Design choices:
 

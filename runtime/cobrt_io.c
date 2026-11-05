@@ -2,6 +2,7 @@
 /* cobrt_io.c - file I/O (sequential, line sequential, relative, indexed) and SORT */
 #include "cobrt.h"
 #include <errno.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1515,6 +1516,37 @@ static int update_blocked(cob_file *f, const unsigned char *rec, cob_s64 slot)
 	if (!rec_locking(f))
 		return 0;
 	return rec_locked_elsewhere(f, rec_lock_id(f, rec, slot));
+}
+
+/* RETRY n TIMES / FOR n SECONDS / FOREVER, and READ WITH WAIT: the statement
+ * met a record (status 51) or a file (61) another process has locked. 1 when
+ * it is to be made again, after a pause of a tenth of a second; 0 when its
+ * status stands: another status, the tries used up, the time past. how: 1
+ * TIMES, 2 SECONDS, 3 FOREVER; *tries starts at 0, and *since is set then. */
+int cob_io_retry(cob_file *f, int how, cob_s64 n, cob_s64 *tries, unsigned long long *since)
+{
+	if (!(f->stat[1] == '1' && (f->stat[0] == '5' || f->stat[0] == '6')))
+		return 0;
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	unsigned long long now = (unsigned long long)ts.tv_sec * 1000ULL + (unsigned long long)ts.tv_nsec / 1000000ULL;
+	if (*tries == 0)
+		*since = now;
+	(*tries)++;
+	long wait_ms = 100;
+	if (how == 1 && *tries > n)
+		return 0;
+	if (how == 2) {
+		unsigned long long until = *since + (unsigned long long)(n < 0 ? 0 : n) * 1000ULL;
+		if (now >= until)
+			return 0;
+		if (until - now < (unsigned long long)wait_ms)
+			wait_ms = (long)(until - now);
+	}
+	struct timespec pause = { wait_ms / 1000, (wait_ms % 1000) * 1000000L };
+	while (nanosleep(&pause, &pause) != 0 && errno == EINTR)
+		;
+	return 1;
 }
 
 int cob_unlock(cob_file *f)
