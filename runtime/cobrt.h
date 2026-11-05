@@ -502,6 +502,7 @@ const unsigned short *cob_get_collating(void);
 int cob_cmp(const cob_field *a, const cob_field *b);
 int cob_cmp_alnum(const unsigned char *a, size_t al, const unsigned char *b, size_t bl);
 int cob_is_numeric(const cob_field *f);
+void cob_chk_data(const cob_field *f, const char *name, const char *loc);
 extern int cob_host_sign;
 extern int cob_pretty_display;
 extern int cob_settings_fixed;

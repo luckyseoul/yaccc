@@ -1012,6 +1012,63 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         if self.xref_on and isinstance(ref, DataRef):
             self.xref_changed.add(id(ref))
 
+    def data_checks(self, s):
+        """EC-DATA-INCOMPATIBLE: before a statement that reads numeric DISPLAY
+        or packed items as numbers, a check that each holds one -- the
+        statements cobc checks (MOVE, the arithmetic verbs and their
+        receiving items that are also read, COMPUTE, SET); comparisons and
+        function arguments are not checked, as there."""
+        if not self.checks_on(s.loc, 'data'):
+            return
+        refs = []
+
+        def operand(x):
+            if isinstance(x, Target):
+                x = x.ref
+            if isinstance(x, DataRef) and not x.refmod:
+                refs.append(x)
+
+        def expr(e):
+            if isinstance(e, BinOp):
+                expr(e.left)
+                expr(e.right)
+            elif isinstance(e, Neg):
+                expr(e.e)
+            else:
+                operand(e)
+        kind = type(s).__name__
+        if kind == 'Move':
+            operand(s.src)
+        elif kind == 'Arith':
+            for x in s.operands:
+                operand(x)
+            if s.by_or_into is not None:
+                operand(s.by_or_into)
+            # the TO / FROM / BY / INTO items are read too: as the receiving
+            # items of ADD TO and the like, or as operands with GIVING
+            for t in s.to:
+                operand(t)
+        elif kind == 'Compute':
+            expr(s.expr)
+        elif kind == 'SetStmt' and s.kind in ('TO', 'UPDOWN'):
+            operand(s.value)
+            if s.kind == 'UPDOWN':
+                for t in s.targets:
+                    operand(t)
+        seen = set()
+        for r in refs:
+            try:
+                it = self.resolve(r)
+            except CompileError:
+                continue
+            if not isinstance(it, DataItem) or it.type not in (T_NUM_DISPLAY, T_NUM_PACKED):
+                continue
+            key = (r.name, tuple(map(repr, r.subs)))
+            if key in seen:
+                continue
+            seen.add(key)
+            self.em(f"cob_chk_data({self.field(r)}, {c_string(r.name)}, {self.locstr(r.loc)});")
+
     def xref_stores(self, s):
         """-Xref: mark the operands a statement stores into."""
         out = []
@@ -1808,9 +1865,11 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         return it is not None and getattr(it, 'type', None) == T_POINTER
 
     def checks_on(self, loc, kind='subscript'):
-        """Bounds checks of a kind (subscript, ref-mod, odo) at this source
-        position: a >>TURN or $SET SSRANGE in the source overrides the
-        compile-wide flags (--no-check, -fno-ec=EC-BOUND-...)."""
+        """Checks of a kind (subscript, ref-mod, odo; data, off unless asked
+        for) at this source position: a >>TURN or $SET SSRANGE in the source
+        overrides the compile-wide flags (--no-check, -fno-ec=EC-BOUND-...)."""
+        if kind == 'data':
+            return 'data' in getattr(self.opts, 'checks_extra', ())
         d = getattr(self.opts, 'directives', None)
         if d is not None and loc is not None:
             state = d.check_at(getattr(loc, 'file', None), getattr(loc, 'line', 0))
@@ -2945,6 +3004,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         self.cur_stmt = s
         if self.xref_on:
             self.xref_stores(s)
+        if 'data' in getattr(self.opts, 'checks_extra', ()):
+            self.data_checks(s)
         fn = getattr(self, 'g_' + type(s).__name__, None)
         if fn is None:
             raise CompileError(f"{type(s).__name__} is not supported", s.loc)

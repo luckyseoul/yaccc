@@ -303,6 +303,34 @@ void *cob_malloc(size_t n)
 	return p;
 }
 
+/* EC-DATA-INCOMPATIBLE (-fec=EC-DATA-INCOMPATIBLE, -debug): a numeric
+ * DISPLAY or packed item a statement reads holds something that isn't a
+ * number -- the mainframe's S0C7 -- reported as cobc reports it */
+void cob_chk_data(const cob_field *f, const char *name, const char *loc)
+{
+	if (cob_is_numeric(f))
+		return;
+	char shown[200];
+	size_t o = 0;
+	size_t n = f->size;
+	if (f->attr->type == COB_NUM_PACKED) {
+		o += (size_t)snprintf(shown, sizeof shown, "0x");
+		for (size_t i = 0; i < n && o + 3 < sizeof shown; i++)
+			o += (size_t)snprintf(shown + o, sizeof shown - o, "%02x", f->data[i]);
+	} else {
+		for (size_t i = 0; i < n && o + 5 < sizeof shown; i++) {
+			unsigned char c = f->data[i];
+			if (c >= ' ' && c < 0x7f)
+				shown[o++] = (char)c;
+			else
+				o += (size_t)snprintf(shown + o, sizeof shown - o, "\\%03o", c);
+		}
+		shown[o] = 0;
+	}
+	cob_fatal("%s: '%s' (Type: %s) not numeric: '%s'", loc, name,
+	          f->attr->type == COB_NUM_PACKED ? "PACKED-DECIMAL" : "NUMERIC DISPLAY", shown);
+}
+
 void cob_sub_error(cob_s64 v, cob_s64 max, const char *name, const char *loc)
 {
 	cob_fatal("%s: subscript of '%s' out of bounds: %lld (maximum %lld)", loc, name, v, max);

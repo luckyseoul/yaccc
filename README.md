@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,082** lines of Python in the compiler, standard library only — no parser
+- **17,154** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -285,13 +285,27 @@ cobc's options that build scripts carry over work the same way:
 | `-Wall`, `-W`, `-Wextra` | every warning (the default) |
 | `-Wno-NAME` | not that warning; each warning ends with its name, as in `[-Wcolumn-overflow]`, and the names are cobc's |
 | `-Werror` | a warning fails the compile |
-| `-d`, `-debug` | every run-time check (subscripts, reference modification, OCCURS DEPENDING ON) and the stack trace, whatever `--no-check` says |
-| `-fec=NAME`, `-fno-ec=NAME` | those range checks on or off: `EC-ALL`, `EC-BOUND`, `EC-BOUND-SUBSCRIPT`, `EC-BOUND-REF-MOD`, `EC-BOUND-ODO` (the other checks are always made) |
+| `-d`, `-debug` | every run-time check (subscripts, reference modification, OCCURS DEPENDING ON, numeric data) and the stack trace, whatever `--no-check` says |
+| `-fec=NAME`, `-fno-ec=NAME` | those checks on or off: the range checks `EC-ALL`, `EC-BOUND`, `EC-BOUND-SUBSCRIPT`, `EC-BOUND-REF-MOD`, `EC-BOUND-ODO` (on by default), and the data check `EC-DATA-INCOMPATIBLE` (or `EC-DATA`; off by default, below). The other checks are always made |
 | `-fstatic-call` | a CALL literal names a program or C function that is linked in (an object file, a library): the link fails without it, rather than the CALL when it runs. `-fno-static-call` (the default) looks for it then, in the run unit, then C, then a loadable module |
 | `-fsingle-quote` | the figurative constant QUOTE is an apostrophe |
 | `-fdefault-colseq=EBCDIC\|ASCII\|NATIVE` | the collating sequence of a program that names none |
 | `-fmfcomment` | `*` or `/` in column 1 makes a fixed-format line a comment, as Micro Focus allows |
 | `-ffold-copy=UPPER\|LOWER`, `-fstack-check`, `-fsource-location` | accepted, as what they ask for is always so: a copybook's name is looked for as written and in both cases, the PERFORM stack is always checked, and run-time errors always give their source line |
+
+The data check (`-fec=EC-DATA-INCOMPATIBLE`, or `-debug`) is the one for
+the mainframe's S0C7: a numeric DISPLAY or packed-decimal item that a MOVE,
+an arithmetic statement, COMPUTE or SET reads must hold a number, or the run
+ends there, with the item, its usage and its bytes, as cobc words it:
+
+```
+cobrt: runtime error: pay.cbl:15: 'HOURS' (Type: NUMERIC DISPLAY) not numeric: '   '
+cobrt: runtime error: pay.cbl:17: 'RATE' (Type: PACKED-DECIMAL) not numeric: '0x414243'
+```
+
+Without it, such an item is read as the digits its bytes come to, as cobc
+reads it, and the arithmetic goes on. As with cobc, a comparison, DISPLAY,
+a class test, or an argument of an intrinsic function is not checked.
 
 Without the range checks (`--no-check`, `-fno-ec`) a subscript past the end
 of a table reaches the storage after it, as with cobc: the generated C is
@@ -1311,8 +1325,8 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 17,082 lines of Python across nineteen files; the runtime it
-links against is 18,912 lines of C.
+The compiler is 17,154 lines of Python across nineteen files; the runtime it
+links against is 18,941 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
@@ -1321,7 +1335,7 @@ links against is 18,912 lines of C.
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 850) |
 | `lib/yaccc/data.py` | 690 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,728 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,789 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
@@ -1329,7 +1343,7 @@ links against is 18,912 lines of C.
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `lib/yaccc/dumpgen.py` | 148 | `-fdump`: each program's data as a table the runtime walks after an error |
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
-| `runtime/cobrt_core.c` | 3,575 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,603 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,187 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,265 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
@@ -1346,7 +1360,7 @@ links against is 18,912 lines of C.
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
 | `runtime/cobrt_conf.c` | 394 | runtime configuration files (`COB_RUNTIME_CONFIG`), GnuCOBOL's `runtime.cfg` format |
 | `runtime/yacccrun.c` | 30 | the `yacccrun` program: a module's program run as the main program |
-| `runtime/cobrt.h` | 1,232 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,233 | runtime interface and inline fast paths |
 
 Design choices:
 

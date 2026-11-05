@@ -151,6 +151,7 @@ def main():
     static_calls(work)
     runner(work)
     cobc_options2(work)
+    data_checks(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1136,6 +1137,52 @@ def cobc_options2(work):
     r = run(['-fmax-errors=2', 'errs3.cbl'], work)
     check('-fmax-errors=2: two, then it stops', r, 1, 'too many errors (2)')
     check('... and not the third', r, 1, None, "'NOPE3'")
+
+
+BADDATA = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. BADDATA.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 G.
+          05 X PIC 9(3).
+       01 Y PIC S9(5) COMP-3.
+       01 YX REDEFINES Y PIC X(3).
+       01 Z PIC 9(5) VALUE 0.
+       PROCEDURE DIVISION.
+           MOVE SPACES TO G.
+           IF X > 5 DISPLAY "COMPARED" ELSE DISPLAY "COMPARED" END-IF.
+           MOVE "ABC" TO YX.
+           IF FUNCTION ARG-VALUE-COUNT = 0
+               ADD X TO Z
+           ELSE
+               ADD Y TO Z
+           END-IF.
+           DISPLAY "Z=" Z.
+           STOP RUN.
+'''
+
+
+def data_checks(work):
+    """EC-DATA-INCOMPATIBLE: a numeric item that holds no number, read by
+    MOVE or arithmetic, is a runtime error (the mainframe's S0C7)."""
+    with open(os.path.join(work, 'baddata.cbl'), 'w', encoding='latin-1') as f:
+        f.write(BADDATA.replace('FUNCTION ARG-VALUE-COUNT = 0', 'Z = 0'))
+    r = run(['baddata.cbl', '--run'], work)
+    check('without the check: the arithmetic goes on', r, 0, 'Z=')
+    r = run(['-fec=EC-DATA-INCOMPATIBLE', 'baddata.cbl', '--run'], work)
+    check('-fec=EC-DATA-INCOMPATIBLE: a DISPLAY item that holds no number', r, 1,
+          "baddata.cbl:15: 'X' (Type: NUMERIC DISPLAY) not numeric: '   '")
+    check('... a comparison is not checked, as with cobc', r, 1, 'COMPARED')
+    r = run(['-debug', 'baddata.cbl', '--run'], work)
+    check('-debug turns it on', r, 1, "'X' (Type: NUMERIC DISPLAY) not numeric")
+    with open(os.path.join(work, 'badpack.cbl'), 'w', encoding='latin-1') as f:
+        f.write(BADDATA.replace('PROGRAM-ID. BADDATA.', 'PROGRAM-ID. BADPACK.')
+                .replace('FUNCTION ARG-VALUE-COUNT = 0', 'Z = 1'))
+    r = run(['-fec=EC-DATA', 'badpack.cbl', '--run'], work)
+    check('a packed item that holds no number', r, 1,
+          "badpack.cbl:17: 'Y' (Type: PACKED-DECIMAL) not numeric: '0x414243'")
+    r = run(['-debug', '-fno-ec=EC-DATA-INCOMPATIBLE', 'baddata.cbl', '--run'], work)
+    check('-fno-ec=EC-DATA-INCOMPATIBLE turns it off again', r, 0, 'Z=')
 
 
 def module_ext():

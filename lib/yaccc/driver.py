@@ -182,10 +182,14 @@ GENERATED_C_FLAGS = ['-w', '-fwrapv', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=0'
 
 # the -fec names that select the checks YACCC compiles in or out, and the
 # kinds of check each one is
-_ALL_CHECKS = frozenset({'subscript', 'ref-mod', 'odo'})
-EC_RANGE = {'ALL': _ALL_CHECKS, 'EC-ALL': _ALL_CHECKS, 'EC-BOUND': _ALL_CHECKS,
+_RANGE = frozenset({'subscript', 'ref-mod', 'odo'})
+_ALL_CHECKS = _RANGE | {'data'}
+EC_RANGE = {'ALL': _ALL_CHECKS, 'EC-ALL': _ALL_CHECKS, 'EC-BOUND': _RANGE,
             'EC-BOUND-SUBSCRIPT': frozenset({'subscript'}), 'EC-BOUND-REF-MOD': frozenset({'ref-mod'}),
-            'EC-BOUND-ODO': frozenset({'odo'})}
+            'EC-BOUND-ODO': frozenset({'odo'}),
+            'EC-DATA': frozenset({'data'}), 'EC-DATA-INCOMPATIBLE': frozenset({'data'})}
+# the checks that are off until asked for
+_OFF_BY_DEFAULT = frozenset({'data'})
 
 
 def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=None):
@@ -503,10 +507,12 @@ def main(argv=None):
                          'one; -Werror: warnings fail the compile')
     ap.add_argument('-d', '-debug', dest='debug_checks', action='store_true',
                     help='every run-time check: subscripts, reference modification, OCCURS '
-                         'DEPENDING ON, and the PERFORM stack trace (overrides --no-check)')
+                         'DEPENDING ON, numeric data (EC-DATA-INCOMPATIBLE), and the PERFORM '
+                         'stack trace (overrides --no-check)')
     ap.add_argument('-fec', dest='ec_on', action='append', default=[], metavar='EC-NAME',
                     help='EC-ALL, EC-BOUND, EC-BOUND-SUBSCRIPT, EC-BOUND-REF-MOD or EC-BOUND-ODO: '
-                         'those range checks on (they are, unless --no-check or -fno-ec)')
+                         'those range checks on (they are, unless --no-check or -fno-ec); '
+                         'EC-DATA-INCOMPATIBLE: numeric items checked for numbers where read')
     ap.add_argument('-fno-ec', dest='ec_off', action='append', default=[], metavar='EC-NAME',
                     help='the same names: those range checks off')
     ap.add_argument('-fstack-check', dest='stack_check', action='store_true',
@@ -706,23 +712,28 @@ def main(argv=None):
     opts.sticky_linkage = args.sticky_linkage
     opts.recursive_check = args.recursive_check
     opts.stack_trace = args.stack_trace
-    # -fno-ec / -fec, in order: a kind of range check out or (back) in
-    opts.checks_off = set()
+    # -debug, then -fno-ec / -fec in order: a kind of check out or (back) in
+    opts.checks_off = set()         # range checks, on unless turned off
+    opts.checks_extra = set()       # the data check, off unless turned on
+    if args.debug_checks:
+        opts.check = True
+        opts.checks_extra = set(_OFF_BY_DEFAULT)
+        opts.stack_trace = True
     for on, spec in [(False, x) for x in args.ec_off] + [(True, x) for x in args.ec_on]:
         for name in (n.strip().upper() for n in spec.split(',') if n.strip()):
             if name not in EC_RANGE:
-                ap.error(f"-fec/-fno-ec: {name}: YACCC compiles the range checks in or out "
+                ap.error(f"-fec/-fno-ec: {name}: YACCC compiles the range checks and the data check in or out "
                          f"({', '.join(sorted(EC_RANGE))}); its other checks are always made")
             kinds = EC_RANGE[name]
             if on:
                 opts.checks_off -= kinds
-                opts.check = True
+                opts.checks_extra |= kinds & _OFF_BY_DEFAULT
+                if kinds - _OFF_BY_DEFAULT:
+                    opts.check = True
             else:
                 opts.checks_off |= kinds
-    if args.debug_checks:
-        opts.check = True
-        opts.checks_off = set()
-        opts.stack_trace = True
+                opts.checks_extra -= kinds
+
     DIAG.no_warnings = args.no_warnings
     for w in args.warnings:
         if w in ('all', 'extra'):
