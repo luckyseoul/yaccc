@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,856** lines of Python in the compiler, standard library only — no parser
+- **18,314** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -295,6 +295,7 @@ cobc's options that build scripts carry over work the same way:
 | `-fassign-clause=dynamic\|mf\|external\|ibm` | what `ASSIGN word` names (see *Dialects*) |
 | `-fnot-register=NAME` | NAME (`TALLY`, `RETURN-CODE`, ...) is an ordinary word rather than a special register |
 | `-facu-literals=ok` | ACUCOBOL's `B#`, `O#`, `X#` and `H#` numeric literals |
+| `--lsp` | run as a Language Server Protocol server for an editor (see *Editor support*) |
 | `-fprof` | profile the run: each section's and paragraph's calls and own time, written as CSV when it ends (see below) |
 | `-fodoslide`, `-fno-odoslide` | every table with OCCURS DEPENDING ON takes its current size and what follows it in the record moves up (IBM's layout; Micro Focus's `$SET ODOSLIDE` does the same), or not (the default; see *OCCURS DEPENDING ON*) |
 | `-fcomplex-odo` | accepted: a table with OCCURS DEPENDING ON may be followed by other items, or nested, without it |
@@ -684,6 +685,30 @@ PAYROLL,2100-SUBROUTINES,2200-COMPUTE-PAY,154,paragraph,12,0.009,3.85
 
 Each entry and return reads the clock once, which costs little: the
 Mandelbrot example runs in the same 40 ms with it.
+
+### Editor support
+
+`yaccc --lsp` is a Language Server Protocol server: an editor starts it and
+shows what the compiler finds as the program is written. On every change it
+compiles the editor's text (not the saved file) through code generation, so
+the errors and warnings are the compiler's own, on their lines. It also
+answers *go to definition* (into copybooks too), *find references*, *hover*
+(an item's level, PICTURE, USAGE, OCCURS and size) and the outline of
+programs, data, sections and paragraphs. Options given with it (`-I`,
+`-std=ibm`, `-free`, `-D`, ...) apply to every document.
+
+```lua
+-- Neovim
+vim.lsp.start({ name = 'yaccc', cmd = { 'yaccc', '--lsp', '-I', 'copybooks' },
+                root_dir = vim.fn.getcwd() })
+```
+
+```elisp
+;; Emacs (eglot)
+(add-to-list 'eglot-server-programs '(cobol-mode "yaccc" "--lsp"))
+```
+
+In VS Code, any generic LSP client extension takes the same command.
 
 ## Calling C, and C calling COBOL
 
@@ -1432,12 +1457,12 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 17,660 lines of Python across twenty-one files; the runtime it
+The compiler is 17,660 lines of Python across twenty-two files; the runtime it
 links against is 18,997 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
-| `lib/yaccc/source.py` | 376 | reference formats, continuations, directives, comment-entries, debugging lines |
+| `lib/yaccc/source.py` | 384 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 753 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 497 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,256 | recursive-descent parser to the AST (`nodes.py`, 852) |
@@ -1449,6 +1474,7 @@ links against is 18,997 lines of C.
 | `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `lib/yaccc/dumpgen.py` | 148 | `-fdump`: each program's data as a table the runtime walks after an error |
+| `lib/yaccc/lsp.py` | 443 | `--lsp`: the Language Server Protocol server: diagnostics, definitions, references, hover, outline |
 | `lib/yaccc/profgen.py` | 71 | `-fprof`: each program's table of sections and paragraphs, and the switches between them |
 | `lib/yaccc/odogen.py` | 197 | OCCURS DEPENDING ON at run time: the current size of a variable group, the place of the items after a variable table |
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Source reading: fixed/free reference formats, continuation lines,
 floating comments, compiler directives and comment-entries."""
+import os
 import re
 
 from .errors import CompileError, DIAG, note_cut
@@ -36,13 +37,20 @@ class LogicalLine:
         self.phys_len = phys_len
 
 
+# absolute path -> text: what an editor has in a file it holds open, read
+# instead of the file itself (yaccc --lsp)
+OVERLAY = {}
+
+
 def read_raw(path):
-    try:
-        with open(path, 'rb') as f:
-            data = f.read()
-    except OSError as e:
-        raise CompileError(f"cannot read '{path}': {e.strerror}")
-    text = data.decode('latin-1')
+    text = OVERLAY.get(os.path.abspath(path)) if OVERLAY else None
+    if text is None:
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+        except OSError as e:
+            raise CompileError(f"cannot read '{path}': {e.strerror}")
+        text = data.decode('latin-1')
     lines = text.split('\n')
     if lines and lines[-1] == '':
         lines.pop()

@@ -158,6 +158,7 @@ def main():
     move_ibm(work)
     profiling(work)
     more_cobc_options(work)
+    lsp(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1671,6 +1672,120 @@ def more_cobc_options(work):
     check('-fno-dump=WS,LO', r, 0)
     r = run(['-fdump', '-fno-dump', 'cliarg.cbl'], work)
     check('-fno-dump alone', r, 0)
+
+
+LSP_PROG = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LSPDEMO.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       COPY LSPREC.
+       01 WS-TOTAL       PIC 9(5) VALUE 0.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           MOVE 5 TO CUST-ID
+           ADD CUST-ID TO WS-TOTAL
+           PERFORM SHOW-PARA
+           STOP RUN.
+       SHOW-PARA.
+           DISPLAY WS-TOTAL.
+'''
+
+LSP_COPY = '''       01 CUST-REC.
+          05 CUST-ID     PIC 9(5).
+          05 CUST-NAME   PIC X(20).
+'''
+
+
+def lsp(work):
+    """yaccc --lsp: diagnostics as the text changes, definition (into a
+    copybook), references, hover and the outline, over JSON-RPC."""
+    import json as _json
+    with open(os.path.join(work, 'lspdemo.cbl'), 'w') as f:
+        f.write(LSP_PROG)
+    with open(os.path.join(work, 'LSPREC.cpy'), 'w') as f:
+        f.write(LSP_COPY)
+    uri = 'file://' + os.path.abspath(os.path.join(work, 'lspdemo.cbl'))
+    proc = subprocess.Popen([YACCC, '--lsp'], cwd=work, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def send(msg):
+        msg['jsonrpc'] = '2.0'
+        data = _json.dumps(msg).encode()
+        proc.stdin.write(b'Content-Length: %d\r\n\r\n' % len(data) + data)
+        proc.stdin.flush()
+
+    def recv():
+        length = 0
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                return None
+            if line in (b'\r\n', b'\n'):
+                break
+            if line.lower().startswith(b'content-length:'):
+                length = int(line.split(b':')[1])
+        return _json.loads(proc.stdout.read(length))
+
+    def until(pred):
+        while True:
+            m = recv()
+            if m is None or pred(m):
+                return m
+
+    def result(r):
+        return subprocess.CompletedProcess([], 0, _json.dumps(r), '')
+
+    try:
+        send({'id': 1, 'method': 'initialize', 'params': {'capabilities': {}}})
+        r = until(lambda m: m.get('id') == 1)
+        check('--lsp: initialize names its capabilities', result(r), 0, '"definitionProvider": true')
+        send({'method': 'initialized', 'params': {}})
+        send({'method': 'textDocument/didOpen', 'params': {'textDocument': {
+            'uri': uri, 'languageId': 'cobol', 'version': 1, 'text': LSP_PROG}}})
+        r = until(lambda m: m.get('method') == 'textDocument/publishDiagnostics'
+                  and m['params']['uri'].endswith('lspdemo.cbl'))
+        check('a clean program: no diagnostics', result(r['params']['diagnostics']), 0, '[]')
+        bad = LSP_PROG.replace('ADD CUST-ID TO WS-TOTAL', 'ADD CUST-IDX TO WS-TOTAL')
+        send({'method': 'textDocument/didChange', 'params': {
+            'textDocument': {'uri': uri, 'version': 2}, 'contentChanges': [{'text': bad}]}})
+        r = until(lambda m: m.get('method') == 'textDocument/publishDiagnostics'
+                  and m['params']['uri'].endswith('lspdemo.cbl'))
+        check('an edit with a misspelt name: an error on its line, from the unsaved text',
+              result(r['params']['diagnostics']), 0, '"line": 9')
+        check('... saying what is wrong', result(r['params']['diagnostics']), 0, "CUST-IDX")
+        send({'method': 'textDocument/didChange', 'params': {
+            'textDocument': {'uri': uri, 'version': 3}, 'contentChanges': [{'text': LSP_PROG}]}})
+        send({'id': 2, 'method': 'textDocument/definition', 'params': {
+            'textDocument': {'uri': uri}, 'position': {'line': 8, 'character': 23}}})
+        r = until(lambda m: m.get('id') == 2)
+        check('definition of CUST-ID: in the copybook', result(r), 0, 'LSPREC.cpy')
+        check('... on its line', result(r), 0, '"line": 1')
+        send({'id': 3, 'method': 'textDocument/hover', 'params': {
+            'textDocument': {'uri': uri}, 'position': {'line': 9, 'character': 30}}})
+        r = until(lambda m: m.get('id') == 3)
+        check('hover on WS-TOTAL: its description', result(r), 0, '01 WS-TOTAL 9(5)')
+        send({'id': 4, 'method': 'textDocument/references', 'params': {
+            'textDocument': {'uri': uri}, 'position': {'line': 5, 'character': 12},
+            'context': {'includeDeclaration': False}}})
+        r = until(lambda m: m.get('id') == 4)
+        lines_seen = sorted(x['range']['start']['line'] for x in r['result'])
+        check('references of WS-TOTAL: the ADD and the DISPLAY', result(lines_seen), 0, '[9, 13]')
+        send({'id': 5, 'method': 'textDocument/definition', 'params': {
+            'textDocument': {'uri': uri}, 'position': {'line': 10, 'character': 22}}})
+        r = until(lambda m: m.get('id') == 5)
+        check('definition of a PERFORMed paragraph', result(r), 0, '"line": 12')
+        send({'id': 6, 'method': 'textDocument/documentSymbol', 'params': {'textDocument': {'uri': uri}}})
+        r = until(lambda m: m.get('id') == 6)
+        check('the outline: the program, its data and its paragraphs', result(r), 0, '"name": "SHOW-PARA"')
+        check('... the program first', result(r), 0, '"name": "LSPDEMO"')
+        send({'id': 7, 'method': 'shutdown'})
+        until(lambda m: m.get('id') == 7)
+        send({'method': 'exit'})
+        rc = proc.wait(timeout=30)
+        check('shutdown, then exit: status 0', subprocess.CompletedProcess([], rc, '', ''), 0)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
 
 
 def module_ext():

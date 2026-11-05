@@ -684,6 +684,10 @@ def main(argv=None):
                     choices=['ok', 'warning', 'error'],
                     help='B#101, O#777, X#FF and H#FF as numeric literals, as ACUCOBOL has them '
                          '(-std=acu allows them)')
+    ap.add_argument('--lsp', action='store_true',
+                    help='run as a Language Server Protocol server on standard input and output, '
+                         'for an editor: diagnostics, definitions, references, hover, outline; '
+                         'the other options given apply to every document')
     ap.add_argument('-fprof', dest='prof', action='store_true',
                     help='profile the run: the calls and the time of every section and paragraph '
                          'written as CSV when it ends, to prof-PROGRAM.csv or $COB_PROF_FILE')
@@ -743,7 +747,7 @@ def main(argv=None):
         return 0
     if args.info:
         return show_info(args.cc)
-    if not args.sources:
+    if not args.sources and not args.lsp:
         ap.error('no source files given')
     # a positional token that is not a readable file is usually an argument
     # meant for the program being run, or a misspelt option's value
@@ -946,6 +950,9 @@ def main(argv=None):
             sys.stdout.write(text)
         return 0
 
+    if args.lsp:
+        from .lsp import serve
+        return serve(opts, fmt, args.include, defines, VERSION)
     if args.compile_only or args.module:
         return build_parts(args, opts, fmt, defines, cobol, csrcs)
 
