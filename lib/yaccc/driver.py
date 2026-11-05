@@ -200,6 +200,8 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
     for p in paths:
         ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging, defines=defines)
         ss.includes = opts.includes
+        if getattr(opts, 'binary_comp1', False):
+            ss.directives.comp1_binary = True   # until a $SET COMP-1 says otherwise
         toks = ss.load(p)
         parser = Parser(toks, ss.directives.vars)
         parser.bare_intrinsics = set(getattr(opts, 'bare_intrinsics', ()))
@@ -625,9 +627,16 @@ def main(argv=None):
     ap.add_argument('-std', '--std', dest='std', metavar='DIALECT',
                     help='dialect for the choices the standards leave open: '
                          + ', '.join(dialect.accepted_names()))
-    ap.add_argument('--binary-size', default=None, choices=['2-4-8', '1-2-4-8'],
-                    help='storage size scheme for BINARY/COMP items '
-                         '(default: from the dialect)')
+    ap.add_argument('--binary-size', '-fbinary-size', dest='binary_size', default=None,
+                    choices=['2-4-8', '1-2-4-8', '1--8'],
+                    help='storage size scheme for BINARY/COMP items: 2, 4 or 8 bytes, 1, 2, 4 or '
+                         '8, or the fewest bytes that hold the digits (default: from the dialect)')
+    ap.add_argument('-fbinary-byteorder', dest='binary_byteorder', default='big-endian',
+                    choices=['big-endian', 'native'],
+                    help='the byte order of BINARY/COMP items: big-endian (the default, as on '
+                         'mainframes) or the machine\'s own, as COMP-5')
+    ap.add_argument('-fbinary-comp-1', dest='binary_comp1', action='store_true',
+                    help='COMP-1 is a binary integer of two bytes, as $SET COMP-1(BINARY) makes it')
     ap.add_argument('-fbinary-truncate', dest='binary_truncate', action='store_true', default=None,
                     help='a BINARY item is limited to the digits of its PICTURE (default)')
     ap.add_argument('-fno-binary-truncate', dest='binary_truncate', action='store_false',
@@ -638,6 +647,18 @@ def main(argv=None):
                     help='DISPLAY writes a numeric item with its decimal point (default)')
     ap.add_argument('-fno-pretty-display', dest='pretty_display', action='store_false',
                     help='DISPLAY writes the stored digits as they stand')
+    ap.add_argument('-fassign-clause', dest='assign_clause', default=None,
+                    choices=['dynamic', 'mf', 'external', 'ibm'],
+                    help='ASSIGN word, for a word a data item has as its name: the file the '
+                         'item names (dynamic, mf: the default) or the name itself, IBM label '
+                         'parts dropped (external, ibm: -std=ibm sets it)')
+    ap.add_argument('-fnot-register', dest='not_registers', action='append', default=[],
+                    metavar='NAME', help='NAME (TALLY, RETURN-CODE, ...) is no special register, '
+                                         'but an ordinary word a program may declare')
+    ap.add_argument('-facu-literals', dest='acu_literals', default=None,
+                    choices=['ok', 'warning', 'error'],
+                    help='B#101, O#777, X#FF and H#FF as numeric literals, as ACUCOBOL has them '
+                         '(-std=acu allows them)')
     ap.add_argument('-fodoslide', dest='odoslide', action='store_true', default=None,
                     help='every table with OCCURS DEPENDING ON takes its current size, and what '
                          'follows it in the record moves up with it: IBM Enterprise COBOL\'s '
@@ -728,10 +749,17 @@ def main(argv=None):
         print(f"yaccc: note: -std={args.std}: the choices of {d.name}; extensions a strict "
               f"dialect rejects are still accepted", file=sys.stderr)
     opts.binary_size = args.binary_size or d.binary_size
+    opts.binary_byteorder = args.binary_byteorder
+    opts.binary_comp1 = args.binary_comp1
     opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
     opts.pretty_display = d.pretty_display if args.pretty_display is None else args.pretty_display
     opts.arithmetic_osvs = d.arithmetic_osvs if args.arithmetic_osvs is None else args.arithmetic_osvs
     opts.perform_osvs = d.perform_osvs if args.perform_osvs is None else args.perform_osvs
+    opts.assign_clause = args.assign_clause or d.assign_clause
+    opts.not_registers = {n.strip().upper() for spec in args.not_registers
+                          for n in spec.split(',') if n.strip()}
+    from . import lexer
+    lexer.ACU_LITERALS = d.acu_literals if args.acu_literals is None else args.acu_literals != 'error'
     opts.relax_syntax = args.relax_syntax
     if args.notrunc:
         opts.binary_truncate = False

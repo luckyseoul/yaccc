@@ -387,9 +387,12 @@ class Parser(SqlParser):
                 continue
             if a.name in defined:
                 continue
+            # holding the name as written, as cobc's does: ASSIGN payroll opens
+            # payroll, not PAYROLL
+            text = fc.assign_text or a.name
             it = DataItem(1, a.name, a.loc)
-            it.pic = Picture(f"X({max(len(a.name), 1)})", a.loc, prog.currency, prog.decimal_comma)
-            it.value = StrLit(a.name.encode('latin-1'))
+            it.pic = Picture(f"X({max(len(text), 1)})", a.loc, prog.currency, prog.decimal_comma)
+            it.value = StrLit(text.encode('latin-1'))
             prog.working.append(it)
             defined.add(a.name)
 
@@ -685,6 +688,8 @@ class Parser(SqlParser):
                                    'TAPE', 'LINE', 'SEQUENTIAL', 'ADVANCING', 'MULTIPLE', 'REEL', 'UNIT') and \
                         not (self.is_word('LINE') and self.is_word('SEQUENTIAL', k=1)):
                     w = self.next().up
+                    if w in ('EXTERNAL', 'DYNAMIC'):
+                        fc.assign_mode = w
                     if w in ('KEYBOARD', 'DISPLAY'):
                         fc.assign_kind = w
                     elif w == 'PRINTER':
@@ -696,6 +701,7 @@ class Parser(SqlParser):
                     self.next()
                     fc.assign = StrLit(t.val)
                 elif t.kind == 'WORD' and t.up not in RESERVED and t.up not in SELECT_CLAUSE_WORDS:
+                    fc.assign_text = t.val      # as written: the file's name when it is one
                     fc.assign = self.parse_identifier()
             elif self.accept('ORGANIZATION', 'ORGANISATION'):
                 self.accept('IS')

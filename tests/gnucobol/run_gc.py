@@ -101,7 +101,16 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '-flarger-redefines-ok': ['-flarger-redefines-ok'],
             '-ftop-level-occurs-clause=ok': ['-ftop-level-occurs-clause=ok'],
             '-fno-constant-folding': ['-fno-constant-folding'],
-            '-fdump=ALL': ['-fdump=ALL']}
+            '-fdump=ALL': ['-fdump=ALL'],
+            '-fbinary-byteorder=native': ['-fbinary-byteorder=native'],
+            '-fbinary-byteorder=big-endian': ['-fbinary-byteorder=big-endian'],
+            '-fbinary-size=1--8': ['-fbinary-size=1--8'],
+            '-fbinary-comp-1': ['-fbinary-comp-1'], '-fno-binary-comp-1': [],
+            '-fassign-clause=external': ['-fassign-clause=external'],
+            '-fassign-clause=dynamic': ['-fassign-clause=dynamic'],
+            '-fassign-clause=mf': ['-fassign-clause=mf'], '-fassign-clause=ibm': ['-fassign-clause=ibm'],
+            '-fnot-register=TALLY': ['-fnot-register=TALLY'],
+            '-facu-literals=ok': ['-facu-literals=ok'], '-std=acu-strict': ['-std', 'acu-strict']}
 
 
 class Test:
@@ -385,6 +394,10 @@ class Runner:
             if not words:
                 return 'SKIP', 'shell command'
             verb = words[0]
+            if verb == 'true' and len(words) == 1:
+                # the branch of an `if big-endian` around a test, which this
+                # harness takes as the little-endian host it runs on
+                continue
             if verb in ('$COMPILE', '$COMPILE_MODULE', '$COMPILE_ONLY'):
                 srcs = [w for w in words[1:] if not w.startswith('-')
                         and w.endswith(('.cob', '.cbl', '.COB', '.CBL', '.c', '.o'))]

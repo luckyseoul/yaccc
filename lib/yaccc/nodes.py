@@ -732,6 +732,8 @@ class FileControl:
     name: str
     assign: Any                     # StrLit / DataRef / str (external name) / None
     assign_kind: str = ''           # '' KEYBOARD DISPLAY
+    assign_mode: str = ''           # '' EXTERNAL DYNAMIC: as ASSIGN said
+    assign_text: str = ''           # the ASSIGN word as written
     organization: str = 'SEQUENTIAL'
     access: str = 'SEQUENTIAL'
     record_key: Any = None

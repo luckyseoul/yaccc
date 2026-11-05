@@ -48,6 +48,13 @@ REFMOD_ZERO_ERROR = {'cobol85', 'cobol2002', 'cobol2014', 'mf', 'ibm', 'acu'}
 # do (cobc -fperform-osvs, which its ibm and mvs dialects set)
 PERFORM_OSVS = {'ibm'}
 
+# ASSIGN word names the file itself (an IBM DD name, label parts dropped)
+# even when a data item has that name, as cobc's ibm dialect has it
+ASSIGN_EXTERNAL = {'ibm'}
+
+# B#101, O#777, X#FF, H#FF are numeric literals (ACUCOBOL)
+ACU_LITERALS = {'acu'}
+
 _ALIASES = {
     'default': 'default',
     'gnucobol': 'gnu', 'gnu': 'gnu', 'open-cobol': 'gnu',
@@ -89,6 +96,8 @@ class Dialect:
         self.missing_period = per
         self.refmod_zero = key in REFMOD_ZERO_ERROR
         self.perform_osvs = key in PERFORM_OSVS
+        self.assign_clause = 'ibm' if key in ASSIGN_EXTERNAL else 'dynamic'
+        self.acu_literals = key in ACU_LITERALS
 
     def __repr__(self):
         return (f"Dialect({self.name}, binary-size={self.binary_size}, "

@@ -35,6 +35,11 @@ class Tok:
 
 _WORD_CH = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_')
 
+# ACUCOBOL's numeric literals B#101, O#777, X#FF and H#FF (-facu-literals=ok,
+# -std=acu): their base, and the most digits each may have
+ACU_LITERALS = False
+_ACU_BASE = {'B': (2, 64), 'O': (8, 22), 'X': (16, 16), 'H': (16, 16)}
+
 
 class Lexer:
     def __init__(self, decimal_comma=False):
@@ -157,6 +162,23 @@ class Lexer:
                 if not re.fullmatch(r'[0-9A-Fa-f]+' if hexa else r'[01]+', bits):
                     raise CompileError(f"invalid boolean literal {'BX' if hexa else 'B'}\"{bits}\"", loc)
                 toks.append(Tok('NUM', str(int(bits, 16 if hexa else 2)), loc))
+                continue
+            if ACU_LITERALS and c.upper() in _ACU_BASE and i + 1 < n and text[i + 1] == '#' and \
+                    (i == 0 or text[i - 1] not in _WORD_CH):
+                # B#101, O#17777777777, X#FF / H#FF: ACUCOBOL's numeric literals
+                base, most = _ACU_BASE[c.upper()]
+                k = i + 2
+                while k < n and text[k].isalnum():
+                    k += 1
+                digits = text[i + 2:k]
+                try:
+                    val = int(digits, base)
+                except ValueError:
+                    raise CompileError(f"invalid {c.upper()}# literal: '{digits}'", loc) from None
+                if len(digits) > most:
+                    raise CompileError(f"{c.upper()}# literal of {len(digits)} digits: at most {most}", loc)
+                toks.append(Tok('NUM', str(val), loc))
+                i = k
                 continue
             if c in 'Hh' and i + 1 < n and text[i + 1] in '"\'':
                 # H"012345": a hexadecimal *numeric* literal

@@ -153,6 +153,8 @@ def main():
     cobc_options2(work)
     data_checks(work)
     odo_options(work)
+    binary_options(work)
+    register_literal_assign(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1401,6 +1403,105 @@ def odo_options(work):
     r = run(['-fmissing-statement=ok', '-flarger-redefines-ok', '-ftop-level-occurs-clause=ok',
              '-fno-constant-folding', 'rmz.cbl', '--run'], work)
     check('cobc options for what YACCC allows anyway are accepted', r, 0, '[]')
+
+
+BIN_ORDER = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. BINORD.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 G.
+          05 B PIC 9(4) BINARY VALUE 258.
+       01 S PIC S9(6) BINARY VALUE -123456.
+       01 C1 COMP-1.
+       PROCEDURE DIVISION.
+           DISPLAY FUNCTION HEX-OF (G) " " LENGTH OF S.
+           ADD 1 TO B.
+           DISPLAY B " " S.
+           MOVE 3.5 TO C1.
+           DISPLAY C1.
+           STOP RUN.
+'''
+
+
+def binary_options(work):
+    """cobc's -fbinary-byteorder, -fbinary-size=1--8 and -fbinary-comp-1."""
+    with open(os.path.join(work, 'binord.cbl'), 'w', encoding='latin-1') as f:
+        f.write(BIN_ORDER)
+    r = run(['binord.cbl', '--run'], work)
+    check('BINARY is big-endian by default', r, 0, '0102 4')
+    check('... and holds its value', r, 0, '0259 -123456')
+    r = run(['-fbinary-byteorder=native', 'binord.cbl', '--run'], work)
+    check('-fbinary-byteorder=native: the machine\'s order', r, 0, '0201 4')
+    check('... and the same values', r, 0, '0259 -123456')
+    r = run(['-fbinary-size=1--8', 'binord.cbl', '--run'], work)
+    check('-fbinary-size=1--8: three bytes for six digits', r, 0, '0102 3')
+    check('... which hold them', r, 0, '0259 -123456')
+    r = run(['-fbinary-size=1--8', '-fno-pretty-display', 'binord.cbl', '--run'], work)
+    check('... shown at the width of three bytes without pretty-display', r, 0, '-00123456')
+    r = run(['binord.cbl', '--run'], work)
+    check('COMP-1 is a float', r, 0, '3.5')
+    r = run(['-fbinary-comp-1', 'binord.cbl', '--run'], work)
+    check('-fbinary-comp-1: a two-byte binary integer', r, 0, '+00003')
+
+
+TALLY_PROG = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TALLYR.
+       PROCEDURE DIVISION.
+           ADD 1 TO TALLY.
+           DISPLAY "TALLY " TALLY.
+           STOP RUN.
+'''
+
+ACU_LIT = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ACULIT.
+       PROCEDURE DIVISION.
+           DISPLAY B#101 " " O#17777777777 " " X#ffFFFFff " " H#10.
+           STOP RUN.
+'''
+
+ASSIGN_IBM = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ASGIBM.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO UT-S-OUTDD ORGANIZATION LINE SEQUENTIAL.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F.
+       01 R PIC X(4).
+       PROCEDURE DIVISION.
+           OPEN OUTPUT F.
+           WRITE R FROM "HI".
+           CLOSE F.
+           STOP RUN.
+'''
+
+
+def register_literal_assign(work):
+    """cobc's -fnot-register, -facu-literals (and -std=acu's literals),
+    -fassign-clause."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+    write('tallyr.cbl', TALLY_PROG)
+    r = run(['tallyr.cbl', '--run'], work)
+    check('TALLY is a special register', r, 0, 'TALLY 00001')
+    r = run(['-fnot-register=TALLY', 'tallyr.cbl'], work)
+    check('-fnot-register=TALLY: an ordinary word', r, 1, "'TALLY' is not defined")
+    write('aculit.cbl', ACU_LIT)
+    r = run(['aculit.cbl'], work)
+    check('B#101 is no literal by default', r, 1, "unexpected character '#'")
+    r = run(['-facu-literals=ok', 'aculit.cbl', '--run'], work)
+    check('-facu-literals=ok: B#, O#, X# and H# literals', r, 0, '5 2147483647 4294967295 16')
+    r = run(['-std=acu', 'aculit.cbl', '--run'], work)
+    check('... which -std=acu allows', r, 0, '5 2147483647 4294967295 16')
+    write('asgibm.cbl', ASSIGN_IBM)
+    r = run(['-std=ibm', 'asgibm.cbl', '--run'], work)
+    check('-std=ibm: UT-S-OUTDD is the DD name OUTDD', r, 0, "ASSIGN UT-S-OUTDD interpreted as 'OUTDD'")
+    check('... and the file is OUTDD', r if os.path.exists(os.path.join(work, 'OUTDD'))
+          else subprocess.CompletedProcess(r.args, -1, '', 'no OUTDD'), 0)
+    r = run(['-fassign-clause=ibm', 'asgibm.cbl', '--run'], work)
+    check('-fassign-clause=ibm does the same', r, 0, "interpreted as 'OUTDD'")
 
 
 def module_ext():

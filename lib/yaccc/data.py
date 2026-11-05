@@ -43,6 +43,7 @@ F_BLANK_ZERO = 0x10
 F_DEC_COMMA = 0x20
 F_BINARY_TRUNC = 0x40
 F_UNSIGNED_PACKED = 0x100     # COMP-6: packed decimal, no sign nibble
+F_NATIVE_BIN = 0x200          # BINARY in the machine's byte order (-fbinary-byteorder=native)
 
 
 # the USAGE as a programmer writes it, for the normalised names
@@ -404,11 +405,18 @@ class DataItem:
         return None
 
 
-BINARY_SIZES = {'2-4-8': [(4, 2), (9, 4), (18, 8), (38, 16)],
+# digits -> bytes. '1--8' takes the fewest bytes whose range holds the
+# digits, signed or not (three bytes hold 6 digits signed and 7 unsigned), as
+# cobc -fbinary-size=1--8; '1--8u' is its unsigned table
+BINARY_SIZES = {'1--8': [(2, 1), (4, 2), (6, 3), (9, 4), (11, 5), (14, 6), (16, 7), (18, 8), (38, 16)],
+                '1--8u': [(2, 1), (4, 2), (7, 3), (9, 4), (12, 5), (14, 6), (16, 7), (18, 8), (38, 16)],
+                '2-4-8': [(4, 2), (9, 4), (18, 8), (38, 16)],
                 '1-2-4-8': [(2, 1), (4, 2), (9, 4), (18, 8), (38, 16)]}
 
 
-def binary_size(digits, scheme):
+def binary_size(digits, scheme, signed=True):
+    if scheme == '1--8' and not signed:
+        scheme = '1--8u'
     for maxd, sz in BINARY_SIZES[scheme]:
         if digits <= maxd:
             return sz
@@ -431,12 +439,15 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
     pic = item.pic
     dirs = getattr(opts, 'directives', None)
     if usage == 'FLOAT' and dirs is not None and getattr(dirs, 'comp1_binary', False):
-        # $SET COMP-1(BINARY): COMP-1 is a binary integer (PIC S9(9) COMP)
-        item.type = T_NUM_BINARY
-        item.size = 4
-        item.digits = 9
+        # $SET COMP-1(BINARY), -fbinary-comp-1: COMP-1 is a signed binary
+        # integer of two bytes in the machine's order, as COMP-5, shown with
+        # five digits; measured on cobc 3.1.2 (LENGTH 2, 258 stored as 02 01,
+        # 40000 wraps to -25536, 99999 is a size error)
+        item.type = T_NUM_COMP5
+        item.size = 2
+        item.digits = 5
         item.scale = 0
-        item.flags = F_SIGNED | F_BINARY_TRUNC
+        item.flags = F_SIGNED
         return
     if usage in ('FLOAT-DECIMAL-16', 'FLOAT-DECIMAL-34'):
         # IEEE 754-2008 decimal floating point: decimal64 holds 16 significant
@@ -585,15 +596,19 @@ def resolve_types(item, opts, inh_usage=None, inh_sign=None):
         item.flags |= F_UNSIGNED_PACKED
     elif usage == 'BINARY':
         item.type = T_NUM_BINARY
-        item.size = binary_size(pic.digits, opts.binary_size)
+        item.size = binary_size(pic.digits, opts.binary_size, pic.signed)
         if getattr(opts, 'binary_truncate', True):
             item.flags |= F_BINARY_TRUNC
+        if getattr(opts, 'binary_byteorder', 'big-endian') == 'native':
+            # -fbinary-byteorder=native: stored as COMP-5 is, still cut to its
+            # PICTURE as -fbinary-truncate says
+            item.flags |= F_NATIVE_BIN
         # without it the value is not cut back to the PICTURE's digits, so the
         # item holds everything its storage holds; the PICTURE's digits stay
         # the item's own, because they are what DISPLAY and arithmetic use
     elif usage == 'COMP-5':
         item.type = T_NUM_COMP5
-        item.size = binary_size(pic.digits, opts.binary_size)
+        item.size = binary_size(pic.digits, opts.binary_size, pic.signed)
     elif usage == 'COMP-X':
         # COMP-X with a numeric PICTURE: the fewest bytes that hold its digits
         item.type = T_NUM_BINARY

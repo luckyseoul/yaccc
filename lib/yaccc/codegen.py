@@ -8,7 +8,7 @@ from .data import (DataItem, IndexName, Picture, layout, link_redefines, resolve
                    T_NUM_BINARY, T_NUM_COMP5, T_NUM_FLOAT, T_NUM_DOUBLE, T_NUM_EDITED,
                    T_INDEX, T_ALL, T_POINTER, T_NUM_DEC_FLOAT, TYPE_NAMES, NUMERIC_TYPES,
                    F_SIGNED, F_SIGN_SEP, F_SIGN_LEAD, F_JUSTIFIED, F_BLANK_ZERO, F_DEC_COMMA,
-                   F_BINARY_TRUNC, F_UNSIGNED_PACKED)
+                   F_BINARY_TRUNC, F_UNSIGNED_PACKED, F_NATIVE_BIN)
 from . import errors
 from .errors import CompileError, DIAG, ErrorsReported, did_you_mean, source_line
 from .nodes import *
@@ -845,6 +845,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
                 ('XML-NNAMESPACE-PREFIX', '&cob_xml_nsprefix_reg', T_ALNUM, 0, 0, 0),
                 # the key that ended the last screen ACCEPT, without a CRT STATUS clause
                 ('COB-CRT-STATUS', '&cob_crt_status_reg', T_NUM_DISPLAY, 4, 0, 4)):
+            if nm in getattr(self.opts, 'not_registers', ()):
+                continue        # -fnot-register: an ordinary word here
             if nm not in ctx.names:
                 it = DataItem(1, nm, prog.loc)
                 it.special = expr
@@ -1693,10 +1695,26 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
             em(f"{f}.assign_literal = 1;")
         elif isinstance(a, DataRef):
             items = self.ctx.names.get(a.name)
-            if items and not a.quals and len(items) >= 1:
+            # ASSIGN word: the file a data item names (DYNAMIC), or the name
+            # itself (EXTERNAL, mapped through the environment when it is
+            # opened); without either word a declared item is DYNAMIC unless
+            # -fassign-clause=external / ibm (or -std=ibm) says EXTERNAL
+            clause = getattr(self.opts, 'assign_clause', 'dynamic')
+            mode = fc.assign_mode or ('EXTERNAL' if clause in ('external', 'ibm') else 'DYNAMIC')
+            if mode == 'DYNAMIC' and items and not a.quals and len(items) >= 1:
                 em(f"{f}.assign_field = {self.static_field(a)};")
             else:
-                em(f"{f}.assign_name = {c_string(a.name)};")
+                # the name as written, as cobc keeps it: on a file system that
+                # tells cases apart, ASSIGN payroll is payroll, not PAYROLL
+                name = fc.assign_text if fc.assign_text and not a.quals else a.name
+                if '-' in name.strip('-'):
+                    # an external name is IBM's assignment-name, [comments-]
+                    # [S-|AS-]ddname: the DD name is its last part, as cobc
+                    # takes it
+                    short = name.rstrip('-').rsplit('-', 1)[1]
+                    DIAG.warn(f"ASSIGN {name} interpreted as '{short}'", fc.loc, 'others')
+                    name = short
+                em(f"{f}.assign_name = {c_string(name)};")
         if not getattr(self.opts, 'filename_mapping', True):
             em(f"{f}.no_mapping = 1;")
         em(f"{f}.record = {fi.buf};")
@@ -2051,7 +2069,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
             return f"(cob_s64){p}"
         sg = 1 if (it.flags & F_SIGNED) else 0
         if kind == 'BIN':
-            return f"cob_bin_get({p}, {it.size}, {sg})"
+            acc = 'cob_c5_get' if it.flags & F_NATIVE_BIN else 'cob_bin_get'
+            return f"{acc}({p}, {it.size}, {sg})"
         if kind == 'C5':
             return f"cob_c5_get({p}, {it.size}, {sg})"
         if kind == 'DU':
@@ -2172,7 +2191,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
             if kind == 'BIN':
                 # without binary-truncate a BINARY item keeps whatever fits in
                 # its USAGE: cob_bin_set writes it.size bytes and drops the rest
-                parts.append(f"cob_bin_set({p}, {it.size}, (cob_s64)cob_w);")
+                acc = 'cob_c5_set' if it.flags & F_NATIVE_BIN else 'cob_bin_set'
+                parts.append(f"{acc}({p}, {it.size}, (cob_s64)cob_w);")
             elif kind == 'DU':
                 parts.append(f"cob_disp_set({p}, {it.size}, (cob_u64)cob_w);")
             elif kind == 'DS':

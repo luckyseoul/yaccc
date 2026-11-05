@@ -30,6 +30,7 @@ enum cob_type {
 #define COB_F_BINARY_TRUNC 0x40
 #define COB_F_ZERO         0x80   /* COB_ALL: figurative ZERO */
 #define COB_F_UNSIGNED_PACKED 0x100 /* COMP-6: packed with no sign nibble */
+#define COB_F_NATIVE_BIN   0x200  /* BINARY in the machine's byte order */
 
 typedef struct {
 	unsigned char type;

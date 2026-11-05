@@ -1222,7 +1222,7 @@ cob_dec cob_d_get(const cob_field *f)
 		r = get_packed(f);
 		return r;
 	case COB_NUM_BINARY:
-		r.v = get_binary_raw(f, 1, f->attr->flags & COB_F_SIGNED);
+		r.v = get_binary_raw(f, !(f->attr->flags & COB_F_NATIVE_BIN), f->attr->flags & COB_F_SIGNED);
 		r.scale = f->attr->scale;
 		return r;
 	case COB_NUM_COMP5:
@@ -1465,7 +1465,7 @@ int cob_d_set(cob_field *f, cob_dec d, int opt)
 		else if (a->type == COB_NUM_PACKED)
 			put_packed(f, v);
 		else
-			put_binary_raw(f, v, 1);
+			put_binary_raw(f, v, !(a->flags & COB_F_NATIVE_BIN));
 		return report;
 	}
 	case COB_NUM_FLOAT: {
@@ -2690,7 +2690,7 @@ static void display_fp(FILE *fp, const cob_field *f)
 		if (!cob_pretty_display || realbin) {
 			int width = a->digits;   /* the PICTURE's digits */
 			if (binfield) {
-				static const int bin_cap[] = { 0, 3, 5, 0, 10, 0, 0, 0, 20 };
+				static const int bin_cap[] = { 0, 3, 5, 8, 10, 13, 15, 17, 20 };
 				int c = (f->size < sizeof bin_cap / sizeof *bin_cap) ? bin_cap[f->size] : 0;
 				if (c > width)
 					width = c;
