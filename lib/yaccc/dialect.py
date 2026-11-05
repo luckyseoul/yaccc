@@ -38,6 +38,16 @@ DIALECTS = {
     'acu':       ('1-2-4-8', True,  True,  False, False, True,  True,  False),
 }
 
+# measured against cobc 3.1.2 with its run-time checks on: every named
+# dialect but the default makes a reference modification of length zero an
+# error (cobc -fno-ref-mod-zero-length)
+REFMOD_ZERO_ERROR = {'cobol85', 'cobol2002', 'cobol2014', 'mf', 'ibm', 'acu'}
+
+# a PERFORM returns when control reaches the end of its range even while a
+# PERFORM begun after it is still active, as OS/VS COBOL and IBM's compilers
+# do (cobc -fperform-osvs, which its ibm and mvs dialects set)
+PERFORM_OSVS = {'ibm'}
+
 _ALIASES = {
     'default': 'default',
     'gnucobol': 'gnu', 'gnu': 'gnu', 'open-cobol': 'gnu',
@@ -77,6 +87,8 @@ class Dialect:
         self.binary_size = bs
         self.binary_truncate = trunc
         self.missing_period = per
+        self.refmod_zero = key in REFMOD_ZERO_ERROR
+        self.perform_osvs = key in PERFORM_OSVS
 
     def __repr__(self):
         return (f"Dialect({self.name}, binary-size={self.binary_size}, "

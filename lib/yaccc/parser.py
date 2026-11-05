@@ -2934,6 +2934,12 @@ class Parser(SqlParser):
             self.expect('TIMES')
         if first is None:
             st.body = self.parse_statements()
+            if getattr(self, 'relax_syntax', False) and self.peek().kind == '.' \
+                    and not self.is_word('END-PERFORM'):
+                # -frelax-syntax-checks: the period ends the inline PERFORM, as
+                # cobc allows with it
+                DIAG.warn("inline PERFORM ended by '.' instead of END-PERFORM", loc, 'others')
+                return st
             self.expect('END-PERFORM')
         return st
 

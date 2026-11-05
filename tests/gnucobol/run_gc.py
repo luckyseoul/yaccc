@@ -43,6 +43,16 @@ DELIBERATE = {
     'CALL in from C with init missing / implicit':
         'deliberate difference: a COBOL program called from C starts the runtime itself',
 }
+# tests of what a -std dialect rejects: YACCC's dialects make the choices of
+# theirs that it implements, and accept the extensions a strict one refuses
+STRICTNESS = 'a dialect that rejects this; YACCC accepts it in every dialect'
+NOT_ENFORCED = {
+    'Obsolete 2002 keywords with COBOL2014': STRICTNESS,
+    'Level 01 subscripts': STRICTNESS,
+    'PERFORM VARYING BY phrase omitted': STRICTNESS,
+    'Redefining TALLY': STRICTNESS,
+    'ENTRY FOR GO TO / GO TO ENTRY': "Micro Focus's ENTRY FOR GO TO, not implemented",
+}
 
 IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra',
                  # programs are linked into the executable that calls them, which
@@ -53,7 +63,7 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             # yaccc has these as its own options
             '-fnotrunc': ['-fnotrunc'],
             '-fbinary-truncate': [],        # yaccc's default
-            '-fno-ref-mod-zero-length': ['--refmod-zero-length'],
+            '-fno-ref-mod-zero-length': ['-fno-ref-mod-zero-length'],
             # $SET CONSTANT is always defined here; the flag only switches it on
             '-fdefine-constant-directive=ok': [], '-fdefine-constant-directive': [],
             '-std=mf': ['-std', 'mf'], '-std=default': ['-std', 'default'],
@@ -78,7 +88,20 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '-fsticky-linkage': ['-fsticky-linkage'], '-fentry-statement=ok': ['-fentry-statement=ok'],
             '-fdefaultbyte=A': ['-fdefaultbyte', 'A'],
             '-fno-recursive-check': ['-fno-recursive-check'],
-            '-fnot-intrinsic=substitute': ['-fnot-intrinsic', 'substitute']}
+            '-fnot-intrinsic=substitute': ['-fnot-intrinsic', 'substitute'],
+            '-fno-binary-truncate': ['-fno-binary-truncate'],
+            '-fpretty-display': ['-fpretty-display'], '-fno-pretty-display': ['-fno-pretty-display'],
+            '-std=cobol85': ['-std', 'cobol85'], '-std=cobol2002': ['-std', 'cobol2002'],
+            '-std=cobol2014': ['-std', 'cobol2014'], '-std=mvs': ['-std', 'mvs'],
+            '-std=ibm-strict': ['-std', 'ibm-strict'], '-std=mf-strict': ['-std', 'mf-strict'],
+            '-fcomplex-odo': ['-fcomplex-odo'], '-fodoslide': ['-fodoslide'],
+            '-fperform-osvs': ['-fperform-osvs'], '-farithmetic-osvs': ['-farithmetic-osvs'],
+            '-frelax-syntax-checks': ['-frelax-syntax-checks'],
+            '-fmissing-statement=ok': ['-fmissing-statement=ok'],
+            '-flarger-redefines-ok': ['-flarger-redefines-ok'],
+            '-ftop-level-occurs-clause=ok': ['-ftop-level-occurs-clause=ok'],
+            '-fno-constant-folding': ['-fno-constant-folding'],
+            '-fdump=ALL': ['-fdump=ALL']}
 
 
 class Test:
@@ -300,6 +323,8 @@ class Runner:
             return 'SKIP', t.skip_reason
         if t.title in DELIBERATE and not self.use_cobc:
             return 'SKIP', DELIBERATE[t.title]
+        if t.title in NOT_ENFORCED and not self.use_cobc:
+            return 'SKIP', NOT_ENFORCED[t.title]
         tmp = tempfile.mkdtemp(prefix='gctest_')
         try:
             return self._run(t, tmp)

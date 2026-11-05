@@ -152,6 +152,7 @@ def main():
     runner(work)
     cobc_options2(work)
     data_checks(work)
+    odo_options(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1183,6 +1184,223 @@ def data_checks(work):
           "badpack.cbl:17: 'Y' (Type: PACKED-DECIMAL) not numeric: '0x414243'")
     r = run(['-debug', '-fno-ec=EC-DATA-INCOMPATIBLE', 'baddata.cbl', '--run'], work)
     check('-fno-ec=EC-DATA-INCOMPATIBLE turns it off again', r, 0, 'Z=')
+
+
+ODO_BOUNDS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ODOB.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 I PIC 9 VALUE 7.
+       01 R.
+          05 A PIC X OCCURS 1 TO 3 DEPENDING ON I.
+       PROCEDURE DIVISION.
+           DISPLAY "[" R "]".
+           STOP RUN.
+'''
+
+ODO_ROWS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ODOROWS.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 N PIC 99.
+       01 TBL.
+          05 ROW OCCURS 3.
+             10 RN PIC 9.
+             10 RC PIC X OCCURS 1 TO 5 DEPENDING ON RN.
+       PROCEDURE DIVISION.
+           MOVE ALL "A" TO TBL.
+           MOVE 2 TO RN (1).
+           MOVE 4 TO RN (2).
+           MOVE "Q" TO RC (2, 4).
+           MOVE LENGTH OF ROW (2) TO N.
+           DISPLAY "[" ROW (2) "] " N.
+           STOP RUN.
+'''
+
+ODO_SLIDE = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ODOSLIDE.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 I PIC 9 VALUE 2.
+       01 R VALUE "ABCDEFGH".
+          05 A PIC X OCCURS 1 TO 3 DEPENDING ON I.
+          05 B PIC X(2).
+       PROCEDURE DIVISION.
+           DISPLAY R ":" B.
+           STOP RUN.
+'''
+
+ODO_KEY = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ODOKEY.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "odokey.dat" ORGANIZATION INDEXED
+               ACCESS DYNAMIC RECORD KEY IS K.
+       DATA DIVISION.
+       FILE SECTION.
+       FD F.
+       01 FR.
+          05 N PIC 9.
+          05 T PIC X OCCURS 1 TO 3 DEPENDING ON N.
+          05 K PIC X(4).
+       PROCEDURE DIVISION.
+           OPEN OUTPUT F.
+           CLOSE F.
+           STOP RUN.
+'''
+
+ODO_SELF = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ODOSELF.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 R.
+          05 T PIC X OCCURS 1 TO 3 DEPENDING ON N.
+          05 N PIC 9.
+       PROCEDURE DIVISION.
+           MOVE 2 TO N.
+           DISPLAY R.
+           STOP RUN.
+'''
+
+PERF_OSVS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. POSVS.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 MYOCC PIC 9(4) VALUE 0.
+       PROCEDURE DIVISION.
+       ASTART SECTION.
+       A01.
+           PERFORM BTEST.
+           DISPLAY "BACK " MYOCC.
+           STOP RUN.
+       BTEST SECTION.
+       B01.
+           PERFORM B02 VARYING MYOCC FROM 1 BY 1 UNTIL MYOCC > 5.
+           GO TO B99.
+       B02.
+           IF MYOCC > 1
+              GO TO B99
+           END-IF.
+       B99.
+           EXIT.
+'''
+
+ARITH_OSVS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. AOSVS.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 NUM-A  PIC 9(3) VALUE 399.
+       01 NUM-B  PIC 9(3) VALUE 211.
+       01 RSLT   PIC 9(3).
+       01 RSLTV1 PIC 9(3).9.
+       PROCEDURE DIVISION.
+           COMPUTE RSLTV1, RSLT = ((NUM-A / 100) - (NUM-B / 100)) * 100.
+           DISPLAY "RSLT " RSLT " " RSLTV1.
+           STOP RUN.
+'''
+
+INLINE_PERIOD = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. INLP.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 INDVAL PIC 9(4).
+       PROCEDURE DIVISION.
+           PERFORM VARYING INDVAL FROM 1 BY 1 UNTIL INDVAL > 2.
+           DISPLAY "INDVAL " INDVAL.
+           STOP RUN.
+'''
+
+REFMOD_ZERO = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. RMZ.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 X PIC X(4) VALUE "abcd".
+       01 I PIC 9 VALUE 0.
+       PROCEDURE DIVISION.
+           DISPLAY "[" X(1:I) "]".
+           STOP RUN.
+'''
+
+
+def odo_options(work):
+    """OCCURS DEPENDING ON at run time: the DEPENDING ON item checked where a
+    variable group's size needs it, a count per table element, -fodoslide and
+    $SET ODOSLIDE, and what can't be variably located; cobc's -fperform-osvs,
+    -farithmetic-osvs, -frelax-syntax-checks, -f[no-]ref-mod-zero-length and
+    the options that allow what YACCC allows anyway."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+    write('odob.cbl', ODO_BOUNDS)
+    r = run(['odob.cbl', '--run'], work)
+    check('a group whose DEPENDING ON item is past its maximum', r, 1,
+          "odob.cbl:9: OCCURS DEPENDING ON 'I' out of bounds: 7")
+    check('... with the maximum noted, as cobc -debug words it', r, 1, "maximum subscript for 'A': 3")
+    write('odob0.cbl', ODO_BOUNDS.replace('VALUE 7', 'VALUE 0').replace('ODOB.', 'ODOB0.'))
+    r = run(['odob0.cbl', '--run'], work)
+    check('... and below its minimum', r, 1, "minimum subscript for 'A': 1")
+    r = run(['--no-check', 'odob0.cbl', '--run'], work)
+    check('--no-check: not checked', r, 0, '[]')
+    write('odorows.cbl', ODO_ROWS)
+    r = run(['odorows.cbl', '--run'], work)
+    check('a DEPENDING ON item in each element: the count of that element', r, 0, '[4AAAQ] 05')
+    write('odoslide.cbl', ODO_SLIDE)
+    r = run(['odoslide.cbl', '--run'], work)
+    check('a table with an item after it in its group keeps its maximum', r, 0, 'ABCDE:DE')
+    r = run(['-fodoslide', 'odoslide.cbl', '--run'], work)
+    check('-fodoslide: the item after it moves up', r, 0, 'ABCD:CD')
+    r = run(['-fcomplex-odo', 'odoslide.cbl', '--run'], work)
+    check('-fcomplex-odo is accepted', r, 0, 'ABCDE:DE')
+    write('odoset.cbl', '      $SET ODOSLIDE\n' + ODO_SLIDE.replace('ODOSLIDE.', 'ODOSET.'))
+    r = run(['odoset.cbl', '--run'], work)
+    check('$SET ODOSLIDE in the source', r, 0, 'ABCD:CD')
+    r = run(['-fno-odoslide', 'odoset.cbl', '--run'], work)
+    check('-fno-odoslide over $SET ODOSLIDE', r, 0, 'ABCDE:DE')
+    write('odokey.cbl', ODO_KEY)
+    r = run(['odokey.cbl'], work)
+    check('a RECORD KEY after a table that keeps its maximum', r, 0)
+    r = run(['-fodoslide', 'odokey.cbl'], work)
+    check('-fodoslide: a RECORD KEY whose place varies is refused', r, 1,
+          "key 'K' follows a table with OCCURS DEPENDING ON")
+    write('odoself.cbl', ODO_SELF)
+    r = run(['-fodoslide', 'odoself.cbl'], work)
+    check('-fodoslide: a DEPENDING ON item placed after its own table', r, 1,
+          "'N' follows the table 'T' whose size it gives")
+    write('posvs.cbl', PERF_OSVS)
+    r = run(['posvs.cbl', '--run'], work)
+    check('only the most recent PERFORM returns at the end of its range', r, 0, None, 'BACK')
+    r = run(['-fperform-osvs', 'posvs.cbl', '--run'], work)
+    check('-fperform-osvs: an earlier one returns where its range ends', r, 0, 'BACK 0002')
+    r = run(['-std=ibm', 'posvs.cbl', '--run'], work)
+    check('... which -std=ibm sets', r, 0, 'BACK 0002')
+    r = run(['-std=ibm', '-fno-perform-osvs', 'posvs.cbl', '--run'], work)
+    check('-fno-perform-osvs over -std=ibm', r, 0, None, 'BACK')
+    write('aosvs.cbl', ARITH_OSVS)
+    r = run(['aosvs.cbl', '--run'], work)
+    check('intermediate results at full precision', r, 0, 'RSLT 188 188.0')
+    r = run(['-farithmetic-osvs', 'aosvs.cbl', '--run'], work)
+    check('-farithmetic-osvs: cut to the largest scale, an edited receiver\'s too', r, 0,
+          'RSLT 180 180.0')
+    write('inlp.cbl', INLINE_PERIOD)
+    r = run(['inlp.cbl'], work)
+    check('an inline PERFORM needs END-PERFORM', r, 1, 'expected END-PERFORM')
+    r = run(['-frelax-syntax-checks', 'inlp.cbl', '--run'], work)
+    check('-frelax-syntax-checks: a period ends it, with a warning', r, 0,
+          "inline PERFORM ended by '.'")
+    check('... and the loop runs', r, 0, 'INDVAL 0003')
+    write('rmz.cbl', REFMOD_ZERO)
+    r = run(['rmz.cbl', '--run'], work)
+    check('a reference modification of length zero names no bytes', r, 0, '[]')
+    r = run(['-std=cobol2002', 'rmz.cbl', '--run'], work)
+    check('... an error in the named dialects, as cobc', r, 1, 'reference modification out of bounds')
+    r = run(['-fno-ref-mod-zero-length', 'rmz.cbl', '--run'], work)
+    check('-fno-ref-mod-zero-length', r, 1, 'reference modification out of bounds')
+    r = run(['-std=ibm', '-fref-mod-zero-length', 'rmz.cbl', '--run'], work)
+    check('-fref-mod-zero-length over the dialect', r, 0, '[]')
+    r = run(['-fmissing-statement=ok', '-flarger-redefines-ok', '-ftop-level-occurs-clause=ok',
+             '-fno-constant-folding', 'rmz.cbl', '--run'], work)
+    check('cobc options for what YACCC allows anyway are accepted', r, 0, '[]')
 
 
 def module_ext():

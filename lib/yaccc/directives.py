@@ -31,6 +31,7 @@ class Directives:
         self.stack = []
         self.dpc_in_data = None
         self.comp1_binary = False   # $SET COMP-1(BINARY): COMP-1 is a binary integer
+        self.odoslide = None        # $SET ODOSLIDE / NOODOSLIDE: None when not set
         # constants in source order: (line, name, value), so a constant used
         # before a later >>DEFINE ... OVERRIDE still sees the earlier value
         self.const_history = []
@@ -185,6 +186,15 @@ class Directives:
 
     def _set(self, rest, loc):
         """>>SET CONSTANT name literal; other >>SET forms are left to the caller."""
+        words = [w.upper() for w in rest.split()]
+        slide = [w for w in words if w in ('ODOSLIDE', 'NOODOSLIDE')]
+        if slide:
+            # Micro Focus $SET ODOSLIDE: the place of the items after a
+            # variable table follows its current size (see odogen); it may
+            # share the line with other directives
+            self.odoslide = slide[-1] == 'ODOSLIDE'
+            if len(slide) == len(words):
+                return True
         parts = rest.split(None, 1)
         if parts and parts[0].upper() == 'CONSTANT' and len(parts) > 1:
             self._define(parts[1], loc)

@@ -295,6 +295,23 @@ void cob_perform_overflow(const char *loc)
 	cob_fatal("%s: PERFORM stack overflow (recursive PERFORM?)", loc);
 }
 
+/* -fperform-osvs: control has reached the end of procedure id, which is not
+ * where the most recent PERFORM's range ends. If an earlier active PERFORM's
+ * range ends here, the PERFORMs begun after it are abandoned (their frames
+ * cleared, as a return clears one) and it is on top, to return; as OS/VS and
+ * IBM COBOL return from whichever PERFORM's end control reaches */
+int cob_perform_osvs(const cob_perform ***fp, const cob_perform **base, int id)
+{
+	const cob_perform **p;
+	for (p = *fp - 1; p > base; p--)
+		if (*p && (*p)->through == id) {
+			while (*fp > p)
+				*(*fp)-- = NULL;
+			return 1;
+		}
+	return 0;
+}
+
 void *cob_malloc(size_t n)
 {
 	void *p = calloc(1, n ? n : 1);
@@ -336,17 +353,27 @@ void cob_sub_error(cob_s64 v, cob_s64 max, const char *name, const char *loc)
 	cob_fatal("%s: subscript of '%s' out of bounds: %lld (maximum %lld)", loc, name, v, max);
 }
 
-/* a subscript of a table whose upper bound is OCCURS DEPENDING ON: the count
- * is the current value of the DEPENDING item, and the subscript must be within
- * 1..count, where count itself must be within the declared minimum..maximum */
-cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64 dmax,
-                        const char *name, const char *loc)
+/* the DEPENDING ON item of a table, read for the table's size or the place
+ * of what follows it: within the table's minimum..maximum, or a runtime
+ * error, worded as cobc -debug words it */
+cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *obj, const char *table,
+                    const char *loc)
 {
-	cob_s64 n = cob_get_int(dep);
-	if (n < dmin || n > dmax)
-		cob_fatal("%s: OCCURS DEPENDING ON value of '%s' out of bounds: %lld "
-		          "(minimum %lld, maximum %lld)", loc, name, (long long)n,
-		          (long long)dmin, (long long)dmax);
+	if (v < min || v > max) {
+		cob_fatal_note("%s subscript for '%s': %lld", v < min ? "minimum" : "maximum", table,
+		               (long long)(v < min ? min : max));
+		cob_fatal("%s: OCCURS DEPENDING ON '%s' out of bounds: %lld", loc, obj, (long long)v);
+	}
+	return v;
+}
+
+/* a subscript of a table whose upper bound is OCCURS DEPENDING ON: the count
+ * n is the current value of the DEPENDING item, which must be within the
+ * declared minimum..maximum, and the subscript must be within 1..n */
+cob_s64 cob_chk_odo_sub(cob_s64 sub, cob_s64 n, cob_s64 dmin, cob_s64 dmax, const char *name,
+                        const char *obj, const char *loc)
+{
+	cob_chk_odo(n, dmin, dmax, obj, name, loc);
 	if (sub < 1 || sub > n) {
 		/* GnuCOBOL's wording for the current (not declared) maximum */
 		fflush(stdout);
@@ -360,13 +387,6 @@ cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64
 		exit(1);
 	}
 	return sub;
-}
-
-cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *name, const char *loc)
-{
-	if (v < min || v > max)
-		cob_fatal("%s: OCCURS DEPENDING ON value of '%s' out of range: %lld", loc, name, v);
-	return v;
 }
 
 cob_field *cob_refmod(cob_field *out, const cob_field *f, cob_s64 start, cob_s64 len, int check, const char *loc)

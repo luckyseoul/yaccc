@@ -14,6 +14,7 @@ from .errors import CompileError, DIAG, ErrorsReported, did_you_mean, source_lin
 from .nodes import *
 from .dbggen import DebugGen
 from .dumpgen import DumpGen
+from .odogen import OdoLayout, storage_children
 from .rwgen import ReportWriterGen
 from .scrgen import ScreenGen
 from .sqlgen import SqlGen
@@ -221,9 +222,10 @@ SYSTEM_ROUTINES_ALIAS = {'CBL_GC_DUMP': 'CBL_OC_DUMP', 'CBL_OC_NANOSLEEP': 'CBL_
                          '\xf4': 'X_F4', '\xf5': 'X_F5', '\xe4': 'X_E4', '\xe5': 'X_E5'}
 
 
-class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
+class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
     def __init__(self, programs, opts):
         self.programs = programs
+        self.odo_init()
         self.udf_names = set()
         self.opts = opts
         # -Xref: every reference to a data item or procedure, as it resolves
@@ -1622,6 +1624,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             return it.special.lstrip('&') if False else it.special
         if it.section not in ('WS', 'FILE', 'LK', 'LS') or it.occurs_chain() or ref.subs or ref.refmod:
             raise CompileError(f"'{ref.name}' must be a non-subscripted data item here", ref.loc)
+        if self.variably_located(it):
+            raise CompileError(f"'{ref.name}' follows a table with OCCURS DEPENDING ON, so its place "
+                               f"varies; it can't be used here", ref.loc)
         key = id(it)
         if key in self.static_fields:
             return self.static_fields[key]
@@ -1712,6 +1717,9 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         for k, _dups, _srcs, _sup in fi.keys:
             if k.size > 4096:
                 raise CompileError(f"key '{k.name}' is longer than 4096 bytes", fc.loc)
+            if self.variably_located(k):
+                raise CompileError(f"key '{k.name}' follows a table with OCCURS DEPENDING ON, so "
+                                   f"its place in the record varies", fc.loc)
         em(f"{f}.nkeys = {len(fi.keys)};")
         for i, (k, dups, srcs, supp) in enumerate(fi.keys):
             parts = [k] if not srcs else [self.resolve(sr) for sr in srcs]
@@ -1833,9 +1841,13 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             raise CompileError(f"'{ref.name}' has {len(subs)} subscript(s), expected {len(chain)}", ref.loc)
         const = it.offset
         terms = []
+        ctx = {}            # the subscripts so far, for a DEPENDING ON item in a table
         for occ, sub in zip(chain, subs):
             if sub == 'ALL':
                 raise CompileError("ALL subscript is only allowed in function arguments", ref.loc)
+            # the distance between elements: less than the static one when an
+            # element holds a variable table (see odogen)
+            stride = self.odo_stride(occ, ref.loc, ctx)
             if isinstance(sub, NumLit) and sub.scale == 0 and not sub.neg \
                     and occ.occurs.depending is None:
                 # A literal subscript is folded when the upper bound is fixed.
@@ -1844,19 +1856,35 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 v = int(sub.digits)
                 if v < 1 or v > occ.occurs.max:
                     raise CompileError(f"subscript {v} of '{ref.name}' out of range 1..{occ.occurs.max}", ref.loc)
-                const += (v - 1) * occ.size
+                if stride == str(occ.size):
+                    const += (v - 1) * occ.size
+                elif v > 1:
+                    terms.append(f"{v - 1} * {stride}")
+                ctx[id(occ)] = f"{v}LL"
                 continue
             s = self.int_expr(sub)
+            ctx[id(occ)] = s
             dep = occ.occurs.depending
             if dep is not None and self.checks_on(ref.loc, 'odo'):
                 # the upper bound is the current DEPENDING ON value
                 dmax = 2147483647 if getattr(occ.occurs, 'unbounded', False) else occ.occurs.max
-                s = (f"cob_chk_odo_sub({s}, {self.field(dep)}, {occ.occurs.min}, "
-                     f"{dmax}, {c_string(ref.name)}, {c_string(str(ref.loc))})")
+                count = self.odo_count(occ, ref.loc, ctx, check=False)
+                if count is None:
+                    # a DEPENDING ON item in an element: one per element
+                    count = self.int_expr(dep)
+                dobj = self.resolve(dep)
+                dname = (dobj.name if isinstance(dobj, DataItem) else None) or dep.name
+                s = (f"cob_chk_odo_sub({s}, {count}, {occ.occurs.min}, "
+                     f"{dmax}, {c_string(ref.name)}, {c_string(dname)}, {c_string(str(ref.loc))})")
             elif self.checks_on(ref.loc, 'subscript'):
                 s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
-            terms.append(f"({s} - 1) * {occ.size}")
-        return ' + '.join([str(const)] + terms)
+            terms.append(f"({s} - 1) * {stride}")
+        expr = ' + '.join([str(const)] + terms)
+        # what the variable tables before the item have shrunk by
+        before = self.odo_before(it, ref.loc, ctx)
+        if before:
+            expr = f"({expr} - {' - '.join(before)})"
+        return expr
 
     @staticmethod
     def pointer_call(it):
@@ -1877,21 +1905,41 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 return state
         return getattr(self.opts, 'check', True) and kind not in getattr(self.opts, 'checks_off', ())
 
-    def size_expr(self, it, receiving=False):
-        d = it.contains_odo() if it.children or it.occurs else None
-        if d is None or d is it:
+    def size_expr(self, it, receiving=False, loc=None, ctx=None):
+        """C expression for the size of item it as referenced: its static
+        size less what the variable tables in it have shrunk by (odogen).
+        ctx gives the reference's subscripts, for a DEPENDING ON item in a
+        table element."""
+        if not (it.children or it.occurs):
             return str(it.size)
-        dep = d.occurs.depending
-        if receiving:
-            obj = self.resolve(dep)
-            if obj is not None and any(x is obj for x in it.walk()):
-                return str(it.size)
-        cur = self.int_expr(dep)
-        if getattr(d.occurs, 'unbounded', False):
-            # no static extent: the fixed part up to the table plus what
-            # DEPENDING ON says is there
+        d = it.contains_odo()
+        if d is not None and d is not it and getattr(d.occurs, 'unbounded', False):
+            # OCCURS UNBOUNDED: no static extent, so the fixed part up to the
+            # table plus what DEPENDING ON says is there
+            cur = self.int_expr(d.occurs.depending)
             return f"({d.offset - it.offset} + ({cur}) * {d.size})"
-        return f"({it.size} - ({d.occurs.max} - {cur}) * {d.size})"
+        loc = loc or self.cur_loc
+        if it.occurs:
+            # one element of a table
+            return self.odo_stride(it, loc, ctx)
+        shrink = self.odo_shrink(it, loc, ctx)
+        if shrink is None:
+            return str(it.size)
+        if receiving and self.odo_object_inside(it):
+            # a receiving group that holds its own DEPENDING ON item is
+            # moved to at its full size
+            return str(it.size)
+        return f"({it.size} - {shrink})"
+
+    def ref_ctx(self, ref, it):
+        """The subscript context of a reference (odogen), its subscripts'
+        values without their checks: for the size of what it names."""
+        chain = it.occurs_chain() if isinstance(it, DataItem) else []
+        if not chain or not ref.subs or len(ref.subs) != len(chain) or 'ALL' in ref.subs:
+            return None
+        if not any(self.odo_may_vary(c) for c in chain):
+            return None
+        return {id(occ): self.int_expr(sub) for occ, sub in zip(chain, ref.subs)}
 
     def ref_field(self, ref, receiving=False):
         it = self.resolve(ref)
@@ -1925,7 +1973,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             base = (f"cob_lk_ptr({base}, {c_string(self.lk_root_name(it))}, "
                     f"{c_string(ref.name)}, {c_string(str(ref.loc))})")
         off = self.offset_expr(ref, it)
-        f = f"CF({base} + {off}, {self.size_expr(it, receiving)}, &{self.item_attr(it)})"
+        size = self.size_expr(it, receiving, ref.loc, self.ref_ctx(ref, it))
+        f = f"CF({base} + {off}, {size}, &{self.item_attr(it)})"
         if ref.refmod:
             f = self.apply_refmod(f, ref.refmod, ref.loc)
         return f
@@ -2285,7 +2334,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 # PIC X ANY LENGTH: the caller's field decides it
                 n = self.any_length_param(self.prog, r)
                 return f"cob_frame_param_size({n})"
-            return self.size_expr(it)
+            return self.size_expr(it, False, r.loc, self.ref_ctx(r, it))
         return f"({self.field(r)})->size"
 
     def dec_osvs(self, e, wide, dmax, top):
@@ -2828,6 +2877,15 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         if isinstance(l, AddressOf) or isinstance(r, AddressOf) or \
                 self._is_pointer(l) or self._is_pointer(r):
             return f"({self._addr(l)} {cop} {self._addr(r)})"
+        if getattr(self.opts, 'arithmetic_osvs', False) and not dec_float and \
+                (self.op_count(l) > 1 or self.op_count(r) > 1) and self.is_numeric(l) and self.is_numeric(r):
+            # OS/VS arithmetic in a condition: the intermediate results are cut
+            # to the largest scale of its operands, as in a COMPUTE
+            DIAG.warn("precision of result may change with arithmetic-osvs", self.cur_loc, 'arithmetic-osvs')
+            dmax = max(self.expr_scale(l), self.expr_scale(r))
+            dl = self.dec_osvs(l, False, dmax, True)[0] if self.op_count(l) > 1 else self.dec(l)
+            dr = self.dec_osvs(r, False, dmax, True)[0] if self.op_count(r) > 1 else self.dec(r)
+            return f"(cob_d_cmp({dl}, {dr}) {cop} 0)"
         if self.is_numeric(l) and self.is_numeric(r):
             a = self.fx(l)
             b = self.fx(r) if a is not None else None
@@ -2962,9 +3020,18 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                     self.stmt(st)
                 em.label(end)
             em.label(para.end_label)
-            em(f"if ((*frame_ptr)->through == {para.id}) goto *(*frame_ptr)->ret;")
+            em(self.perform_exit(para.id))
         em.label(sec.end_label)
-        em(f"if ((*frame_ptr)->through == {sec.id}) goto *(*frame_ptr)->ret;")
+        em(self.perform_exit(sec.id))
+
+    def perform_exit(self, pid):
+        """The end of a paragraph or section: the most recent PERFORM returns if
+        its range ends here -- or, with -fperform-osvs (-std=ibm), the most
+        recent one whose range ends here, those begun after it abandoned."""
+        if getattr(self.opts, 'perform_osvs', False):
+            return (f"if ((*frame_ptr)->through == {pid} || "
+                    f"cob_perform_osvs(&frame_ptr, cob_frames, {pid})) goto *(*frame_ptr)->ret;")
+        return f"if ((*frame_ptr)->through == {pid}) goto *(*frame_ptr)->ret;"
 
     def stmts(self, lst):
         if lst:
@@ -3234,9 +3301,14 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         em.ind += 1
         em(f"unsigned char *cob_g1 = {self.data_ptr(src)};")
         em(f"unsigned char *cob_g2 = {self.data_ptr(dst)};")
+        def place(x, g):
+            # its offset in the group: after a variable table, where it is now
+            before = self.odo_before(x, None, None, stop=g)
+            off = str(x.offset - g.offset)
+            return f"({off} - {' - '.join(before)})" if before else off
         for a, b in pairs:
-            fa = f"CF(cob_g1 + {a.offset - g1.offset}, {a.size}, &{self.item_attr(a)})"
-            fb = f"CF(cob_g2 + {b.offset - g2.offset}, {b.size}, &{self.item_attr(b)})"
+            fa = f"CF(cob_g1 + {place(a, g1)}, {a.size}, &{self.item_attr(a)})"
+            fb = f"CF(cob_g2 + {place(b, g2)}, {b.size}, &{self.item_attr(b)})"
             if verb == 'MOVE':
                 em(f"cob_move({fa}, {fb});")
             else:
@@ -3533,7 +3605,10 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 it = self.resolve(t.ref)
             except Exception:
                 return None
-            if not isinstance(it, DataItem) or it.type not in NUMERIC_TYPES:
+            # a numeric-edited receiver counts with its decimal places too
+            if not isinstance(it, DataItem) or (it.type not in NUMERIC_TYPES and it.type != T_NUM_EDITED):
+                return None
+            if it.type in (T_NUM_FLOAT, T_NUM_DOUBLE):
                 return None
             if it.scale > scale:
                 scale = it.scale
@@ -3753,6 +3828,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             em("cob_xml_declaration(&cob_xw);")
         em(f"unsigned char *cob_gb = ({self.field(s.src)})->data;")
         self._gen_base = ('cob_gb', src.offset)
+        self._gen_src = src
         self.xml_member(src, names, types, s, prefix, [], top=True)
         cin = self.field(s.count_in) if s.count_in is not None else 'NULL'
         em(f"cob_xml_finish(&cob_xw, {cin});")
@@ -3948,6 +4024,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         # the items are found from the source's storage, which a subscript moves
         em(f"unsigned char *cob_gb = ({self.field(s.src)})->data;")
         self._gen_base = ('cob_gb', src.offset)
+        self._gen_src = src
         em("cob_json_obj_open(&cob_jw);")
         self.json_member(src, names, omitted, suppress, [True], [], top=True)
         em("cob_json_obj_close(&cob_jw);")
@@ -4115,13 +4192,17 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         em("{")
         em.ind += 1
         count = str(occ.max)
+        ctx = {id(t): f"({v} + 1)" for v, _stride, t in subs}
         if occ.depending is not None:
-            count = self.sym('gn_')
-            em(f"cob_s64 {count} = cob_get_int({self.field(occ.depending)});")
-            em(f"if ({count} > {occ.max}) {count} = {occ.max};")
+            cur = self.odo_count(it, None, ctx, check=False)
+            if cur is not None:
+                count = self.sym('gn_')
+                em(f"cob_s64 {count} = {cur};")
+                em(f"if ({count} > {occ.max}) {count} = {occ.max}; else if ({count} < 0) {count} = 0;")
+        stride = self.odo_stride(it, None, ctx)
         em(f"for (cob_s64 {i} = 0; {i} < {count}; {i}++) {{")
         em.ind += 1
-        return i, subs + [(i, it.size)]
+        return i, subs + [(i, stride, it)]
 
     def gen_occurs_close(self):
         em = self.em
@@ -4152,8 +4233,13 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         """C expression for an elementary item of a JSON or XML GENERATE
         source, applying enclosing OCCURS: found from the source's storage."""
         base, root = self._gen_base
-        term = [str(it.offset - root)] + [f"{v} * {stride}" for v, stride in subs]
+        term = [str(it.offset - root)] + [f"{v} * {stride}" for v, stride, _t in subs]
         total = ' + '.join(term)
+        # after a variable table in the source: where it is now (odogen)
+        ctx = {id(t): f"({v} + 1)" for v, _stride, t in subs}
+        before = self.odo_before(it, None, ctx, stop=getattr(self, '_gen_src', None))
+        if before:
+            total = f"{total} - {' - '.join(before)}"
         return f"CF({base} + ({total}), {it.size}, &{self.item_attr(it)})"
 
     def g_Display(self, s):
@@ -4805,7 +4891,11 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 pref.item = it
             em(f"unsigned char *cob_ib = {self.data_ptr(pref)};")
             self.init_spec = s
-            self.init_item(it, 'cob_ib', '0', 'initialize', root=True, root_occurs=whole_table)
+            # a group that holds the DEPENDING ON item of one of its variable
+            # tables is initialized at its full size (as it is moved to)
+            self.init_full = self.odo_object_inside(it)
+            self.init_item(it, 'cob_ib', '0', 'initialize', root=True, root_occurs=whole_table,
+                           ctx=self.ref_ctx(pref, it) or {})
             em.ind -= 1
             em("}")
 
@@ -4819,7 +4909,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             return
         self.init_item(root, root.storage, str(root.offset), mode, root=True, root_occurs=bool(root.occurs))
 
-    def init_item(self, it, base, off, mode, root=False, root_occurs=False):
+    def init_item(self, it, base, off, mode, root=False, root_occurs=False, ctx=None):
         em = self.em
         if it.level in (66, 88):
             return
@@ -4830,22 +4920,44 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 not (spec and spec.with_filler):
             return              # elementary FILLER items (the named items of a FILLER group are initialized)
         if it.occurs and (not root or root_occurs):
+            occ = it.occurs
             v = self.sym('cob_i')
             self.local(f"cob_s64 {v};")
-            if getattr(it.occurs, 'unbounded', False):
+            stride = str(it.size)
+            if getattr(occ, 'unbounded', False):
                 # OCCURS UNBOUNDED: as many occurrences as DEPENDING ON says
-                bound = self.int_expr(it.occurs.depending)
+                bound = self.int_expr(occ.depending)
+            elif occ.depending is not None and mode == 'initialize':
+                # INITIALIZE: the occurrences the table has now -- or all of
+                # them, for a plain INITIALIZE of a table whose maximum is
+                # kept in the layout or of a group that holds its counter
+                plain = not (spec and (spec.to_value or spec.replacing))
+                count = None
+                if not (plain and (not self.odo_varies(it) or getattr(self, 'init_full', False))):
+                    count = self.odo_count(it, None, ctx)
+                if count is None:
+                    bound = str(occ.max)
+                else:
+                    bound = self.sym('cob_n')
+                    self.local(f"cob_s64 {bound};")
+                    em(f"{bound} = {count};")
+                    em(f"if ({bound} > {occ.max}) {bound} = {occ.max}; else if ({bound} < 0) {bound} = 0;")
             else:
-                bound = str(it.occurs.max)
+                bound = str(occ.max)
+            if mode == 'initialize' and not getattr(occ, 'unbounded', False):
+                stride = self.odo_stride(it, None, ctx)
+            if mode == 'initialize':
+                ctx = dict(ctx or {})
+                ctx[id(it)] = f"({v} + 1)"
             em(f"for ({v} = 0; {v} < {bound}; {v}++) {{")
             em.ind += 1
-            self.init_one(it, base, f"{off} + {v} * {it.size}", mode)
+            self.init_one(it, base, f"{off} + {v} * {stride}", mode, ctx)
             em.ind -= 1
             em("}")
         else:
-            self.init_one(it, base, off, mode)
+            self.init_one(it, base, off, mode, ctx)
 
-    def init_one(self, it, base, off, mode):
+    def init_one(self, it, base, off, mode, ctx=None):
         em = self.em
         spec = self.init_spec
         f = f"CF({base} + {off}, {it.size}, &{self.item_attr(it)})"
@@ -4859,7 +4971,14 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             for c in it.children:
                 if c.level in (66, 88):
                     continue
-                self.init_item(c, base, f"{off} + {c.offset - it.offset}", mode)
+                coff = f"{off} + {c.offset - it.offset}"
+                if mode == 'initialize' and self.odo_may_vary(it):
+                    # after a variable table: where it is now (odogen)
+                    before = [x for x in (self.odo_shrink(b, None, ctx) for b in storage_children(it)
+                                          if b.offset < c.offset) if x is not None]
+                    if before:
+                        coff = f"({coff} - {' - '.join(before)})"
+                self.init_item(c, base, coff, mode, ctx=ctx)
             return
         t = it.type
         if t in (T_INDEX, T_POINTER):

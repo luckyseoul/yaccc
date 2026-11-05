@@ -22,10 +22,10 @@ $ ./yaccc examples/mandelbrot.cbl --run
 
 - **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
   them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **536** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 157
+- **555** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 138
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **77** differential test programs, compared with GnuCOBOL byte for byte:
+- **80** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
   run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
   baselines checked by hand).
@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,154** lines of Python in the compiler, standard library only — no parser
+- **17,539** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -105,10 +105,12 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 77 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 80 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
-high-precision math), COPY and REPLACING, free format, DECIMAL-POINT IS COMMA,
+high-precision math), OCCURS DEPENDING ON layouts (with and without
+`-fodoslide`), OS/VS PERFORM and arithmetic, COPY and REPLACING, free
+format, DECIMAL-POINT IS COMMA,
 ACCEPT, CALL and CANCEL, library routines and exception functions, ALTER,
 declaratives, sequential, relative and indexed files (including READ PREVIOUS,
 START FIRST/LAST and DELETE FILE), SORT, Report Writer and the Debug module,
@@ -130,11 +132,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 72 of the 77 run and all 72 pass (the `.noref` ones against their
+  3.1.2, 75 of the 80 run and all 75 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 77 pass, built with gcc.
+All 80 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -149,7 +151,7 @@ compile as modules (`$COMPILE_MODULE`) are built as real loadable modules with
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   536     0              0      157
+  693   555     0              0      138
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -164,9 +166,10 @@ longer passes. `make gctest-update` records a new baseline.
   instead; see *Screen I/O*), GnuCOBOL's own C
   API (`cob_get_field_str`, `cob_global` and the like, 6 tests), shell
   scripting, or a cobc option YACCC has no equivalent for (`-fbinary-byteorder`,
-  `-fcomplex-odo`, `-fperform-osvs` and about 30 more). One is a deliberate
-  difference: a COBOL program called from a C `main` starts the runtime itself
-  instead of failing with *cob_init() has not been called*.
+  `-fassign-clause`, `-fcallfh` and about a dozen more). Four check what a
+  strict dialect rejects, which YACCC accepts in every dialect, and one Micro
+  Focus's ENTRY FOR GO TO. One is a deliberate difference: a COBOL program called from a C `main` starts the
+  runtime itself instead of failing with *cob_init() has not been called*.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
 - **Failures**: none. The last two, *Sample Payroll Report* and *Sample
   Inventory Report*, were Report Writer page placement and PRESENT WHEN; see
@@ -287,6 +290,12 @@ cobc's options that build scripts carry over work the same way:
 | `-Werror` | a warning fails the compile |
 | `-d`, `-debug` | every run-time check (subscripts, reference modification, OCCURS DEPENDING ON, numeric data) and the stack trace, whatever `--no-check` says |
 | `-fec=NAME`, `-fno-ec=NAME` | those checks on or off: the range checks `EC-ALL`, `EC-BOUND`, `EC-BOUND-SUBSCRIPT`, `EC-BOUND-REF-MOD`, `EC-BOUND-ODO` (on by default), and the data check `EC-DATA-INCOMPATIBLE` (or `EC-DATA`; off by default, below). The other checks are always made |
+| `-fodoslide`, `-fno-odoslide` | every table with OCCURS DEPENDING ON takes its current size and what follows it in the record moves up (IBM's layout; Micro Focus's `$SET ODOSLIDE` does the same), or not (the default; see *OCCURS DEPENDING ON*) |
+| `-fcomplex-odo` | accepted: a table with OCCURS DEPENDING ON may be followed by other items, or nested, without it |
+| `-fperform-osvs`, `-farithmetic-osvs` | OS/VS PERFORM returns and intermediate precision (see *Dialects*; `-std=ibm` sets both) |
+| `-fref-mod-zero-length`, `-fno-ref-mod-zero-length` | a zero-length reference modification allowed, or an error (see *Dialects*) |
+| `-frelax-syntax-checks` | an inline PERFORM may end at a period instead of END-PERFORM (with a warning); the other things this cobc option relaxes, YACCC allows anyway |
+| `-fmissing-statement=ok`, `-flarger-redefines-ok`, `-ftop-level-occurs-clause=ok`, `-fno-constant-folding` | accepted, as what they allow is always allowed: an empty inline PERFORM or IF branch, a REDEFINES larger than what it redefines, OCCURS at level 01 |
 | `-fstatic-call` | a CALL literal names a program or C function that is linked in (an object file, a library): the link fails without it, rather than the CALL when it runs. `-fno-static-call` (the default) looks for it then, in the run unit, then C, then a loadable module |
 | `-fsingle-quote` | the figurative constant QUOTE is an apostrophe |
 | `-fdefault-colseq=EBCDIC\|ASCII\|NATIVE` | the collating sequence of a program that names none |
@@ -332,13 +341,14 @@ open, or where implementations have long differed. A dialect is not a claim of
 conformance to a vendor's implementation: it sets the settings below, and
 `-f` overrides the first three individually.
 
-| Dialect | `binary-size` | `binary-truncate` | `missing-period` | `host-sign` | `non-numeric-zero` | `space-raw` | `pretty-display` | `arithmetic-osvs` |
-|---|---|---|---|---|---|---|---|---|
-| `default` (also `cobol85`, `cobol2002`, `cobol2014`) | 2-4-8 | on | no | no | no | no | on | no |
-| `gnu` (GnuCOBOL) | 2-4-8 | on | yes | no | no | no | on | no |
-| `ibm` (also `mvs`) | 2-4-8 | off | yes | yes | no | no | off | yes |
-| `mf` (Micro Focus) | 1-2-4-8 | off | yes | no | yes | no | on | no |
-| `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes | on | no |
+| Dialect | `binary-size` | `binary-truncate` | `missing-period` | `host-sign` | `non-numeric-zero` | `space-raw` | `pretty-display` | `arithmetic-osvs` | `perform-osvs` | `ref-mod-zero-length` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `default` | 2-4-8 | on | no | no | no | no | on | no | no | yes |
+| `cobol85`, `cobol2002`, `cobol2014` | 2-4-8 | on | no | no | no | no | on | no | no | no |
+| `gnu` (GnuCOBOL) | 2-4-8 | on | yes | no | no | no | on | no | no | yes |
+| `ibm` (also `mvs`) | 2-4-8 | off | yes | yes | no | no | off | yes | yes | no |
+| `mf` (Micro Focus) | 1-2-4-8 | off | yes | no | yes | no | on | no | no | no |
+| `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes | on | no | no | no |
 
 cobc's `-strict` names (`ibm-strict`, `mvs-strict`, `mf-strict`,
 `acu-strict`) select the same settings, with a note that the extensions a
@@ -370,8 +380,20 @@ strict dialect would reject are still accepted.
   each intermediate result back to a scale OS/VS COBOL derives from the
   operands: the larger operand scale for `+` and `-`, their sum for `*`, and
   for `/` the larger of the operand difference and the largest scale in the
-  statement. `20500 / 0.9 / 33.45` into `PIC S9(7)V99` is 680.94 with it on
-  and 680.95 with it off, and `cobc` warns about every statement it changes.
+  statement (a numeric-edited receiver's decimal places included), in a
+  COMPUTE and in a condition alike. `20500 / 0.9 / 33.45` into `PIC S9(7)V99`
+  is 680.94 with it on and 680.95 with it off, and `cobc` warns about every
+  statement it changes. `-farithmetic-osvs` / `-fno-arithmetic-osvs` set it.
+- **`perform-osvs`** — whether a PERFORM returns when control reaches the end
+  of its range while a PERFORM begun after it is still active (a `GO TO` out of
+  the inner one's paragraph, say), the PERFORMs begun since abandoned, as OS/VS
+  and IBM's compilers do. Without it only the most recent PERFORM returns, and
+  control goes on past the end of the outer range. `-fperform-osvs` /
+  `-fno-perform-osvs` set it.
+- **`ref-mod-zero-length`** — whether a reference modification of length zero
+  is allowed (it names no bytes) or, with the range checks on, a run-time
+  error, as in every named dialect of cobc. `-fref-mod-zero-length` /
+  `-fno-ref-mod-zero-length` set it.
 
 `yaccc -std=ibm prog.cbl` and `yaccc -std=mf prog.cbl` therefore produce
 different binaries for the same source. Anything not listed above is the same
@@ -914,7 +936,25 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - SIGN LEADING/TRAILING [SEPARATE].
 - USAGE ... PIC X(n) COMP-5 / COMP-X: Micro Focus n-byte binary numbers.
 - Structure: OCCURS (nested, DEPENDING ON, ASCENDING/DESCENDING KEY, INDEXED BY),
-  REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE.
+  REDEFINES, RENAMES (66), condition names (88) with THRU and FALSE. OCCURS
+  DEPENDING ON tables may be followed by other items and nested in other
+  tables (below).
+- OCCURS DEPENDING ON, as cobc lays it out with `-fcomplex-odo` (which its
+  ibm and mf dialects imply): a table takes up its current occurrences when
+  nothing follows it in its group; one with items after it keeps its
+  maximum size and they their places. A group that ends with a variable
+  table is variable in size, and the items after it follow its current end.
+  With `-fodoslide` (or `$SET ODOSLIDE`) every variable table takes its
+  current size and all that follows it in the record moves up, as on IBM
+  mainframes: a record of counts and variable segments
+  (`CNT-1`, `SEG-1 OCCURS ... DEPENDING ON CNT-1`, `CNT-2`, `SEG-2 ...`) is
+  read and written at its packed length. A table in another table's element
+  can have its own DEPENDING ON item in that element. The DEPENDING ON item
+  is checked against the table's bounds wherever a size or a place needs it
+  (cobc's `-debug` wording, `--no-check` or `-fno-ec=EC-BOUND-ODO` to drop
+  it); INITIALIZE initializes the occurrences a table has, or all of them in
+  a plain INITIALIZE of a group that holds the table's counter; and a MOVE
+  to such a group moves its full size, as the standard says.
 - VALUE clauses, GLOBAL and EXTERNAL items and files; `EXTERNAL AS "name"`
   shares storage under another name. A GLOBAL constant is visible to the
   programs contained in the one that declares it.
@@ -1318,6 +1358,10 @@ All of these were checked against GnuCOBOL 3.1.2:
 14. **REWRITE of a variable-length SEQUENTIAL record** of the length it was
     read with replaces it. GnuCOBOL 3.1.2 refuses it with status 44 (record
     overflow) whatever the length.
+15. **A DEPENDING ON item inside a table element** gives each element its own
+    count: with `ROW OCCURS 3` holding `RN` and `RC OCCURS 1 TO 5 DEPENDING
+    ON RN`, `ROW (2)` is as long as `RN (2)` says. GnuCOBOL 3.1.2 counts every
+    element with the first one's `RN`.
 
 ## How it works
 
@@ -1325,25 +1369,26 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 17,154 lines of Python across nineteen files; the runtime it
-links against is 18,941 lines of C.
+The compiler is 17,539 lines of Python across twenty files; the runtime it
+links against is 18,963 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
 | `lib/yaccc/source.py` | 376 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 731 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
-| `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 850) |
+| `lib/yaccc/directives.py` | 497 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
+| `lib/yaccc/parser.py` | 4,200 | recursive-descent parser to the AST (`nodes.py`, 850) |
 | `lib/yaccc/data.py` | 690 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,789 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,908 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
 | `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
 | `lib/yaccc/dumpgen.py` | 148 | `-fdump`: each program's data as a table the runtime walks after an error |
+| `lib/yaccc/odogen.py` | 197 | OCCURS DEPENDING ON at run time: the current size of a variable group, the place of the items after a variable table |
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
-| `runtime/cobrt_core.c` | 3,603 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,623 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,187 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,265 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
@@ -1360,7 +1405,7 @@ links against is 18,941 lines of C.
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
 | `runtime/cobrt_conf.c` | 394 | runtime configuration files (`COB_RUNTIME_CONFIG`), GnuCOBOL's `runtime.cfg` format |
 | `runtime/yacccrun.c` | 30 | the `yacccrun` program: a module's program run as the main program |
-| `runtime/cobrt.h` | 1,233 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,235 | runtime interface and inline fast paths |
 
 Design choices:
 

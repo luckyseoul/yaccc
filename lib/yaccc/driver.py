@@ -208,8 +208,12 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
         parser.directives_state = ss.directives
         opts.directives = ss.directives
         parser.missing_period = getattr(opts, 'missing_period', False)
+        parser.relax_syntax = getattr(opts, 'relax_syntax', False)
         if getattr(ss, 'dpc_in_data', None) and opts.dpc_in_data == 'none':
             opts.dpc_in_data = ss.dpc_in_data
+        if ss.directives.odoslide is not None and not getattr(opts, 'odoslide_set', False):
+            # $SET ODOSLIDE / NOODOSLIDE in the source, unless the command line says
+            opts.odoslide = ss.directives.odoslide
         programs.extend(parser.parse_unit())
         DIAG.check()
     opts.source_name = paths[0]
@@ -593,8 +597,31 @@ def main(argv=None):
     ap.add_argument('-O', dest='opt', default='2', nargs='?', const='2', help='C optimisation level')
     ap.add_argument('-g', dest='debug', action='store_true', help='include C debug information')
     ap.add_argument('--no-check', dest='check', action='store_false', help='disable subscript/reference checks')
-    ap.add_argument('--refmod-zero-length', dest='refmod_zero', action='store_true',
-                    help='a zero-length reference modification is an error (cobc -fno-ref-mod-zero-length)')
+    ap.add_argument('--refmod-zero-length', '-fno-ref-mod-zero-length', dest='refmod_zero',
+                    action='store_true', default=None,
+                    help='a zero-length reference modification is an error (the default in every '
+                         'dialect but the default one)')
+    ap.add_argument('-fref-mod-zero-length', dest='refmod_zero', action='store_false',
+                    help='a reference modification may have length zero, and names no bytes')
+    ap.add_argument('-fperform-osvs', dest='perform_osvs', action='store_true', default=None,
+                    help='a PERFORM returns when control reaches the end of its range even while a '
+                         'later PERFORM is active, as OS/VS and IBM COBOL do (-std=ibm sets it)')
+    ap.add_argument('-fno-perform-osvs', dest='perform_osvs', action='store_false',
+                    help='only the most recent PERFORM returns at the end of its range (the default)')
+    ap.add_argument('-farithmetic-osvs', dest='arithmetic_osvs', action='store_true', default=None,
+                    help="each intermediate result of a COMPUTE is cut to the statement's largest "
+                         "scale, as OS/VS COBOL does (-std=ibm sets it)")
+    ap.add_argument('-fno-arithmetic-osvs', dest='arithmetic_osvs', action='store_false',
+                    help='intermediate results keep their precision (the default)')
+    ap.add_argument('-frelax-syntax-checks', dest='relax_syntax', action='store_true',
+                    help='accept an inline PERFORM ended by a period instead of END-PERFORM, with '
+                         'a warning; YACCC accepts the other things this cobc option allows anyway')
+    ap.add_argument('-fmissing-statement=ok', '-flarger-redefines-ok', '-ftop-level-occurs-clause=ok',
+                    '-fno-constant-folding', '-fconstant-folding', dest='accepted_cobc',
+                    action='append_const', const=True,
+                    help='accepted, as what they allow YACCC always allows: an empty inline '
+                         'PERFORM or IF branch, a REDEFINES larger than what it redefines, OCCURS '
+                         'at level 01; constant folding is the C compiler\'s')
     ap.add_argument('-std', '--std', dest='std', metavar='DIALECT',
                     help='dialect for the choices the standards leave open: '
                          + ', '.join(dialect.accepted_names()))
@@ -611,6 +638,16 @@ def main(argv=None):
                     help='DISPLAY writes a numeric item with its decimal point (default)')
     ap.add_argument('-fno-pretty-display', dest='pretty_display', action='store_false',
                     help='DISPLAY writes the stored digits as they stand')
+    ap.add_argument('-fodoslide', dest='odoslide', action='store_true', default=None,
+                    help='every table with OCCURS DEPENDING ON takes its current size, and what '
+                         'follows it in the record moves up with it: IBM Enterprise COBOL\'s '
+                         'layout, Micro Focus\'s ODOSLIDE')
+    ap.add_argument('-fno-odoslide', dest='odoslide', action='store_false',
+                    help='a variable table with items after it in its group keeps its maximum '
+                         'size (the default, as cobc)')
+    ap.add_argument('-fcomplex-odo', dest='complex_odo', action='store_true',
+                    help='accepted: OCCURS DEPENDING ON tables may be followed by other items, '
+                         'and nested, as cobc allows with this option')
     ap.add_argument('-fdpc-in-data', dest='dpc_in_data', default=None,
                     choices=['none', 'json', 'xml', 'all'],
                     help='use the decimal comma in JSON/XML numbers when '
@@ -693,7 +730,9 @@ def main(argv=None):
     opts.binary_size = args.binary_size or d.binary_size
     opts.binary_truncate = d.binary_truncate if args.binary_truncate is None else args.binary_truncate
     opts.pretty_display = d.pretty_display if args.pretty_display is None else args.pretty_display
-    opts.arithmetic_osvs = d.arithmetic_osvs
+    opts.arithmetic_osvs = d.arithmetic_osvs if args.arithmetic_osvs is None else args.arithmetic_osvs
+    opts.perform_osvs = d.perform_osvs if args.perform_osvs is None else args.perform_osvs
+    opts.relax_syntax = args.relax_syntax
     if args.notrunc:
         opts.binary_truncate = False
         opts.pretty_display = False
@@ -703,8 +742,10 @@ def main(argv=None):
     opts.space_raw = d.space_raw
     if args.dpc_in_data is not None:
         opts.dpc_in_data = args.dpc_in_data
+    opts.odoslide = bool(args.odoslide)
+    opts.odoslide_set = args.odoslide is not None
     opts.check = args.check
-    opts.refmod_zero = args.refmod_zero
+    opts.refmod_zero = d.refmod_zero if args.refmod_zero is None else args.refmod_zero
     opts.line_map = args.debug
     opts.trace = args.trace
     opts.filename_mapping = args.filename_mapping

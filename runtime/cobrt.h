@@ -350,9 +350,11 @@ void cob_fatal(const char *fmt, ...) __attribute__((noreturn, format(printf, 1, 
  * itself, which error procedures and tests compare) */
 void cob_fatal_note(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void cob_perform_overflow(const char *loc) __attribute__((noreturn));
-cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *name, const char *loc);
-cob_s64 cob_chk_odo_sub(cob_s64 sub, const cob_field *dep, cob_s64 dmin, cob_s64 dmax,
-                        const char *name, const char *loc);
+int cob_perform_osvs(const cob_perform ***fp, const cob_perform **base, int id);
+cob_s64 cob_chk_odo(cob_s64 v, cob_s64 min, cob_s64 max, const char *obj, const char *table,
+                    const char *loc);
+cob_s64 cob_chk_odo_sub(cob_s64 sub, cob_s64 n, cob_s64 dmin, cob_s64 dmax, const char *name,
+                        const char *obj, const char *loc);
 cob_field *cob_refmod(cob_field *out, const cob_field *f, cob_s64 start, cob_s64 len, int check, const char *loc);
 void *cob_malloc(size_t n);
 

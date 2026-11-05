@@ -42,16 +42,16 @@ PASS  run_extensions.at:237        ADDRESS OF
 PASS  run_extensions.at:287        LENGTH OF
 PASS  run_extensions.at:451        SET TO SIZE OF
 PASS  run_extensions.at:488        WHEN-COMPILED
-SKIP  run_extensions.at:517        Complex OCCURS DEPENDING ON (1)
+PASS  run_extensions.at:517        Complex OCCURS DEPENDING ON (1)
 PASS  run_extensions.at:546        Complex OCCURS DEPENDING ON (2)
-SKIP  run_extensions.at:609        Complex OCCURS DEPENDING ON (3)
-SKIP  run_extensions.at:672        Complex OCCURS DEPENDING ON (4)
-SKIP  run_extensions.at:738        Complex OCCURS DEPENDING ON (5)
-SKIP  run_extensions.at:804        Complex OCCURS DEPENDING ON (6)
+PASS  run_extensions.at:609        Complex OCCURS DEPENDING ON (3)
+PASS  run_extensions.at:672        Complex OCCURS DEPENDING ON (4)
+PASS  run_extensions.at:738        Complex OCCURS DEPENDING ON (5)
+PASS  run_extensions.at:804        Complex OCCURS DEPENDING ON (6)
 SKIP  run_extensions.at:845        OCCURS UNBOUNDED (1)
 SKIP  run_extensions.at:906        OCCURS UNBOUNDED (2)
 PASS  run_extensions.at:1060       INITIALIZE OCCURS UNBOUNDED
-SKIP  run_extensions.at:1134       INITIALIZE OCCURS ODOSLIDE
+PASS  run_extensions.at:1134       INITIALIZE OCCURS ODOSLIDE
 SKIP  run_extensions.at:1231       DEPENDING ON with ODOSLIDE
 SKIP  run_extensions.at:1446       DEPENDING ON with ODOSLIDE for IBM
 PASS  run_extensions.at:1551       INITIALIZE level 01
@@ -81,7 +81,7 @@ PASS  run_extensions.at:2796       78 Level (1)
 PASS  run_extensions.at:2819       78 Level (2)
 PASS  run_extensions.at:2845       78 Level (3)
 SKIP  run_extensions.at:2869       SWITCHES with non-standard names
-SKIP  run_extensions.at:2982       Larger REDEFINES lengths
+PASS  run_extensions.at:2982       Larger REDEFINES lengths
 PASS  run_extensions.at:3066       REDEFINES: non-referenced ambiguous item
 SKIP  run_extensions.at:3092       Obsolete 2002 keywords with COBOL2014
 PASS  run_extensions.at:3122       System routine with wrong number of parameters
@@ -364,7 +364,7 @@ PASS  run_fundamental.at:1823      CANCEL test (1)
 PASS  run_fundamental.at:1850      CANCEL test (2)
 PASS  run_fundamental.at:1890      CANCEL test (3)
 PASS  run_fundamental.at:1933      Separate sign positions (1)
-SKIP  run_fundamental.at:1957      Separate sign positions (2)
+PASS  run_fundamental.at:1957      Separate sign positions (2)
 PASS  run_fundamental.at:1990      Context sensitive words (1)
 PASS  run_fundamental.at:2013      Context sensitive words (2)
 PASS  run_fundamental.at:2037      Context sensitive words (3)
@@ -372,7 +372,7 @@ PASS  run_fundamental.at:2061      Context sensitive words (4)
 PASS  run_fundamental.at:2086      Context sensitive words (5)
 PASS  run_fundamental.at:2109      Context sensitive words (6)
 PASS  run_fundamental.at:2131      Context sensitive words (7)
-SKIP  run_fundamental.at:2158      Context sensitive words (8)
+PASS  run_fundamental.at:2158      Context sensitive words (8)
 PASS  run_fundamental.at:2185      ROUNDED AWAY-FROM-ZERO
 PASS  run_fundamental.at:2248      ROUNDED NEAREST-AWAY-FROM-ZERO
 PASS  run_fundamental.at:2311      ROUNDED NEAREST-EVEN
@@ -406,7 +406,7 @@ PASS  run_fundamental.at:4812      USE FOR DEBUGGING (COB_SET_DEBUG deactivated)
 PASS  run_fundamental.at:4857      USE FOR DEBUGGING ON ALL PROCEDURES
 PASS  run_fundamental.at:4908      USE FOR DEBUGGING ON procedure
 PASS  run_fundamental.at:4956      USE FOR DEBUGGING (COB_SET_DEBUG switched)
-SKIP  run_fundamental.at:5005      USE FOR DEBUGGING ON [ALL] REFERENCES OF field
+PASS  run_fundamental.at:5005      USE FOR DEBUGGING ON [ALL] REFERENCES OF field
 PASS  run_fundamental.at:5073      USE FOR DEBUGGING, reference within DEBUGGING
 SKIP  run_fundamental.at:5114      USE FOR DEBUGGING, time of execution
 PASS  run_fundamental.at:5164      USE FOR DEBUGGING, reference with OCCURS
@@ -534,8 +534,8 @@ PASS  run_misc.at:2079             EXIT PERFORM CYCLE
 PASS  run_misc.at:2104             EXIT PARAGRAPH
 PASS  run_misc.at:2136             EXIT SECTION
 PASS  run_misc.at:2170             PERFORM FOREVER / PERFORM UNTIL EXIT
-SKIP  run_misc.at:2211             PERFORM inline (1)
-SKIP  run_misc.at:2238             PERFORM inline (2)
+PASS  run_misc.at:2211             PERFORM inline (1)
+PASS  run_misc.at:2238             PERFORM inline (2)
 PASS  run_misc.at:2263             Non-overflow after overflow
 SKIP  run_misc.at:2293             PERFORM ... CONTINUE
 PASS  run_misc.at:2310             STRING with subscript reference
@@ -543,14 +543,14 @@ PASS  run_misc.at:2337             STRING / UNSTRING NOT ON OVERFLOW
 PASS  run_misc.at:2454             UNSTRING DELIMITED ALL LOW-VALUE
 PASS  run_misc.at:2489             UNSTRING DELIMITED ALL SPACE-2
 PASS  run_misc.at:2554             UNSTRING DELIMITED POINTER
-SKIP  run_misc.at:2608             UNSTRING DELIMITER IN
+PASS  run_misc.at:2608             UNSTRING DELIMITER IN
 PASS  run_misc.at:2650             UNSTRING with FUNCTION / literal
 PASS  run_misc.at:2720             SORT: table sort
 PASS  run_misc.at:2762             SORT: table sort (2)
 PASS  run_misc.at:2887             SORT: table sort (3)
 PASS  run_misc.at:2980             SORT: EBCDIC table sort
 PASS  run_misc.at:3047             PIC ZZZ-, ZZZ+
-SKIP  run_misc.at:3100             PERFORM type OSVS
+PASS  run_misc.at:3100             PERFORM type OSVS
 PASS  run_misc.at:3137             Sticky LINKAGE
 PASS  run_misc.at:3184             COB_PRE_LOAD
 PASS  run_misc.at:3210             COB_PRE_LOAD with entry points
@@ -596,19 +596,19 @@ SKIP  run_misc.at:8977             stack and dump feature
 SKIP  run_misc.at:9700             Test dump feature (2)
 PASS  run_misc.at:9965             CALL with program prototypes
 PASS  run_misc.at:10021            REDEFINES values on FILLER and INITIALIZE
-SKIP  run_misc.at:10076            PICTURE with constant-name
+PASS  run_misc.at:10076            PICTURE with constant-name
 PASS  run_misc.at:10104            Quote marks in comment paragraphs
-SKIP  run_misc.at:10130            Numeric MOVE with/without -fbinary-truncate
+PASS  run_misc.at:10130            Numeric MOVE with/without -fbinary-truncate
 PASS  run_misc.at:10190            Alphanumeric MOVE with truncation
 PASS  run_misc.at:10241            PROGRAM-ID / CALL literal/variable with spaces
 SKIP  run_misc.at:10309            C-API Test (param based)
 SKIP  run_misc.at:10544            C-API Test (field based)
 PASS  run_misc.at:10771            DEFAULT ROUNDED MODE
-SKIP  run_misc.at:10801            OCCURS INDEXED ASCENDING
+PASS  run_misc.at:10801            OCCURS INDEXED ASCENDING
 SKIP  run_misc.at:10899            ZERO unsigned and negative binary subscript
 PASS  run_misc.at:10963            Default Arithmetic (1)
 PASS  run_misc.at:11067            Default Arithmetic Test (2)
-SKIP  run_misc.at:11118            OSVS Arithmetic (1)
+PASS  run_misc.at:11118            OSVS Arithmetic (1)
 PASS  run_misc.at:11235            OSVS Arithmetic Test (2)
 PASS  run_misc.at:11292            SET CONSTANT directive
 PASS  run_misc.at:11395            DEFINE OVERRIDE
@@ -644,7 +644,7 @@ PASS  run_refmod.at:25             Static reference modification
 PASS  run_refmod.at:57             Dynamic reference modification
 PASS  run_refmod.at:94             Offset underflow
 SKIP  run_refmod.at:118            Offset overflow
-SKIP  run_refmod.at:145            Length underflow
+PASS  run_refmod.at:145            Length underflow
 PASS  run_refmod.at:189            Length overflow
 PASS  run_refmod.at:231            Length overflow with offset (1)
 PASS  run_refmod.at:254            Length overflow with offset (2)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 536  FAIL 0  CERR 0  XERR 0  SKIP 157
+PASS 555  FAIL 0  CERR 0  XERR 0  SKIP 138
