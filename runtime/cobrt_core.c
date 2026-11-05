@@ -2149,6 +2149,26 @@ static void edit_alnum(const unsigned char *s, size_t n, cob_field *dst)
 		dst->data[o++] = ' ';
 }
 
+/* -fmove-ibm (-std=ibm): MOVE between alphanumeric or group items whose
+ * receiving bytes begin inside the sending ones copies left to right a byte
+ * at a time, as IBM's MVC does: MOVE X (1:9) TO X (2:9) fills X with its first
+ * byte, the old mainframe way to clear a record. Any other MOVE is cob_move. */
+void cob_move_ibm(const cob_field *src, cob_field *dst)
+{
+	int st = src->attr->type, dt = dst->attr->type;
+	int a_src = st == COB_ALNUM || st == COB_ALPHA || st == COB_GROUP;
+	int a_dst = dt == COB_ALNUM || dt == COB_ALPHA || dt == COB_GROUP;
+	if (a_src && a_dst && !(dst->attr->flags & COB_F_JUSTIFIED)
+	 && dst->data > src->data && dst->data < src->data + src->size) {
+		size_t n = src->size < dst->size ? src->size : dst->size;
+		cob_mvc(dst->data, src->data, n);
+		if (dst->size > n)
+			memset(dst->data + n, ' ', dst->size - n);
+		return;
+	}
+	cob_move(src, dst);
+}
+
 void cob_move(const cob_field *src, cob_field *dst)
 {
 	int st = src->attr->type, dt = dst->attr->type;

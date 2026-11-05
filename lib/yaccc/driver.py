@@ -652,6 +652,12 @@ def main(argv=None):
                     help='ASSIGN word, for a word a data item has as its name: the file the '
                          'item names (dynamic, mf: the default) or the name itself, IBM label '
                          'parts dropped (external, ibm: -std=ibm sets it)')
+    ap.add_argument('-fmove-ibm', dest='move_ibm', action='store_true', default=None,
+                    help='an alphanumeric MOVE whose receiving bytes begin inside the sending ones '
+                         'copies a byte at a time, so a byte propagates, as IBM\'s MVC does '
+                         '(-std=ibm sets it)')
+    ap.add_argument('-fno-move-ibm', dest='move_ibm', action='store_false',
+                    help='an overlapping MOVE moves the bytes as they were (the default)')
     ap.add_argument('-fnot-register', dest='not_registers', action='append', default=[],
                     metavar='NAME', help='NAME (TALLY, RETURN-CODE, ...) is no special register, '
                                          'but an ordinary word a program may declare')
@@ -756,6 +762,7 @@ def main(argv=None):
     opts.arithmetic_osvs = d.arithmetic_osvs if args.arithmetic_osvs is None else args.arithmetic_osvs
     opts.perform_osvs = d.perform_osvs if args.perform_osvs is None else args.perform_osvs
     opts.assign_clause = args.assign_clause or d.assign_clause
+    opts.move_ibm = d.move_ibm if args.move_ibm is None else args.move_ibm
     opts.not_registers = {n.strip().upper() for spec in args.not_registers
                           for n in spec.split(',') if n.strip()}
     from . import lexer

@@ -48,6 +48,10 @@ REFMOD_ZERO_ERROR = {'cobol85', 'cobol2002', 'cobol2014', 'mf', 'ibm', 'acu'}
 # do (cobc -fperform-osvs, which its ibm and mvs dialects set)
 PERFORM_OSVS = {'ibm'}
 
+# an overlapping alphanumeric MOVE copies left to right a byte at a time, as
+# IBM's MVC instruction does (cobc -fmove-ibm, set by its ibm dialect)
+MOVE_IBM = {'ibm'}
+
 # ASSIGN word names the file itself (an IBM DD name, label parts dropped)
 # even when a data item has that name, as cobc's ibm dialect has it
 ASSIGN_EXTERNAL = {'ibm'}
@@ -97,6 +101,7 @@ class Dialect:
         self.refmod_zero = key in REFMOD_ZERO_ERROR
         self.perform_osvs = key in PERFORM_OSVS
         self.assign_clause = 'ibm' if key in ASSIGN_EXTERNAL else 'dynamic'
+        self.move_ibm = key in MOVE_IBM
         self.acu_literals = key in ACU_LITERALS
 
     def __repr__(self):

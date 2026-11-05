@@ -340,7 +340,7 @@ PASS  run_fundamental.at:470       Compare FLOAT-LONG with floating-point litera
 PASS  run_fundamental.at:523       Check for equality of FLOAT-SHORT / FLOAT-LONG
 PASS  run_fundamental.at:646       Overlapping MOVE
 PASS  run_fundamental.at:747       Overlapping MOVE
-SKIP  run_fundamental.at:789       IBM MOVE
+PASS  run_fundamental.at:789       IBM MOVE
 PASS  run_fundamental.at:828       ALPHABETIC test
 PASS  run_fundamental.at:860       ALPHABETIC-UPPER test
 PASS  run_fundamental.at:892       ALPHABETIC-LOWER test
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 567  FAIL 0  CERR 0  XERR 0  SKIP 126
+PASS 568  FAIL 0  CERR 0  XERR 0  SKIP 125

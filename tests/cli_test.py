@@ -155,6 +155,7 @@ def main():
     odo_options(work)
     binary_options(work)
     register_literal_assign(work)
+    move_ibm(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1502,6 +1503,33 @@ def register_literal_assign(work):
           else subprocess.CompletedProcess(r.args, -1, '', 'no OUTDD'), 0)
     r = run(['-fassign-clause=ibm', 'asgibm.cbl', '--run'], work)
     check('-fassign-clause=ibm does the same', r, 0, "interpreted as 'OUTDD'")
+
+
+MVC_PROG = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. MVC.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 REC PIC X(8) VALUE "ABCDEFGH".
+       PROCEDURE DIVISION.
+           MOVE "*" TO REC (1:1).
+           MOVE REC (1:7) TO REC (2:7).
+           DISPLAY "[" REC "]".
+           STOP RUN.
+"""
+
+
+def move_ibm(work):
+    """-fmove-ibm (-std=ibm): an overlapping MOVE copies as IBM's MVC does."""
+    with open(os.path.join(work, 'mvc.cbl'), 'w', encoding='latin-1') as f:
+        f.write(MVC_PROG)
+    r = run(['mvc.cbl', '--run'], work)
+    check('an overlapping MOVE moves the bytes as they were', r, 0, '[**BCDEFG]')
+    r = run(['-fmove-ibm', 'mvc.cbl', '--run'], work)
+    check('-fmove-ibm: a byte at a time, so the first propagates', r, 0, '[********]')
+    r = run(['-std=ibm', 'mvc.cbl', '--run'], work)
+    check('... which -std=ibm sets', r, 0, '[********]')
+    r = run(['-std=ibm', '-fno-move-ibm', 'mvc.cbl', '--run'], work)
+    check('-fno-move-ibm over -std=ibm', r, 0, '[**BCDEFG]')
 
 
 def module_ext():

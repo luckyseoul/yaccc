@@ -121,6 +121,18 @@ extern const char *cob_when_compiled;
 extern const char *cob_source_name;
 
 /* ------------------------------------------------------------ inline fast paths */
+/* -fmove-ibm: a move whose receiving bytes begin inside the sending ones is
+ * made left to right a byte at a time, as the IBM MVC instruction makes it,
+ * so a byte propagates; any other move is memmove's */
+static inline void cob_mvc(unsigned char *d, const unsigned char *s, size_t n)
+{
+	if (d > s && d < s + n) {
+		for (size_t i = 0; i < n; i++)
+			d[i] = s[i];
+	} else
+		memmove(d, s, n);
+}
+
 static inline cob_s64 cob_bin_get(const unsigned char *p, int size, int sgn)
 {
 	switch (size) {
@@ -457,6 +469,7 @@ int cob_d_to_str(cob_dec d, char *buf, size_t bufsz);
 
 /* ------------------------------------------------------------ move / compare */
 void cob_move(const cob_field *src, cob_field *dst);
+void cob_move_ibm(const cob_field *src, cob_field *dst);
 void cob_move_bytes(const unsigned char *src, size_t n, cob_field *dst);
 void cob_move_text(cob_field *dst, const char *s);
 /* read an integer of n bytes, big-endian, into a field: CALL/READ BY VALUE */

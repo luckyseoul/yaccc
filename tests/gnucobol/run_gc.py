@@ -110,7 +110,8 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '-fassign-clause=dynamic': ['-fassign-clause=dynamic'],
             '-fassign-clause=mf': ['-fassign-clause=mf'], '-fassign-clause=ibm': ['-fassign-clause=ibm'],
             '-fnot-register=TALLY': ['-fnot-register=TALLY'],
-            '-facu-literals=ok': ['-facu-literals=ok'], '-std=acu-strict': ['-std', 'acu-strict']}
+            '-facu-literals=ok': ['-facu-literals=ok'], '-std=acu-strict': ['-std', 'acu-strict'],
+            '-fmove-ibm': ['-fmove-ibm']}
 
 
 class Test:

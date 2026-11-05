@@ -3245,7 +3245,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
                 em(big)
                 return
             line = self.fast_move(s.src, s.dsts[0])
-            em(line if line else f"cob_move({self.field(s.src)}, {self.ref_field(s.dsts[0], True)});")
+            em(line if line else f"{self.move_fn()}({self.field(s.src)}, {self.ref_field(s.dsts[0], True)});")
             return
         em("{")
         em.ind += 1
@@ -3253,9 +3253,14 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
         if not all(special):
             em(f"const cob_field *cob_s = {self.field(s.src)};")
         for d, line in zip(s.dsts, special):
-            em(line if line is not None else f"cob_move(cob_s, {self.ref_field(d, True)});")
+            em(line if line is not None else f"{self.move_fn()}(cob_s, {self.ref_field(d, True)});")
         em.ind -= 1
         em("}")
+
+    def move_fn(self):
+        """The runtime's MOVE: with -fmove-ibm (-std=ibm) one that copies an
+        overlapping move left to right, as IBM's MVC does."""
+        return 'cob_move_ibm' if getattr(self.opts, 'move_ibm', False) else 'cob_move'
 
     def fast_move(self, src, dst):
         fd = self.fast_kind(dst) if isinstance(dst, DataRef) else None
@@ -3284,9 +3289,11 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout):
                 if src_a is not None:
                     dp = self.data_ptr(dst)
                     n = min(src_a[1], it.size)
-                    code = f"memmove({dp}, {src_a[0]}, {n});"
+                    mv = 'cob_mvc' if getattr(self.opts, 'move_ibm', False) and isinstance(src, DataRef) \
+                        else 'memmove'
+                    code = f"{mv}({dp}, {src_a[0]}, {n});"
                     if it.size > n:
-                        code = f"{{ unsigned char *cob_dp = {dp}; memmove(cob_dp, {src_a[0]}, {n}); memset(cob_dp + {n}, ' ', {it.size - n}); }}"
+                        code = f"{{ unsigned char *cob_dp = {dp}; {mv}(cob_dp, {src_a[0]}, {n}); memset(cob_dp + {n}, ' ', {it.size - n}); }}"
                     return code
         return None
 
