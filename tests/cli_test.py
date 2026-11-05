@@ -157,6 +157,7 @@ def main():
     register_literal_assign(work)
     move_ibm(work)
     profiling(work)
+    more_cobc_options(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -1601,6 +1602,75 @@ def profiling(work):
              and n[4:-4].isdigit()]
     check('COB_PROF_FILE names the file, $$ the process', r if named else
           subprocess.CompletedProcess(r.args, -1, '', 'no run-PID.csv'), 0)
+
+
+SWITCH_PROG = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. SWNAMES.
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       SPECIAL-NAMES.
+           SW1 ON IS S1-ON
+           .
+           SWITCH B IS SWB ON IS SB-ON
+           .
+           USW-31 ON IS S31-ON.
+       PROCEDURE DIVISION.
+           IF S1-ON DISPLAY "1 ON" ELSE DISPLAY "1 OFF" END-IF.
+           IF SB-ON DISPLAY "B ON" ELSE DISPLAY "B OFF" END-IF.
+           IF S31-ON DISPLAY "31 ON" ELSE DISPLAY "31 OFF" END-IF.
+           STOP RUN.
+"""
+
+CALL_NAME = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CALLNAME.
+       PROCEDURE DIVISION.
+           CALL inner-prog
+           CANCEL inner-prog
+           STOP RUN.
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. inner-prog.
+       PROCEDURE DIVISION.
+           DISPLAY "INNER RAN".
+       END PROGRAM inner-prog.
+       END PROGRAM CALLNAME.
+"""
+
+
+def more_cobc_options(work):
+    """Switch names (SWn, SWITCH A to Z, USW-n) and -fsystem-name, CALL of a
+    program by its name, -fno-implicit-assign-dynamic-var, -fno-dump."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+    write('swnames.cbl', SWITCH_PROG)
+    old = {k: os.environ.get(k) for k in ('COB_SWITCH_2', 'COB_SWITCH_31')}
+    os.environ['COB_SWITCH_2'] = 'ON'
+    os.environ['COB_SWITCH_31'] = 'ON'
+    try:
+        r = run(['swnames.cbl', '--run'], work)
+        check('SW1, SWITCH B (2) and USW-31 are switches', r, 0, '1 OFF\nB ON\n31 ON')
+        r = run(['-fsystem-name=SW1,SWITCH B', 'swnames.cbl', '--run'], work)
+        check('-fsystem-name is accepted', r, 0, 'B ON')
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    write('callname.cbl', CALL_NAME)
+    r = run(['callname.cbl', '--run'], work)
+    check('CALL and CANCEL of a name no data item has: the program', r, 0, 'INNER RAN')
+    write('asgimpl.cbl', ASSIGN_IBM.replace('ASGIBM', 'ASGIMPL'))
+    r = run(['asgimpl.cbl', '--run'], work)
+    check('an undeclared ASSIGN word is the file\'s name as written', r if os.path.exists(
+        os.path.join(work, 'UT-S-OUTDD')) else subprocess.CompletedProcess(r.args, -1, '', 'no UT-S-OUTDD'), 0)
+    r = run(['-fno-implicit-assign-dynamic-var', 'asgimpl.cbl', '--run'], work)
+    check('-fno-implicit-assign-dynamic-var: an external name, label parts dropped', r, 0,
+          "interpreted as 'OUTDD'")
+    r = run(['-fdump=ALL', '-fno-dump=WS,LO', 'cliarg.cbl'], work)
+    check('-fno-dump=WS,LO', r, 0)
+    r = run(['-fdump', '-fno-dump', 'cliarg.cbl'], work)
+    check('-fno-dump alone', r, 0)
 
 
 def module_ext():

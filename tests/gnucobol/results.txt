@@ -80,7 +80,7 @@ PASS  run_extensions.at:2750       Environment/Argument variable
 PASS  run_extensions.at:2796       78 Level (1)
 PASS  run_extensions.at:2819       78 Level (2)
 PASS  run_extensions.at:2845       78 Level (3)
-SKIP  run_extensions.at:2869       SWITCHES with non-standard names
+PASS  run_extensions.at:2869       SWITCHES with non-standard names
 PASS  run_extensions.at:2982       Larger REDEFINES lengths
 PASS  run_extensions.at:3066       REDEFINES: non-referenced ambiguous item
 SKIP  run_extensions.at:3092       Obsolete 2002 keywords with COBOL2014
@@ -138,7 +138,7 @@ PASS  run_file.at:1189             File MERGE, LINE SEQUENTIAL variable records
 PASS  run_file.at:1280             SORT nonexistent file
 PASS  run_file.at:1315             SORT with INPUT/OUTPUT PROCEDUREs
 PASS  run_file.at:1405             SORT with key1 ASCENDING, key2 DESCENDING
-SKIP  run_file.at:1472             ASSIGN DYNAMIC and EXTERNAL
+PASS  run_file.at:1472             ASSIGN DYNAMIC and EXTERNAL
 SKIP  run_file.at:1520             ASSIGN EXTERNAL parsing
 PASS  run_file.at:1554             ASSIGN directive
 SKIP  run_file.at:1597             ASSIGNfilename expansion
@@ -355,7 +355,7 @@ PASS  run_fundamental.at:1336      Contained program visibility (1)
 PASS  run_fundamental.at:1391      Contained program visibility (2)
 PASS  run_fundamental.at:1444      Contained program visibility (3)
 PASS  run_fundamental.at:1495      Contained program visibility (4)
-SKIP  run_fundamental.at:1550      CALL/CANCEL with program-prototype-name
+PASS  run_fundamental.at:1550      CALL/CANCEL with program-prototype-name
 SKIP  run_fundamental.at:1623      GLOBAL FD (1)
 SKIP  run_fundamental.at:1673      GLOBAL FD (2)
 PASS  run_fundamental.at:1723      GLOBAL FD (3)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 568  FAIL 0  CERR 0  XERR 0  SKIP 125
+PASS 571  FAIL 0  CERR 0  XERR 0  SKIP 122

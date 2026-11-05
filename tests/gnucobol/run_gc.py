@@ -111,7 +111,9 @@ FLAG_MAP = {'-free': ['-free'], '--free': ['-free'], '-fixed': ['-fixed'],
             '-fassign-clause=mf': ['-fassign-clause=mf'], '-fassign-clause=ibm': ['-fassign-clause=ibm'],
             '-fnot-register=TALLY': ['-fnot-register=TALLY'],
             '-facu-literals=ok': ['-facu-literals=ok'], '-std=acu-strict': ['-std', 'acu-strict'],
-            '-fmove-ibm': ['-fmove-ibm']}
+            '-fmove-ibm': ['-fmove-ibm'], '-fno-dump': ['-fno-dump'],
+            '-fno-implicit-assign-dynamic-var': ['-fno-implicit-assign-dynamic-var'],
+            '-fno-program-name-redefinition': ['-fno-program-name-redefinition']}
 
 
 class Test:
@@ -308,6 +310,9 @@ class Runner:
                     out.append(w)
                 continue
             if w in IGNORED_FLAGS or w.startswith('-W') or w.startswith('-fno-ec') or w == '-fec=all':
+                continue
+            if w.startswith('-fsystem-name='):
+                out.append(w)               # the same option in both compilers
                 continue
             if w.startswith(('-fnot-reserved=', '-freserved=')) and '=' not in w.split('=', 1)[1]:
                 out.append(w)               # the same option in both compilers

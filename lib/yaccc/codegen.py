@@ -5287,6 +5287,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
 
     def g_Call(self, s):
         it = None
+        s.prog = self.program_target(s.prog)
         if isinstance(s.prog, StrLit):
             name = s.prog.value.decode('latin-1').strip()
             if name in SYSTEM_ROUTINES:
@@ -5551,8 +5552,28 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
         em.ind -= 1
         em("}")
 
+    def program_target(self, p):
+        """CALL / CANCEL name, where name is no data item but a program of this
+        compilation unit or a REPOSITORY prototype: that program, as cobc
+        takes it (-fno-program-name-redefinition)."""
+        if not isinstance(p, DataRef) or p.subs or p.quals or p.refmod or p.item is not None:
+            return p
+        try:
+            if self._resolve(p) is not None:
+                return p            # a data item (GLOBAL ones too) holds the name
+        except CompileError:
+            pass
+        proto = getattr(self.prog, 'proto_progs', {}).get(p.name)
+        if proto is not None:
+            return StrLit(proto.encode('latin-1'))
+        for q in self.all_progs:
+            if (q.ext_name or '').upper() == p.name.upper() and not getattr(q, 'is_function', False):
+                return StrLit(q.ext_name.encode('latin-1'))
+        return p
+
     def g_Cancel(self, s):
         for p in s.progs:
+            p = self.program_target(p)
             if isinstance(p, StrLit):
                 self.em(f"cob_cancel_name({c_string(p.value.decode('latin-1').strip())});")
             else:

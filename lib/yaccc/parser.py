@@ -374,7 +374,10 @@ class Parser(SqlParser):
     def implicit_assign_items(self, prog):
         """GnuCOBOL's implicitly defined ASSIGN data item: SELECT ... ASSIGN
         name, where name is not a data item, defines PIC X(n) holding the name,
-        so the program can MOVE the file it wants into it."""
+        so the program can MOVE the file it wants into it (unless
+        -fno-implicit-assign-dynamic-var: then the word is the external name)."""
+        if not getattr(self, 'implicit_assign', True):
+            return
         defined = set()
         for roots in (prog.working, prog.local, prog.linkage):
             for r in roots:
@@ -539,7 +542,8 @@ class Parser(SqlParser):
                 # a period ends an entry, not necessarily the paragraph: another
                 # entry may follow (ALPHABET A IS ASCII. ALPHABET B IS EBCDIC.)
                 nxt = self.peek(1)
-                if nxt.kind == 'WORD' and (nxt.up in self.SN_ENTRIES or nxt.up.startswith('SWITCH')):
+                if nxt.kind == 'WORD' and (nxt.up in self.SN_ENTRIES or nxt.up.startswith('SWITCH') or
+                                           re.match(r'(?:UPSI|SW|USW)-?\d+$', nxt.up)):
                     self.next()
                     continue
                 break
@@ -640,10 +644,16 @@ class Parser(SqlParser):
                 self.next()
             elif self.peek().kind == 'WORD':
                 env = self.next().up
-                m = re.match(r'(?:SWITCH|UPSI)-?(\d+)$', env)
-                if env in ('SWITCH', 'UPSI') and self.peek().kind == 'NUM':
-                    m = re.match(r'(\d+)$', self.next().val)
+                # a switch: SWITCH-n, SWITCHn, SWITCH n, UPSI-n, SWn (Micro
+                # Focus), USW-n (ACUCOBOL), or SWITCH A to SWITCH Z, the
+                # switches 1 to 26
+                m = re.match(r'(?:SWITCH|UPSI|SW|USW)-?(\d+)$', env)
                 swno = int(m.group(1)) if m else None
+                if env in ('SWITCH', 'UPSI') and self.peek().kind == 'NUM':
+                    swno = int(self.next().val)
+                elif env == 'SWITCH' and self.peek().kind == 'WORD' and len(self.peek().up) == 1 \
+                        and self.peek().up.isalpha() and self.is_word('IS', 'ON', 'OFF', k=1):
+                    swno = ord(self.next().up) - ord('A') + 1
                 if self.accept('IS'):
                     mn = self.next().up
                     self.mnemonics[mn] = env

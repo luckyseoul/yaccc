@@ -22,7 +22,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
 
 - **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
   them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **568** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 125
+- **571** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 122
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
 - **83** differential test programs, compared with GnuCOBOL byte for byte:
@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **17,745** lines of Python in the compiler, standard library only — no parser
+- **17,805** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -151,7 +151,7 @@ compile as modules (`$COMPILE_MODULE`) are built as real loadable modules with
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   568     0              0      125
+  693   571     0              0      122
 ```
 
 For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
@@ -165,8 +165,8 @@ longer passes. `make gctest-update` records a new baseline.
   someone to look at it (the 48 manual SCREEN SECTION tests, checked by hand
   instead; see *Screen I/O*), GnuCOBOL's own C
   API (`cob_get_field_str`, `cob_global` and the like, 6 tests), shell
-  scripting, or a cobc option YACCC has no equivalent for (`-fcallfh`,
-  `-fsystem-name` and a few more). Four check what a
+  scripting, or a cobc option YACCC has no equivalent for (`-fcallfh` and
+  a few more). Four check what a
   strict dialect rejects, which YACCC accepts in every dialect, and one Micro
   Focus's ENTRY FOR GO TO. One is a deliberate difference: a COBOL program called from a C `main` starts the
   runtime itself instead of failing with *cob_init() has not been called*.
@@ -301,7 +301,9 @@ cobc's options that build scripts carry over work the same way:
 | `-fperform-osvs`, `-farithmetic-osvs`, `-fmove-ibm` | OS/VS PERFORM returns, intermediate precision, and IBM's overlapping MOVE (see *Dialects*; `-std=ibm` sets all three) |
 | `-fref-mod-zero-length`, `-fno-ref-mod-zero-length` | a zero-length reference modification allowed, or an error (see *Dialects*) |
 | `-frelax-syntax-checks` | an inline PERFORM may end at a period instead of END-PERFORM (with a warning); the other things this cobc option relaxes, YACCC allows anyway |
-| `-fmissing-statement=ok`, `-flarger-redefines-ok`, `-ftop-level-occurs-clause=ok`, `-fno-constant-folding` | accepted, as what they allow is always allowed: an empty inline PERFORM or IF branch, a REDEFINES larger than what it redefines, OCCURS at level 01 |
+| `-fmissing-statement=ok`, `-flarger-redefines-ok`, `-ftop-level-occurs-clause=ok`, `-fno-constant-folding`, `-fassign-ext-dyn=ok`, `-fno-program-name-redefinition`, `-fsystem-name=NAMES` | accepted, as what they allow is always allowed: an empty inline PERFORM or IF branch, a REDEFINES larger than what it redefines, OCCURS at level 01, ASSIGN EXTERNAL and DYNAMIC, `CALL name` / `CANCEL name` of a program (or REPOSITORY prototype) that no data item is named after, and the switch names `SWn`, `SWITCH n`, `SWITCH A` to `SWITCH Z` (1 to 26) and `USW-n` |
+| `-fno-implicit-assign-dynamic-var` | `ASSIGN word`, a word no data item has, is the file's external name (IBM label parts dropped) rather than a PIC X item holding the word |
+| `-fno-dump[=WS,LO,LS,FD]` | leave these sections, or the whole dump, out of what `-fdump` asks for |
 | `-fstatic-call` | a CALL literal names a program or C function that is linked in (an object file, a library): the link fails without it, rather than the CALL when it runs. `-fno-static-call` (the default) looks for it then, in the run unit, then C, then a loadable module |
 | `-fsingle-quote` | the figurative constant QUOTE is an apostrophe |
 | `-fdefault-colseq=EBCDIC\|ASCII\|NATIVE` | the collating sequence of a program that names none |
@@ -967,7 +969,9 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 **Environment division.**
 - SPECIAL-NAMES: DECIMAL-POINT IS COMMA, CURRENCY SIGN, CLASS (with THRU), SYMBOLIC
   CHARACTERS, ALPHABET (NATIVE, STANDARD-1/2, EBCDIC or literal lists with
-  THRU/ALSO), switches with ON/OFF STATUS, mnemonic names.
+  THRU/ALSO), switches with ON/OFF STATUS (`SWITCH-n`, `SWITCH n`, `UPSI-n`,
+  Micro Focus's `SWn` and `SWITCH A` to `SWITCH Z`, ACUCOBOL's `USW-n`; set
+  by `COB_SWITCH_n`), mnemonic names.
 - OBJECT-COMPUTER PROGRAM COLLATING SEQUENCE.
 - OPTIONS paragraph: DEFAULT ROUNDED MODE.
 - REPOSITORY: `FUNCTION ALL INTRINSIC` and `FUNCTION name ... INTRINSIC` (the
@@ -1431,9 +1435,9 @@ links against is 18,997 lines of C.
 | `lib/yaccc/source.py` | 376 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 753 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 497 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 4,206 | recursive-descent parser to the AST (`nodes.py`, 852) |
+| `lib/yaccc/parser.py` | 4,216 | recursive-descent parser to the AST (`nodes.py`, 852) |
 | `lib/yaccc/data.py` | 705 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,944 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 5,965 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |

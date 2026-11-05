@@ -212,6 +212,7 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
         opts.directives = ss.directives
         parser.missing_period = getattr(opts, 'missing_period', False)
         parser.relax_syntax = getattr(opts, 'relax_syntax', False)
+        parser.implicit_assign = getattr(opts, 'implicit_assign', True)
         if getattr(ss, 'dpc_in_data', None) and opts.dpc_in_data == 'none':
             opts.dpc_in_data = ss.dpc_in_data
         if ss.directives.odoslide is not None and not getattr(opts, 'odoslide_set', False):
@@ -563,6 +564,20 @@ def main(argv=None):
                     help='after a runtime error or a crash, write out the data of the '
                          'program: ALL (also -fdump alone), or WORKING-STORAGE (WS), '
                          'LOCAL-STORAGE (LO), LINKAGE (LS) and the files\' records (FD)')
+    ap.add_argument('-fno-dump', dest='no_dump', metavar='ALL|WS,LO,LS,FD',
+                    help='leave these out of the -fdump dump (all of it with no value)')
+    ap.add_argument('-fimplicit-assign-dynamic-var', dest='implicit_assign', action='store_true',
+                    default=True,
+                    help='ASSIGN word, a word no data item has: a PIC X item holding it, which '
+                         'the program can MOVE another name into (the default)')
+    ap.add_argument('-fno-implicit-assign-dynamic-var', dest='implicit_assign', action='store_false',
+                    help='... or the file\'s external name, IBM label parts dropped')
+    ap.add_argument('-fno-program-name-redefinition', '-fprogram-name-redefinition',
+                    dest='accepted_cobc', action='append_const', const=True,
+                    help='accepted: CALL and CANCEL of a name that no data item has but a '
+                         'program, or a REPOSITORY prototype, does name that program')
+    ap.add_argument('-fassign-ext-dyn=ok', dest='accepted_cobc', action='append_const', const=True,
+                    help='accepted: ASSIGN EXTERNAL and ASSIGN DYNAMIC are always allowed')
     ap.add_argument('-fdefaultbyte', dest='defaultbyte', metavar='init|CHAR|0-255',
                     help='what WORKING-STORAGE without a VALUE clause starts as: init (spaces '
                          'and zeros by type, the default), one character, or a byte value')
@@ -659,6 +674,9 @@ def main(argv=None):
                          '(-std=ibm sets it)')
     ap.add_argument('-fno-move-ibm', dest='move_ibm', action='store_false',
                     help='an overlapping MOVE moves the bytes as they were (the default)')
+    ap.add_argument('-fsystem-name', dest='system_names', action='append', default=[],
+                    metavar='NAMES', help='accepted: the switch names it would add (SWn, SWITCH n, '
+                                          'SWITCH A to Z, USW-n) are always known')
     ap.add_argument('-fnot-register', dest='not_registers', action='append', default=[],
                     metavar='NAME', help='NAME (TALLY, RETURN-CODE, ...) is no special register, '
                                          'but an ordinary word a program may declare')
@@ -698,7 +716,8 @@ def main(argv=None):
     # -fdump alone is -fdump=ALL: an optional value would take the source
     # file's name that follows it
     argv = list(sys.argv[1:] if argv is None else argv)
-    bare = {'-fdump': '-fdump=ALL', '-W': '-Wall', '-save-temps': '-save-temps=.',
+    bare = {'-fdump': '-fdump=ALL', '-fno-dump': '-fno-dump=ALL', '-W': '-Wall',
+            '-save-temps': '-save-temps=.',
             '-j': '-job=', '-job': '-job=', '-P': '-P='}
     k = argv.index('--run') if '--run' in argv else len(argv)
     head = []
@@ -767,6 +786,7 @@ def main(argv=None):
     opts.perform_osvs = d.perform_osvs if args.perform_osvs is None else args.perform_osvs
     opts.assign_clause = args.assign_clause or d.assign_clause
     opts.move_ibm = d.move_ibm if args.move_ibm is None else args.move_ibm
+    opts.implicit_assign = args.implicit_assign
     opts.not_registers = {n.strip().upper() for spec in args.not_registers
                           for n in spec.split(',') if n.strip()}
     from . import lexer
@@ -865,6 +885,15 @@ def main(argv=None):
             opts.dump = parse_dump_scopes(args.dump)
         except ValueError as e:
             ap.error(str(e))
+    if args.no_dump and getattr(opts, 'dump', None):
+        # -fno-dump[=scopes]: out of the dump again (RD and SC never are in it)
+        from .dumpgen import parse_dump_scopes
+        wanted = [w for w in args.no_dump.replace(' ', '').upper().split(',') if w not in ('RD', 'SC')]
+        try:
+            drop = parse_dump_scopes(','.join(wanted)) if wanted else set()
+        except ValueError as e:
+            ap.error(str(e).replace('-fdump', '-fno-dump'))
+        opts.dump = (set(opts.dump) - drop) or None
     if args.not_intrinsic:
         opts.not_intrinsic = {n.strip().upper() for n in args.not_intrinsic.split(',') if n.strip()}
     if args.not_reserved or args.reserved:
