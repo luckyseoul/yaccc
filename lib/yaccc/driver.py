@@ -77,10 +77,30 @@ def safe_build_runtime(cc, verbose=False, force=False):
     return None
 
 
+# the C compiler's flags for the generated code: no warnings (it is not the
+# user's to fix), wrapping integer arithmetic, and no _FORTIFY_SOURCE, which
+# distributions turn on by default: the range checks in COBOL are the
+# runtime's own (on unless --no-check or -fno-ec), and with them off a
+# subscript past a table's end must reach the storage after it, as with
+# cobc, not abort the program with "buffer overflow detected"
+GENERATED_C_FLAGS = ['-w', '-fwrapv', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=0']
+
+# the -fec names that select the checks YACCC compiles in or out, and the
+# kinds of check each one is
+_ALL_CHECKS = frozenset({'subscript', 'ref-mod', 'odo'})
+EC_RANGE = {'ALL': _ALL_CHECKS, 'EC-ALL': _ALL_CHECKS, 'EC-BOUND': _ALL_CHECKS,
+            'EC-BOUND-SUBSCRIPT': frozenset({'subscript'}), 'EC-BOUND-REF-MOD': frozenset({'ref-mod'}),
+            'EC-BOUND-ODO': frozenset({'odo'})}
+
+
 def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=None):
     programs = []
+    opts.includes = []
+    opts.programs = programs
+    opts.codegen = None
     for p in paths:
         ss = SourceSet(include_dirs=include_dirs, fmt=fmt, debugging=debugging, defines=defines)
+        ss.includes = opts.includes
         toks = ss.load(p)
         parser = Parser(toks, ss.directives.vars)
         parser.bare_intrinsics = set(getattr(opts, 'bare_intrinsics', ()))
@@ -96,6 +116,7 @@ def compile_sources(paths, opts, fmt, include_dirs, debugging=False, defines=Non
     opts.source_name = paths[0]
     opts.debugging = debugging
     gen = CodeGen(programs, opts)
+    opts.codegen = gen
     return gen.generate(), programs
 
 
@@ -164,12 +185,33 @@ def report(e):
     return 1
 
 
+def write_listing(cobol, opts):
+    """-t / -T / -Xref: the listing, whether the compile worked or not."""
+    path = getattr(opts, 'listing', None)
+    if not path and getattr(opts, 'xref', False):
+        path = os.path.splitext(os.path.basename(cobol[0]))[0] + '.lst'
+    if not path:
+        return
+    from .listing import Listing
+    gen = getattr(opts, 'codegen', None) if getattr(opts, 'xref', False) else None
+    try:
+        Listing(cobol, getattr(opts, 'includes', []), list(DIAG.items),
+                getattr(opts, 'programs', []), gen, VERSION).write(path)
+    except OSError as e:
+        print(f"yaccc: cannot write the listing {path}: {e.strerror}", file=sys.stderr)
+
+
 def translate(cobol, opts, fmt, args, defines):
     """COBOL sources to one C translation unit: (status, C text)."""
     try:
         csrc, _ = compile_sources(cobol, opts, fmt, args.include, args.debugging_mode, defines)
     except CompileError as e:
-        return report(e), None
+        if not isinstance(e, ErrorsReported):
+            DIAG.items.append(('error', e))
+            DIAG.nerrors += 1
+        write_listing(cobol, opts)
+        DIAG.flush()
+        return 1, None
     except Exception as e:     # a bug in the compiler, not in the program
         DIAG.flush()
         where = f"{errors.WHERE}: " if errors.WHERE else ''
@@ -181,6 +223,7 @@ def translate(cobol, opts, fmt, args, defines):
             print("yaccc: this is a bug in yaccc, not in your program; "
                   "YACCC_TRACEBACK=1 shows where it happened", file=sys.stderr)
         return 3, None
+    write_listing(cobol, opts)
     DIAG.flush()
     return 0, csrc
 
@@ -198,7 +241,8 @@ def build_parts(args, opts, fmt, defines, cobol, csrcs):
         tmpdir = tempfile.mkdtemp(prefix='yaccc_')
         try:
             if src in csrcs:
-                cmd = [args.cc, '-std=gnu11', f'-O{args.opt}', '-fPIC', '-I', RUNTIME_DIR] + flags + [src, '-o', out]
+                cmd = ([args.cc, '-std=gnu11', f'-O{args.opt}', '-fPIC', '-I', RUNTIME_DIR] + cc_options(args)
+                       + flags + [src, '-o', out] + ([] if args.compile_only else ld_options(args)))
             else:
                 DIAG.items.clear()
                 DIAG.nerrors = 0
@@ -207,11 +251,12 @@ def build_parts(args, opts, fmt, defines, cobol, csrcs):
                     return rc
                 if args.syntax_only:
                     continue
-                cpath = os.path.splitext(out)[0] + '.c' if args.keep_c else os.path.join(tmpdir, base + '.c')
+                cpath = kept_c_path(args, out, base) or os.path.join(tmpdir, base + '.c')
                 with open(cpath, 'w', encoding='latin-1') as f:
                     f.write(csrc)
-                cmd = ([args.cc, '-std=gnu11', f'-O{args.opt}', '-w', '-fwrapv', '-fPIC', '-I', RUNTIME_DIR]
-                       + flags + [cpath, '-o', out])
+                cmd = ([args.cc, '-std=gnu11', f'-O{args.opt}'] + GENERATED_C_FLAGS + ['-fPIC', '-I', RUNTIME_DIR]
+                       + cc_options(args) + flags + [cpath, '-o', out]
+                       + ([] if args.compile_only else ld_options(args)))
             if args.debug:
                 cmd.insert(1, '-g')
             if not run_cc(cmd, args.verbose, f"C compilation of {src} failed"):
@@ -219,6 +264,29 @@ def build_parts(args, opts, fmt, defines, cobol, csrcs):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
     return 0
+
+
+def cc_options(args):
+    """-A: options for the C compiler, each split as a shell would."""
+    import shlex
+    return [w for o in getattr(args, 'cc_opts', []) for w in shlex.split(o)]
+
+
+def ld_options(args):
+    """-Q: options for the link."""
+    import shlex
+    return [w for o in getattr(args, 'ld_opts', []) for w in shlex.split(o)]
+
+
+def kept_c_path(args, out, base):
+    """Where --keep-c or -save-temps keeps the generated C, or None."""
+    if getattr(args, 'save_temps', None):
+        d = args.save_temps
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, base + '.c')
+    if args.keep_c:
+        return os.path.splitext(out)[0] + '.c'
+    return None
 
 
 def _split_run_args(ap, args, unknown):
@@ -319,6 +387,47 @@ def main(argv=None):
                          "PERFORMs that led to it (a little faster PERFORM)")
     ap.add_argument('-fstack-trace', dest='stack_trace', action='store_true',
                     help='list the PERFORMs and CALLs that led to a runtime error (the default)')
+    # cobc's options that build scripts use, done the same way here
+    ap.add_argument('-t', dest='listing', metavar='FILE',
+                    help='write a listing of the compile to FILE: the source with its copybooks '
+                         'and messages, and a data map')
+    ap.add_argument('-T', dest='listing_wide', metavar='FILE',
+                    help='the same as -t (the listing is never cut to a page width)')
+    ap.add_argument('-Xref', dest='xref', action='store_true',
+                    help='a cross-reference in the listing: where each data item, index and '
+                         'procedure is used (with no -t, the listing is SOURCE.lst)')
+    ap.add_argument('-A', dest='cc_opts', action='append', default=[], metavar='OPTIONS',
+                    help='options for the C compiler (may be repeated)')
+    ap.add_argument('-Q', dest='ld_opts', action='append', default=[], metavar='OPTIONS',
+                    help='options for the link (may be repeated)')
+    ap.add_argument('-save-temps', dest='save_temps', metavar='DIR',
+                    help='keep the generated C, in DIR (-save-temps alone: the current directory)')
+    ap.add_argument('-w', dest='no_warnings', action='store_true', help='no warnings')
+    ap.add_argument('-W', dest='warnings', action='append', default=[], metavar='NAME',
+                    help='-Wall, -Wextra, -W: every warning (the default); -Wno-NAME: not that '
+                         'one; -Werror: warnings fail the compile')
+    ap.add_argument('-d', '-debug', dest='debug_checks', action='store_true',
+                    help='every run-time check: subscripts, reference modification, OCCURS '
+                         'DEPENDING ON, and the PERFORM stack trace (overrides --no-check)')
+    ap.add_argument('-fec', dest='ec_on', action='append', default=[], metavar='EC-NAME',
+                    help='EC-ALL, EC-BOUND, EC-BOUND-SUBSCRIPT, EC-BOUND-REF-MOD or EC-BOUND-ODO: '
+                         'those range checks on (they are, unless --no-check or -fno-ec)')
+    ap.add_argument('-fno-ec', dest='ec_off', action='append', default=[], metavar='EC-NAME',
+                    help='the same names: those range checks off')
+    ap.add_argument('-fstack-check', dest='stack_check', action='store_true',
+                    help='PERFORM stack checking (always on)')
+    ap.add_argument('-fsource-location', dest='source_location', action='store_true',
+                    help='source locations in run-time errors (always on)')
+    ap.add_argument('-ffold-copy', dest='fold_copy', type=str.upper, choices=['UPPER', 'LOWER'],
+                    help="a copybook's name is looked for as written, in upper case and in lower "
+                         "case, whichever this says")
+    ap.add_argument('-fsingle-quote', dest='single_quote', action='store_true',
+                    help="QUOTE is an apostrophe (')")
+    ap.add_argument('-fdefault-colseq', dest='default_colseq', type=str.upper,
+                    choices=['ASCII', 'EBCDIC', 'NATIVE'],
+                    help='the collating sequence of a program that names none')
+    ap.add_argument('-fmfcomment', dest='mfcomment', action='store_true',
+                    help="'*' or '/' in column 1 makes a fixed-format line a comment")
     ap.add_argument('-fdump', dest='dump', metavar='ALL|WS,LO,LS,FD',
                     help='after a runtime error or a crash, write out the data of the '
                          'program: ALL (also -fdump alone), or WORKING-STORAGE (WS), '
@@ -397,11 +506,21 @@ def main(argv=None):
     # -fdump alone is -fdump=ALL: an optional value would take the source
     # file's name that follows it
     argv = list(sys.argv[1:] if argv is None else argv)
-    if '--run' in argv:
-        k = argv.index('--run')
-        argv = ['-fdump=ALL' if a == '-fdump' else a for a in argv[:k]] + argv[k:]
-    else:
-        argv = ['-fdump=ALL' if a == '-fdump' else a for a in argv]
+    bare = {'-fdump': '-fdump=ALL', '-W': '-Wall', '-save-temps': '-save-temps=.'}
+    k = argv.index('--run') if '--run' in argv else len(argv)
+    head = []
+    i = 0
+    while i < k:
+        a = argv[i]
+        if a in ('-A', '-Q') and i + 1 < k:
+            # -A -g: the C compiler's options begin with '-', which would
+            # otherwise read as one of ours
+            head.append(a + argv[i + 1])
+            i += 2
+            continue
+        head.append(bare.get(a, a))
+        i += 1
+    argv = head + argv[k:]
     args, unknown = ap.parse_known_args(argv)
     run_args = _split_run_args(ap, args, unknown)
 
@@ -463,6 +582,47 @@ def main(argv=None):
     opts.sticky_linkage = args.sticky_linkage
     opts.recursive_check = args.recursive_check
     opts.stack_trace = args.stack_trace
+    # -fno-ec / -fec, in order: a kind of range check out or (back) in
+    opts.checks_off = set()
+    for on, spec in [(False, x) for x in args.ec_off] + [(True, x) for x in args.ec_on]:
+        for name in (n.strip().upper() for n in spec.split(',') if n.strip()):
+            if name not in EC_RANGE:
+                ap.error(f"-fec/-fno-ec: {name}: YACCC compiles the range checks in or out "
+                         f"({', '.join(sorted(EC_RANGE))}); its other checks are always made")
+            kinds = EC_RANGE[name]
+            if on:
+                opts.checks_off -= kinds
+                opts.check = True
+            else:
+                opts.checks_off |= kinds
+    if args.debug_checks:
+        opts.check = True
+        opts.checks_off = set()
+        opts.stack_trace = True
+    DIAG.no_warnings = args.no_warnings
+    for w in args.warnings:
+        if w in ('all', 'extra'):
+            continue
+        if w == 'error':
+            DIAG.warn_errors = True
+            continue
+        name = w[3:] if w.startswith('no-') else w
+        if name not in errors.WARNINGS:
+            ap.error(f"-W{w}: unknown warning (cobc's names: {', '.join(sorted(errors.WARNINGS))})")
+        if w.startswith('no-'):
+            DIAG.warn_off.add(name)
+        elif name not in errors.ISSUED:
+            print(f"yaccc: note: -W{w}: YACCC has no such warning to turn on", file=sys.stderr)
+    if args.single_quote:
+        from . import codegen, words
+        words.FIG_BYTES['QUOTE'] = b"'"
+        codegen.FIG_FIELD['QUOTE'] = '&cob_fig_apos'
+    opts.default_colseq = args.default_colseq
+    if args.mfcomment:
+        from . import source
+        source.MF_COMMENT = True
+    opts.xref = args.xref
+    opts.listing = args.listing or args.listing_wide
     if args.dump:
         from .dumpgen import parse_dump_scopes
         try:
@@ -551,7 +711,7 @@ def main(argv=None):
     try:
         inputs = []
         if csrc is not None:
-            cpath = os.path.splitext(exe)[0] + '.c' if args.keep_c else os.path.join(tmpdir, base + '.c')
+            cpath = kept_c_path(args, exe, base) or os.path.join(tmpdir, base + '.c')
             with open(cpath, 'w', encoding='latin-1') as f:
                 f.write(csrc)
             inputs.append(cpath)
@@ -559,15 +719,16 @@ def main(argv=None):
         for i, c in enumerate(csrcs):
             # the user's own C: compiled with its own warnings, not the generated code's flags
             o = os.path.join(tmpdir, f"c{i}_" + os.path.splitext(os.path.basename(c))[0] + '.o')
-            cmd = [args.cc, '-std=gnu11', f'-O{args.opt}', '-I', RUNTIME_DIR, '-c', c, '-o', o]
+            cmd = [args.cc, '-std=gnu11', f'-O{args.opt}', '-I', RUNTIME_DIR] + cc_options(args) + ['-c', c, '-o', o]
             if args.debug:
                 cmd.insert(1, '-g')
             if not run_cc(cmd, args.verbose, f"C compilation of {c} failed"):
                 return 1
             objs.append(o)
-        cmd = ([args.cc, '-std=gnu11', f'-O{args.opt}', '-w', '-fwrapv', '-I', RUNTIME_DIR]
+        cmd = ([args.cc, '-std=gnu11', f'-O{args.opt}'] + GENERATED_C_FLAGS + ['-I', RUNTIME_DIR] + cc_options(args)
                + inputs + objs + linkin + ['-o', exe] + runtime_link_args(lib)
-               + [f'-L{d}' for d in args.libdirs] + [f'-l{x}' for x in args.libs] + ['-lm', '-ldl'])
+               + [f'-L{d}' for d in args.libdirs] + [f'-l{x}' for x in args.libs] + ['-lm', '-ldl']
+               + ld_options(args))
         if args.debug:
             cmd.insert(1, '-g')
         what = "C compilation failed (generated code error)" if csrc is not None and not (objs or linkin) \

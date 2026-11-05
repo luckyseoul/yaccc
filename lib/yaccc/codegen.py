@@ -225,6 +225,12 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         self.programs = programs
         self.udf_names = set()
         self.opts = opts
+        # -Xref: every reference to a data item or procedure, as it resolves
+        self.xref_on = bool(getattr(opts, 'xref', False))
+        self.xref_refs = []         # (item, loc, ref)
+        self.xref_procs = []        # (procedure, loc, how)
+        self.xref_changed = set()   # id of each ref that is a receiving operand
+        self._xref_seen = {}        # id(ref) -> ref, kept alive so ids stay unique
         self.glob = []
         self.performs = []          # the program's static cob_perform declarations
         self.funcs = []
@@ -576,6 +582,11 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         self.cur_para = self.cur_section = None
         ctx.cname = self.prog_syms[id(prog)]
         ctx.coll = None
+        if not prog.collating and getattr(self.opts, 'default_colseq', None) == 'EBCDIC':
+            # -fdefault-colseq=EBCDIC: as PROGRAM COLLATING SEQUENCE IS an
+            # EBCDIC alphabet, for a program that names none
+            prog.alphabets.setdefault('(EBCDIC)', 'EBCDIC')
+            prog.collating = '(EBCDIC)'
         if prog.collating:
             self.build_collating(prog)
         ctx.init_flag = self.init_flags[id(prog)]
@@ -982,6 +993,71 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
 
     # ================================================================ name resolution
     def resolve(self, ref, allow_cond=True):
+        it = self._resolve(ref, allow_cond)
+        if self.xref_on and it is not None and getattr(ref, 'loc', None) is not None \
+                and id(ref) not in self._xref_seen and not getattr(ref, 'implicit', False):
+            self._xref_seen[id(ref)] = ref
+            self.xref_refs.append((it, ref.loc, ref))
+        return it
+
+    def xref_receiving(self, ref):
+        if self.xref_on and isinstance(ref, DataRef):
+            self.xref_changed.add(id(ref))
+
+    def xref_stores(self, s):
+        """-Xref: mark the operands a statement stores into."""
+        out = []
+
+        def add(x):
+            if isinstance(x, Target):
+                x = x.ref
+            if isinstance(x, DataRef):
+                out.append(x)
+        kind = type(s).__name__
+        if kind == 'Move':
+            for d in s.dsts:
+                add(d)
+        elif kind == 'Arith':
+            for t in list(s.to) + list(s.giving):
+                add(t)
+            add(s.remainder)
+        elif kind == 'Compute':
+            for t in s.targets:
+                add(t)
+        elif kind == 'SetStmt' and s.kind in ('TO', 'UPDOWN', 'TRUE', 'FALSE'):
+            for t in s.targets:
+                add(t)
+        elif kind == 'Initialize':
+            for t in s.targets:
+                add(t)
+        elif kind == 'Accept':
+            add(s.target)
+        elif kind == 'StringStmt':
+            add(s.into)
+            add(s.pointer)
+        elif kind == 'Unstring':
+            for u in s.intos:
+                add(u.target)
+                add(u.delim_in)
+                add(u.count_in)
+            add(s.pointer)
+            add(s.tallying)
+        elif kind == 'Inspect':
+            if s.replacing or s.converting:
+                add(s.target)
+            for op in s.tallying:
+                add(op.counter)
+        elif kind in ('Read', 'Return'):
+            add(s.into)
+        elif kind == 'Perform' and s.varying:
+            for v in s.varying:
+                add(v.var)
+        elif kind == 'Search':
+            add(s.varying)
+        for r in out:
+            self.xref_changed.add(id(r))
+
+    def _resolve(self, ref, allow_cond=True):
         if isinstance(ref, (CVar, CDec, CField)):
             return None
         if ref.item is not None:
@@ -1086,7 +1162,17 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         self.n += 1
         return self.n
 
+    XREF_HOW = {'Perform': 'P', 'GoTo': 'G', 'Alter': 'A', 'Sort': 'S', 'Merge': 'S', 'XmlParse': 'P'}
+
     def resolve_proc(self, pr):
+        p = self._resolve_proc(pr)
+        if self.xref_on and getattr(pr, 'loc', None) is not None and id(pr) not in self._xref_seen:
+            self._xref_seen[id(pr)] = pr
+            how = self.XREF_HOW.get(type(getattr(self, 'cur_stmt', None)).__name__, '')
+            self.xref_procs.append((p, pr.loc, how))
+        return p
+
+    def _resolve_proc(self, pr):
         ctx = self.ctx
         if pr.target is not None:
             return pr.target
@@ -1157,6 +1243,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                     for st in walk(sent.stmts):
                         if not isinstance(st, Alter):
                             continue
+                        self.cur_stmt = st
                         for p1, _ in st.pairs:
                             tgt = self.resolve_proc(p1)
                             if not isinstance(tgt, Paragraph):
@@ -1171,6 +1258,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                                 self.alter_vars.append(var)
                                 self.seg_alters.setdefault(tgt.section.segment, []).append(var)
         self.cur_section = None
+        self.cur_stmt = None
         self.seg_tracking = any(seg >= 50 for seg in self.seg_alters)
 
     def seg_enter(self, sec):
@@ -1664,7 +1752,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         l = self.int_expr(length) if length is not None else '-1'
         # 0 = no checks, 1 = bounds, 2 = bounds and no zero-length reference
         chk = 0
-        if self.checks_on(loc):
+        if self.checks_on(loc, 'ref-mod'):
             chk = 2 if getattr(self.opts, 'refmod_zero', False) else 1
         return f"cob_refmod(&(cob_field){{0}}, {f}, {s}, {l}, {chk}, {c_string(str(loc))})"
 
@@ -1694,15 +1782,14 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 const += (v - 1) * occ.size
                 continue
             s = self.int_expr(sub)
-            if self.checks_on(ref.loc):
-                dep = occ.occurs.depending
-                if dep is not None:
-                    # the upper bound is the current DEPENDING ON value
-                    dmax = 2147483647 if getattr(occ.occurs, 'unbounded', False) else occ.occurs.max
-                    s = (f"cob_chk_odo_sub({s}, {self.field(dep)}, {occ.occurs.min}, "
-                         f"{dmax}, {c_string(ref.name)}, {c_string(str(ref.loc))})")
-                else:
-                    s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
+            dep = occ.occurs.depending
+            if dep is not None and self.checks_on(ref.loc, 'odo'):
+                # the upper bound is the current DEPENDING ON value
+                dmax = 2147483647 if getattr(occ.occurs, 'unbounded', False) else occ.occurs.max
+                s = (f"cob_chk_odo_sub({s}, {self.field(dep)}, {occ.occurs.min}, "
+                     f"{dmax}, {c_string(ref.name)}, {c_string(str(ref.loc))})")
+            elif self.checks_on(ref.loc, 'subscript'):
+                s = f"cob_chk_sub({s}, {occ.occurs.max}, {c_string(ref.name)}, {c_string(str(ref.loc))})"
             terms.append(f"({s} - 1) * {occ.size}")
         return ' + '.join([str(const)] + terms)
 
@@ -1712,15 +1799,16 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         the bytes as a program name."""
         return it is not None and getattr(it, 'type', None) == T_POINTER
 
-    def checks_on(self, loc):
-        """Bounds checks at this source position: a >>TURN or $SET SSRANGE in
-        the source overrides the compile-wide flag."""
+    def checks_on(self, loc, kind='subscript'):
+        """Bounds checks of a kind (subscript, ref-mod, odo) at this source
+        position: a >>TURN or $SET SSRANGE in the source overrides the
+        compile-wide flags (--no-check, -fno-ec=EC-BOUND-...)."""
         d = getattr(self.opts, 'directives', None)
         if d is not None and loc is not None:
             state = d.check_at(getattr(loc, 'file', None), getattr(loc, 'line', 0))
             if state is not None:
                 return state
-        return getattr(self.opts, 'check', True)
+        return getattr(self.opts, 'check', True) and kind not in getattr(self.opts, 'checks_off', ())
 
     def size_expr(self, it, receiving=False):
         d = it.contains_odo() if it.children or it.occurs else None
@@ -1740,6 +1828,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
 
     def ref_field(self, ref, receiving=False):
         it = self.resolve(ref)
+        if receiving:
+            self.xref_receiving(ref)
         if isinstance(it, IndexName):
             a = self.attr(T_INDEX, 9, 0, F_SIGNED)
             f = f"CF(&{it.cname}, 4, &{a})"
@@ -2758,6 +2848,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         var = c.parent
         vref = DataRef(var.name or 'FILLER', [], ref.subs, None, ref.loc)
         vref.item = var
+        vref.implicit = True     # the condition's item: not named in the source
         f = self.field(vref)
         num = var.type in NUMERIC_TYPES
         parts = []
@@ -2844,6 +2935,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         self.cur_loc = s.loc
         errors.WHERE = s.loc
         self.cur_stmt = s
+        if self.xref_on:
+            self.xref_stores(s)
         fn = getattr(self, 'g_' + type(s).__name__, None)
         if fn is None:
             raise CompileError(f"{type(s).__name__} is not supported", s.loc)
@@ -2911,6 +3004,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         if not isinstance(ref, DataRef):
             raise CompileError("receiving operand must be a data item", self.cur_loc)
         it = self.resolve(ref)
+        self.xref_receiving(ref)
         if isinstance(it, DataItem) and it.level == 88:
             raise CompileError(f"condition-name '{ref.name}' cannot be a receiving item", ref.loc)
         return it
@@ -3065,7 +3159,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             raise CompileError("CORRESPONDING requires group items", self.cur_loc)
         pairs = self.corr_pairs(g1, g2, verb != 'MOVE')
         if not pairs:
-            DIAG.warn("no corresponding items found", self.cur_loc)
+            DIAG.warn("no corresponding items found", self.cur_loc, 'corresponding')
             return
         em("{")
         em.ind += 1
@@ -3449,7 +3543,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         wide = self.uses_dec_float(s.expr) or any(self.is_dec_float_ref(t.ref) for t in s.targets)
         osc = self.osvs_scale(s.expr, s.targets)
         if osc is not None:
-            DIAG.warn("precision of result may change with arithmetic-osvs", s.loc)
+            DIAG.warn("precision of result may change with arithmetic-osvs", s.loc, 'arithmetic-osvs')
         rhs = self.dec_osvs(s.expr, wide, osc, True)[0] if osc is not None else self.dec(s.expr, wide)
         em(f"cob_dec cob_t = {rhs};")
         for t in s.targets:
@@ -4796,6 +4890,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
                 var = c.parent
                 vref = DataRef(var.name or 'FILLER', [], t.subs, None, t.loc)
                 vref.item = var
+                vref.implicit = True     # the condition's item: not named in the source
                 if s.kind == 'TRUE':
                     v = c.values[0][0]
                 else:
@@ -4950,6 +5045,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
             var = cn.parent
             vref = DataRef(var.name, [], c.ref.subs, None, c.ref.loc)
             vref.item = var
+            vref.implicit = True     # the condition's item: not named in the source
             return (var, vref, cn.values[0][0])
         if isinstance(c, Rel) and c.op == 'EQ':
             for a, b in ((c.left, c.right), (c.right, c.left)):
@@ -5182,7 +5278,8 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen):
         if n < lo:
             raise CompileError(f"wrong number of CALL parameters for '{name}', {n} given, {lo} expected", s.loc)
         if n > hi:
-            DIAG.warn(f"wrong number of CALL parameters for '{name}', {n} given, {hi} expected", s.loc)
+            DIAG.warn(f"wrong number of CALL parameters for '{name}', {n} given, {hi} expected", s.loc,
+                      'call-params')
         em("{")
         em.ind += 1
         em(f"cob_field *cob_sa[{max(n, 1)}];")

@@ -53,6 +53,8 @@ def detect_format(lines):
         s = line.rstrip()
         if not s.strip():
             continue
+        if MF_COMMENT and s[:1] in ('*', '/') and not s.startswith('*>'):
+            continue                # -fmfcomment: a comment, saying nothing of the format
         st = s.lstrip()
         indent = len(s) - len(st)
         up = st.upper()
@@ -136,6 +138,11 @@ class DebugSwitch:
             self.scan = None
 
 
+# -fmfcomment: '*' or '/' in column 1 makes a fixed-format line a comment,
+# as Micro Focus allows (set by the driver for the whole compile)
+MF_COMMENT = False
+
+
 def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, depth=0):
     """Turn raw lines into logical lines (continuations joined, comments
     removed). Returns (logical lines, copy regions). `debugging` is a bool or a
@@ -172,6 +179,8 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
     for idx, raw in enumerate(lines):
         loc = Loc(path, idx + 1)
         if mode in ('fixed', 'variable'):
+            if MF_COMMENT and raw[:1] in ('*', '/'):
+                continue                # -fmfcomment: a comment marked in column 1
             if len(raw) < 7:
                 continue
             ind = raw[6]
@@ -262,7 +271,8 @@ def process(lines, path, fmt, debugging=False, directives=None, on_copy=None, de
     if overlong:
         more = f" (and {len(overlong) - 1} more line{'s' if len(overlong) > 2 else ''})" if len(overlong) > 1 else ''
         DIAG.warn(f"text runs past column 80{more}; in fixed-format source everything after "
-                  f"column 72 is ignored (-free selects free format)", Loc(path, overlong[0]))
+                  f"column 72 is ignored (-free selects free format)", Loc(path, overlong[0]),
+                  'column-overflow')
     _join_trailing_hyphen(out)
     _strip_comment_entries(out, fmt)
     return out, regions

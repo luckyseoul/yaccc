@@ -92,6 +92,11 @@ class Diagnostics:
     def __init__(self):
         self.items = []         # (kind, CompileError)
         self.nerrors = 0
+        # -w, -Wno-NAME, -Werror: which warnings are reported, and whether
+        # they fail the compile
+        self.no_warnings = False
+        self.warn_off = set()
+        self.warn_errors = False
 
     def error(self, e, loc=None):
         if not isinstance(e, CompileError):
@@ -107,8 +112,15 @@ class Diagnostics:
             self.items.append(('error', CompileError(f"too many errors ({MAX_ERRORS}); stopping")))
             raise ErrorsReported()
 
-    def warn(self, msg, loc=None):
-        self.items.append(('warning', CompileError(msg, loc)))
+    def warn(self, msg, loc=None, name='others'):
+        """A warning, under one of cobc's warning names (WARNINGS) so that
+        -Wno-NAME can turn it off."""
+        if self.no_warnings or name in self.warn_off:
+            return
+        if self.warn_errors:
+            self.error(CompileError(f"{msg} [-Werror={name}]", loc))
+            return
+        self.items.append(('warning', CompileError(f"{msg} [-W{name}]", loc)))
 
     def check(self):
         """Stop if an error has been recorded."""
@@ -125,3 +137,15 @@ class Diagnostics:
 
 
 DIAG = Diagnostics()
+
+# cobc's warning names. The ones yaccc issues: column-overflow (text past
+# column 80), corresponding (no CORRESPONDING pairs), arithmetic-osvs,
+# call-params, unfinished (a feature not finished, such as XML PARSE
+# VALIDATING), others (the rest). -W for any other name is accepted with a
+# note, as there is nothing to turn on.
+WARNINGS = {'additional', 'archaic', 'arithmetic-osvs', 'call-params', 'column-overflow',
+            'constant-expression', 'corresponding', 'dangling-text', 'dialect', 'ignored-error',
+            'implicit-define', 'initial-value', 'linkage', 'obsolete', 'others', 'overlap',
+            'parentheses', 'pending', 'possible-overlap', 'possible-truncate', 'prototypes',
+            'redefinition', 'strict-typing', 'terminator', 'truncate', 'unfinished', 'unreachable'}
+ISSUED = {'column-overflow', 'corresponding', 'arithmetic-osvs', 'call-params', 'unfinished', 'others'}

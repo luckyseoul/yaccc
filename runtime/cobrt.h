@@ -113,7 +113,7 @@ void cob_stack_trace(void);
 
 /* ------------------------------------------------------------ globals */
 extern cob_field cob_fig_space, cob_fig_zero, cob_fig_high, cob_fig_low,
-	cob_fig_quote, cob_fig_null;
+	cob_fig_quote, cob_fig_null, cob_fig_apos;
 extern const cob_attr cob_attr_alnum, cob_attr_group;
 extern cob_field cob_return_code, cob_tally, cob_sort_return_reg;
 extern const char *cob_when_compiled;

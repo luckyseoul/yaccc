@@ -354,6 +354,7 @@ class SourceSet:
         self.debugging = source.DebugSwitch(debugging)
         self.directives = Directives(defines)
         self.decimal_comma = False
+        self.includes = []      # (file, line of the COPY, copybook), for the listing
 
     def load(self, path):
         raw = source.read_raw(path)
@@ -531,6 +532,8 @@ class SourceSet:
                     for ext in self.COPY_EXTS:
                         p = os.path.join(b, nm + ext)
                         if os.path.isfile(p):
+                            if loc is not None:
+                                self.includes.append((loc.file, loc.line, p))
                             return p
         raise CompileError(f"copybook '{name}' not found", loc)
 

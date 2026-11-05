@@ -25,6 +25,7 @@ cob_field cob_fig_zero = { 1, (unsigned char *)"0", &attr_all_zero };
 cob_field cob_fig_high = { 1, (unsigned char *)"\xff", &attr_all };
 cob_field cob_fig_low = { 1, (unsigned char *)"", &attr_all };
 cob_field cob_fig_quote = { 1, (unsigned char *)"\"", &attr_all };
+cob_field cob_fig_apos = { 1, (unsigned char *)"'", &attr_all };   /* QUOTE with -fsingle-quote */
 cob_field cob_fig_null = { 1, (unsigned char *)"", &attr_all };
 
 static unsigned char rc_data[4];

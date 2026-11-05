@@ -13,10 +13,7 @@ holds the pointer's address, read when the dump is written. A RECURSIVE
 program's LOCAL-STORAGE and LINKAGE pointers are local to each call, so its
 table leaves them out.
 """
-from .data import IndexName
-
-# the USAGE as a programmer writes it, for the normalised names
-_USAGE_WORDS = {'PACKED': 'COMP-3', 'BINARY': 'COMP', 'FLOAT': 'COMP-1', 'DOUBLE': 'COMP-2'}
+from .data import IndexName, item_desc
 
 # the scopes of -fdump, as cobc names them
 DUMP_SCOPES = {'ALL', 'WS', 'LO', 'LS', 'FD'}
@@ -42,24 +39,7 @@ def parse_dump_scopes(text):
 
 class DumpGen:
     def dump_desc(self, it):
-        parts = []
-        if it.pic is not None:
-            parts.append(it.pic.src)
-        u = getattr(it, 'usage', None)
-        if u and u != 'DISPLAY':
-            parts.append(_USAGE_WORDS.get(u, u))
-        oc = it.occurs
-        if oc is not None:
-            if oc.depending is not None:
-                top = 'UNBOUNDED' if getattr(oc, 'unbounded', False) else oc.max
-                parts.append(f"OCCURS {oc.min} TO {top} DEPENDING ON {oc.depending.name}")
-            else:
-                parts.append(f"OCCURS {oc.max}")
-        if it.redefines is not None:
-            parts.append(f"REDEFINES {it.redefines.name or 'FILLER'}")
-        if getattr(it, 'based', False) and it.level in (1, 77):
-            parts.append('BASED')
-        return ' '.join(parts)
+        return item_desc(it)
 
     def dump_items(self, root, base, ptr, rows, index_rows, where):
         """The rows of a record and everything under it, in order; returns

@@ -45,6 +45,33 @@ F_BINARY_TRUNC = 0x40
 F_UNSIGNED_PACKED = 0x100     # COMP-6: packed decimal, no sign nibble
 
 
+# the USAGE as a programmer writes it, for the normalised names
+_USAGE_WORDS = {'PACKED': 'COMP-3', 'BINARY': 'COMP', 'FLOAT': 'COMP-1', 'DOUBLE': 'COMP-2'}
+
+
+def item_desc(it):
+    """An item's PICTURE, USAGE, OCCURS and REDEFINES, as one line of text
+    (for -fdump and the listing's data map)."""
+    parts = []
+    if it.pic is not None:
+        parts.append(it.pic.src)
+    u = getattr(it, 'usage', None)
+    if u and u != 'DISPLAY':
+        parts.append(_USAGE_WORDS.get(u, u))
+    oc = it.occurs
+    if oc is not None:
+        if oc.depending is not None:
+            top = 'UNBOUNDED' if getattr(oc, 'unbounded', False) else oc.max
+            parts.append(f"OCCURS {oc.min} TO {top} DEPENDING ON {oc.depending.name}")
+        else:
+            parts.append(f"OCCURS {oc.max}")
+    if it.redefines is not None:
+        parts.append(f"REDEFINES {it.redefines.name or 'FILLER'}")
+    if getattr(it, 'based', False) and it.level in (1, 77):
+        parts.append('BASED')
+    return ' '.join(parts)
+
+
 class Picture:
     def __init__(self, src, loc, currency='$', decimal_comma=False, constants=None):
         self.src = src

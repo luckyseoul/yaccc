@@ -158,7 +158,8 @@ class ScreenGen:
                     elif isinstance(v, NumLit):
                         b = v.text.encode('latin-1')
                     elif isinstance(v, Figurative):
-                        b = {'SPACE': b' ', 'ZERO': b'0', 'QUOTE': b'"', 'HIGH-VALUE': b'\xff',
+                        from .words import FIG_BYTES
+                        b = {'SPACE': b' ', 'ZERO': b'0', 'QUOTE': FIG_BYTES['QUOTE'], 'HIGH-VALUE': b'\xff',
                              'LOW-VALUE': b'\x00'}.get(v.kind, b' ')
                     else:
                         b = getattr(v, 'value', b'') or b''

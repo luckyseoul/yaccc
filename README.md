@@ -35,7 +35,7 @@ $ ./yaccc examples/mandelbrot.cbl --run
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 - **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
   then runs in 40 ms where GnuCOBOL takes 133 ms.
-- **16,360** lines of Python in the compiler, standard library only — no parser
+- **16,883** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
   occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
@@ -266,6 +266,31 @@ COBOL* below):
 | `--cc CC` | C compiler (default `$CC`, then gcc, then cc) |
 | `--run` | run the program after building; its arguments follow, and ones that begin with `-` go after `--` |
 
+cobc's options that build scripts carry over work the same way:
+
+| Option | Effect |
+|---|---|
+| `-t FILE`, `-T FILE` | write a listing of the compile to FILE (below); `-T` is the same, as the listing is never cut to a page width |
+| `-Xref` | add a cross-reference to the listing (with no `-t`, the listing is `SOURCE.lst`) |
+| `-A OPTIONS`, `-Q OPTIONS` | options for the C compiler and for the link, split as a shell would; each may be repeated |
+| `-save-temps[=DIR]` | keep the generated C, in DIR or the current directory |
+| `-w` | no warnings |
+| `-Wall`, `-W`, `-Wextra` | every warning (the default) |
+| `-Wno-NAME` | not that warning; each warning ends with its name, as in `[-Wcolumn-overflow]`, and the names are cobc's |
+| `-Werror` | a warning fails the compile |
+| `-d`, `-debug` | every run-time check (subscripts, reference modification, OCCURS DEPENDING ON) and the stack trace, whatever `--no-check` says |
+| `-fec=NAME`, `-fno-ec=NAME` | those range checks on or off: `EC-ALL`, `EC-BOUND`, `EC-BOUND-SUBSCRIPT`, `EC-BOUND-REF-MOD`, `EC-BOUND-ODO` (the other checks are always made) |
+| `-fsingle-quote` | the figurative constant QUOTE is an apostrophe |
+| `-fdefault-colseq=EBCDIC\|ASCII\|NATIVE` | the collating sequence of a program that names none |
+| `-fmfcomment` | `*` or `/` in column 1 makes a fixed-format line a comment, as Micro Focus allows |
+| `-ffold-copy=UPPER\|LOWER`, `-fstack-check`, `-fsource-location` | accepted, as what they ask for is always so: a copybook's name is looked for as written and in both cases, the PERFORM stack is always checked, and run-time errors always give their source line |
+
+Without the range checks (`--no-check`, `-fno-ec`) a subscript past the end
+of a table reaches the storage after it, as with cobc: the generated C is
+compiled without the C library's `_FORTIFY_SOURCE`, which some distributions
+turn on by default and which would end such a program with "buffer overflow
+detected".
+
 An option this compiler does not implement is an error, never a silent no-op,
 and neither is an unknown dialect name. A `-f` option overrides the same
 setting from `-std`.
@@ -380,6 +405,55 @@ says nothing about them:
 A bug in the compiler itself is reported as an internal error with the
 statement it was compiling, not as a Python traceback
 (`YACCC_TRACEBACK=1` shows the traceback).
+
+`-t FILE` writes a listing of the compile: the source as written, every line
+numbered, each copybook's lines after the COPY that brought them in (numbered
+in the copybook and marked `C`), each error and warning under its line, and
+a data map of every program — each item's offset, size, PICTURE and USAGE.
+`-Xref` adds where each data item, index and procedure is used: `*` marks a
+reference that changes the item, and `P`, `G`, `A` and `S` a procedure's
+PERFORM, GO TO, ALTER and SORT or MERGE procedure. Items no statement uses
+are named as such:
+
+```
+     5         COPY CUSTREC.
+       --- COPY CUSTREC.cpy
+     1C        01 CUST-REC.
+     2C           05 CUST-ID      PIC 9(5).
+     3C           05 CUST-NAME    PIC X(20).
+       --- end of CUSTREC.cpy
+     6         01 WS-TOTAL        PIC 9(7) VALUE 0.
+   ...
+DATA MAP OF LPROG
+         LINE  LEVEL AND NAME  OFFSET    SIZE  PICTURE, USAGE, OCCURS
+               WORKING-STORAGE SECTION
+CUSTREC.cpy:1  01 CUST-REC          0      25
+CUSTREC.cpy:2    05 CUST-ID         0       5  9(5)
+CUSTREC.cpy:3    05 CUST-NAME       5      20  X(20)
+            6  01 WS-TOTAL          0       7  9(7)
+            7  01 WS-UNUSED         0       1  X
+            8  01 WS-TAB            0      15
+            9    05 WS-ENT          0      15  9(3) OCCURS 5
+           10  01 WS-FLAG           0       1  X
+
+CROSS-REFERENCE OF LPROG
+DATA NAME          DEFINED  REFERENCES (* changes it)
+CUST-ID      CUSTREC.cpy:2  14* 22
+CUST-NAME    CUSTREC.cpy:3  25
+CUST-REC     CUSTREC.cpy:1  (not referenced)
+IS-DONE                 11  17* 18
+WS-ENT                   9  23*
+WS-FLAG                 10  (not referenced)
+WS-TAB                   8  (not referenced)
+WS-TOTAL                 6  22* 23 25
+WS-UNUSED                7  (not referenced)
+WX (index)               9  16* 23
+
+PROCEDURE          DEFINED  REFERENCES (P PERFORM, G GO TO, A ALTER, S SORT)
+MAIN-PARA               13
+ADD-IT                  21  15P
+END-PARA                24  19G
+```
 
 Runtime errors, such as a subscript out of range or an I/O error with no FILE
 STATUS or USE procedure, print `cobrt: runtime error: file:line: ...` and exit
@@ -1187,24 +1261,25 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 16,360 lines of Python across eighteen files; the runtime it
-links against is 18,282 lines of C.
+The compiler is 16,883 lines of Python across nineteen files; the runtime it
+links against is 18,283 lines of C.
 
 | File | Lines | Role |
 |---|---|---|
-| `lib/yaccc/source.py` | 356 | reference formats, continuations, directives, comment-entries, debugging lines |
-| `lib/yaccc/lexer.py` | 728 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
+| `lib/yaccc/source.py` | 366 | reference formats, continuations, directives, comment-entries, debugging lines |
+| `lib/yaccc/lexer.py` | 731 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 487 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
 | `lib/yaccc/parser.py` | 4,194 | recursive-descent parser to the AST (`nodes.py`, 843) |
-| `lib/yaccc/data.py` | 663 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,603 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/data.py` | 690 | PICTURE analysis, USAGE resolution, storage layout |
+| `lib/yaccc/codegen.py` | 5,700 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
-| `lib/yaccc/scrgen.py` | 381 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
+| `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
 | `lib/yaccc/sqlgen.py` | 246 | EXEC SQL to calls into the runtime: host variables, VARCHARs and host structures, the SQLCA's items |
 | `lib/yaccc/dbggen.py` | 467 | Debug module: DEBUG-ITEM and the USE FOR DEBUGGING hooks |
-| `lib/yaccc/dumpgen.py` | 168 | `-fdump`: each program's data as a table the runtime walks after an error |
-| `runtime/cobrt_core.c` | 3,558 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `lib/yaccc/dumpgen.py` | 148 | `-fdump`: each program's data as a table the runtime walks after an error |
+| `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
+| `runtime/cobrt_core.c` | 3,559 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,007 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,260 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |

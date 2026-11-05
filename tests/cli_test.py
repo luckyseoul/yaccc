@@ -145,6 +145,8 @@ def main():
     tracing(work)
     crashes(work)
     dumps(work)
+    listings(work)
+    cobc_options(work)
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
@@ -631,6 +633,228 @@ def dumps(work):
     out, err = p.communicate(timeout=60)
     r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
     check('SIGQUIT: the data', r, -signal.SIGQUIT, '  01 SECS')
+
+
+CUSTREC = '''       01 CUST-REC.
+          05 CUST-ID      PIC 9(5).
+          05 CUST-NAME    PIC X(20).
+'''
+
+LISTED = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LPROG.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       COPY CUSTREC.
+       01 WS-TOTAL        PIC 9(7) VALUE 0.
+       01 WS-UNUSED       PIC X.
+       01 WS-TAB.
+          05 WS-ENT PIC 9(3) OCCURS 5 INDEXED BY WX.
+       01 WS-FLAG PIC X VALUE "N".
+          88 IS-DONE VALUE "Y".
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           MOVE 42 TO CUST-ID
+           PERFORM ADD-IT 3 TIMES
+           SET WX TO 1
+           SET IS-DONE TO TRUE
+           IF IS-DONE
+               GO TO END-PARA
+           END-IF.
+       ADD-IT.
+           ADD CUST-ID TO WS-TOTAL
+           MOVE WS-TOTAL TO WS-ENT (WX).
+       END-PARA.
+           DISPLAY WS-TOTAL " " CUST-NAME
+           STOP RUN.
+'''
+
+LIST_ERR = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LERR.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 WS-TOTAL        PIC 9(7) VALUE 0.
+       PROCEDURE DIVISION.
+           MOVE 1 TO WS-TOTL.
+           STOP RUN.
+'''
+
+
+def listings(work):
+    """-t / -T: the listing; -Xref: its cross-reference."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+
+    def lines_of(path):
+        try:
+            with open(os.path.join(work, path), encoding='latin-1') as f:
+                return [' '.join(l.split()) for l in f.read().splitlines()]
+        except OSError:
+            return []
+
+    def has(name, path, want, r):
+        got = lines_of(path)
+        missing = [w for w in want if ' '.join(w.split()) not in got]
+        check(name, r if not missing else subprocess.CompletedProcess(
+            r.args, -1, '', '\n'.join(['missing: ' + m for m in missing] + got[:40])), r.returncode)
+
+    write('CUSTREC.cpy', CUSTREC)
+    write('listed.cbl', LISTED)
+    r = run(['-t', 'listed.lst', '-Xref', 'listed.cbl', '-o', 'listed'], work)
+    check('-t -Xref builds', r, 0)
+    has('the listing: the source, a copybook after its COPY', 'listed.lst', [
+        '5 COPY CUSTREC.',
+        '--- COPY CUSTREC.cpy',
+        '2C 05 CUST-ID PIC 9(5).',
+        '--- end of CUSTREC.cpy',
+        '6 01 WS-TOTAL PIC 9(7) VALUE 0.',
+        '0 errors, 0 warnings'], r)
+    has('the listing: a data map', 'listed.lst', [
+        'DATA MAP OF LPROG',
+        'CUSTREC.cpy:3 05 CUST-NAME 5 20 X(20)',
+        '9 05 WS-ENT 0 15 9(3) OCCURS 5'], r)
+    has('the listing: the cross-reference', 'listed.lst', [
+        'CROSS-REFERENCE OF LPROG',
+        'CUST-ID CUSTREC.cpy:2 14* 22',
+        'WS-TOTAL 6 22* 23 25',
+        'IS-DONE 11 17* 18',
+        'WS-UNUSED 7 (not referenced)',
+        'WX (index) 9 16* 23',
+        'ADD-IT 21 15P',
+        'END-PARA 24 19G'], r)
+    r = run(['-T', 'wide.lst', 'listed.cbl', '-o', 'listed'], work)
+    has('-T: the same listing', 'wide.lst', ['5 COPY CUSTREC.'], r)
+    check('-t without -Xref: no cross-reference',
+          r if 'CROSS-REFERENCE OF LPROG' not in lines_of('wide.lst') else
+          subprocess.CompletedProcess(r.args, -1, '', 'a cross-reference without -Xref'), 0)
+    if os.path.exists(os.path.join(work, 'listed.lst')):
+        os.unlink(os.path.join(work, 'listed.lst'))
+    r = run(['-Xref', 'listed.cbl', '-o', 'listed'], work)
+    has('-Xref alone: SOURCE.lst', 'listed.lst', ['CROSS-REFERENCE OF LPROG'], r)
+    write('lerr.cbl', LIST_ERR)
+    r = run(['-t', 'lerr.lst', 'lerr.cbl', '-o', 'lerr'], work)
+    check('a listing of a compile that fails', r, 1)
+    has('the listing: an error under its line', 'lerr.lst', [
+        "7 MOVE 1 TO WS-TOTL.",
+        "*** error: 'WS-TOTL' is not defined; did you mean 'WS-TOTAL'?",
+        '1 error, 0 warnings'], r)
+
+
+WARNS = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. WARNS.
+       PROCEDURE DIVISION.
+           DISPLAY "A".                                                           XXXXXXXXXXXXX
+           STOP RUN.
+'''
+
+QUOTED = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. QUOT.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 Q1 PIC X(3) VALUE QUOTE.
+       PROCEDURE DIVISION.
+           DISPLAY "[" Q1 "][" QUOTE "]"
+           STOP RUN.
+'''
+
+COLSEQ = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. COLSEQ.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 A PIC X VALUE "a".
+       01 B PIC X VALUE "A".
+       PROCEDURE DIVISION.
+           IF A < B DISPLAY "a<A" ELSE DISPLAY "a>A" END-IF
+           STOP RUN.
+'''
+
+MFCOMMENT = '''*A MICRO FOCUS COMMENT IN COLUMN 1
+/AND A PAGE EJECT
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. MFC.
+       PROCEDURE DIVISION.
+           DISPLAY "MFC OK".
+           STOP RUN.
+'''
+
+PASTEND = '''       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PASTEND.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 T.
+          05 E PIC X OCCURS 3.
+       01 S PIC X(5) VALUE "ABCDE".
+       01 I PIC 9 VALUE 4.
+       PROCEDURE DIVISION.
+           MOVE "Z" TO E (I)
+           DISPLAY "SUBSCRIPT PASSED"
+           DISPLAY S (I:3)
+           DISPLAY "REFMOD PASSED"
+           STOP RUN.
+'''
+
+APOS3 = "'" * 3
+APOS1 = "'"
+
+
+def cobc_options(work):
+    """cobc's options that build scripts use: warnings, the C compiler's and
+    the link's options, intermediate files, checks, QUOTE, the collating
+    sequence, column-1 comments."""
+    def write(name, text):
+        with open(os.path.join(work, name), 'w', encoding='latin-1') as f:
+            f.write(text)
+    write('warns.cbl', WARNS)
+    r = run(['warns.cbl', '-o', 'warns'], work)
+    check('a warning names its -W option', r, 0, '[-Wcolumn-overflow]')
+    r = run(['-w', 'warns.cbl', '-o', 'warns'], work)
+    check('-w: no warnings', r, 0, None, 'warning')
+    r = run(['-Wno-column-overflow', 'warns.cbl', '-o', 'warns'], work)
+    check('-Wno-NAME: not that warning', r, 0, None, 'warning')
+    r = run(['-Wall', '-W', '-Wextra', 'warns.cbl', '-o', 'warns'], work)
+    check('-Wall, -W, -Wextra: every warning', r, 0, '[-Wcolumn-overflow]')
+    r = run(['-Werror', 'warns.cbl', '-o', 'warns'], work)
+    check('-Werror: a warning fails the compile', r, 1, '[-Werror=column-overflow]')
+    r = run(['-Wnosuch', 'warns.cbl', '-o', 'warns'], work)
+    check('-W with a name cobc does not have', r, 2, 'unknown warning')
+    r = run(['-Wtruncate', 'warns.cbl', '-o', 'warns'], work)
+    check('-W with a warning YACCC does not issue', r, 0, 'has no such warning')
+    # -A and -Q reach the C compiler and the link (-v shows the command)
+    r = run(['-v', '-A', '-DYACCC_A_OPTION', '-Q', '-Wl,-zmuldefs', 'cliarg.cbl', '-o', 'acq'], work)
+    check('-A: options for the C compiler', r, 0, '-DYACCC_A_OPTION')
+    check('-Q: options for the link', r, 0, '-Wl,-zmuldefs')
+    r = run(['-save-temps=keep', 'cliarg.cbl', '-o', 'saved'], work)
+    check('-save-temps=DIR keeps the C',
+          r if os.path.exists(os.path.join(work, 'keep', 'cliarg.c')) else
+          subprocess.CompletedProcess(r.args, -1, '', 'no keep/cliarg.c'), 0)
+    write('quoted.cbl', QUOTED)
+    r = run(['-fsingle-quote', 'quoted.cbl', '--run'], work)
+    check('-fsingle-quote: QUOTE is an apostrophe', r, 0, f"[{APOS3}][{APOS1}]")
+    r = run(['quoted.cbl', '--run'], work)
+    check('QUOTE is a double quote otherwise', r, 0, '["""]["]')
+    write('colseq.cbl', COLSEQ)
+    r = run(['-fdefault-colseq=EBCDIC', 'colseq.cbl', '--run'], work)
+    check('-fdefault-colseq=EBCDIC', r, 0, 'a<A')
+    r = run(['colseq.cbl', '--run'], work)
+    check('the native sequence otherwise', r, 0, 'a>A')
+    write('mfc.cbl', MFCOMMENT)
+    r = run(['-fmfcomment', 'mfc.cbl', '--run'], work)
+    check('-fmfcomment: column 1 comments', r, 0, 'MFC OK', 'warning')
+    write('pastend.cbl', PASTEND)
+    r = run(['pastend.cbl', '--run'], work)
+    check('a subscript past the end is caught', r, 1, "subscript of 'E' out of bounds")
+    r = run(['-fno-ec=EC-BOUND-SUBSCRIPT', 'pastend.cbl', '--run'], work)
+    check('-fno-ec=EC-BOUND-SUBSCRIPT: that check off', r, 1, 'SUBSCRIPT PASSED')
+    check('... the reference modification check still on', r, 1, 'reference modification out of bounds')
+    r = run(['--no-check', 'pastend.cbl', '--run'], work)
+    check('--no-check: past the end reaches the next storage, as with cobc', r, 0, 'REFMOD PASSED')
+    check('... not a C library abort', r, 0, None, 'buffer overflow')
+    r = run(['--no-check', '-debug', 'pastend.cbl', '--run'], work)
+    check('-debug: every check', r, 1, "subscript of 'E' out of bounds")
+    r = run(['-fec=EC-SIZE', 'pastend.cbl'], work)
+    check('-fec of a check YACCC does not compile in or out', r, 2, 'range checks')
+    r = run(['-fstack-check', '-fsource-location', '-ffold-copy=LOWER', 'cliarg.cbl', '--run'], work)
+    check('-fstack-check, -fsource-location, -ffold-copy', r, 0, 'NARGS=')
 
 
 def module_ext():

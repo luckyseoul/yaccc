@@ -2520,7 +2520,7 @@ class Parser(SqlParser):
                     self.next()
                 else:
                     self.parse_identifier()
-                DIAG.warn("XML PARSE ... VALIDATING: the document is not validated", loc)
+                DIAG.warn("XML PARSE ... VALIDATING: the document is not validated", loc, 'unfinished')
             else:
                 break
         self.expect('PROCESSING')
