@@ -1,0 +1,22 @@
+include LICENSE
+include README.md
+include Makefile
+
+# the C runtime is data the build hook copies into the package; a source
+# install cannot work without it
+graft runtime
+include runtime/*.c
+include runtime/*.h
+exclude runtime/libcobrt.a
+global-exclude *.o *.pyc
+
+# the compiler's own tests and documentation, so a source tree is complete
+graft tests
+graft docs
+graft examples
+graft tools
+
+# fetched third-party suites are never distributed
+prune third_party
+prune build
+prune media

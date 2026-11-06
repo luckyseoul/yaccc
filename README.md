@@ -216,13 +216,32 @@ results.
 - For embedded SQL, at run time: libsqlite3 for SQLite, libpq for PostgreSQL
   (loaded when a program connects; nothing is needed to compile).
 
-The runtime library is built automatically into `runtime/libcobrt.a` the first
-time you compile. `make` builds it ahead of time.
+## Install
 
-To put `yaccc` on your `PATH`, `make install` copies the compiler and its
-runtime to `$(PREFIX)/lib/yaccc` and links `$(PREFIX)/bin/yaccc` to it
-(`PREFIX` is `/usr/local` unless you set it; `make install PREFIX=$HOME/.local`
-installs for one user, and `make uninstall` with the same `PREFIX` removes it).
+```
+pip install git+https://github.com/luckyseoul/yaccc
+# or, in a checkout:
+pip install .
+```
+
+That gives you a `yaccc` command, and `python -m yaccc` works too. The wheel is
+pure Python but carries the C runtime as data, so a C compiler is still needed
+at run time — it is compiled on first use, not at install time.
+
+The package is not on PyPI yet, so install it from the repository as above
+rather than by bare name.
+
+The runtime library is built automatically the first time you compile a
+program: into `runtime/libcobrt.a` in a source checkout, or into
+`$XDG_CACHE_HOME/yaccc` (default `~/.cache/yaccc`) when installed, so that
+site-packages is never written to. Set `YACCC_RUNTIME` to point at a runtime
+source tree of your own if you keep one elsewhere. `make` builds it ahead of
+time in a checkout.
+
+From a source checkout, `make install` puts the compiler and its runtime under
+`$(PREFIX)/lib/yaccc` and links `$(PREFIX)/bin/yaccc` to it (`PREFIX` is
+`/usr/local` unless you set it; `make install PREFIX=$HOME/.local` installs for
+one user, and `make uninstall` with the same `PREFIX` removes it).
 
 ## Usage
 
@@ -1575,7 +1594,10 @@ tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      provenance; provenance-deep measures token overlap)
 docs/                the GnuCOBOL oracle, the Report Writer page model, conformance history
 docs/img/            the figures in this README, drawn from the numbers above
-Makefile             make test | cli-test | screen-test | files-test | sql-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | clean
+Makefile             make test | cli-test | screen-test | files-test | sql-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | install | clean
+pyproject.toml       package metadata: the `yaccc` entry point, and the runtime as data
+setup.py             build hook that copies runtime/ into the package for a wheel
+MANIFEST.in          what a source distribution carries
 ```
 
 ## Acknowledgements

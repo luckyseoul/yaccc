@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yaccc"
+version = "1.0"
+description = "Yet Another COBOL C compiler: COBOL 85 to C to a native executable"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "luckyseoul" }]
+keywords = ["cobol", "compiler", "gnucobol", "codegen"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: COBOL",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Compilers",
+]
+# the C runtime is compiled at first use, so no C extension is declared: this
+# is a pure-Python wheel that ships .c files as data and needs a C compiler at
+# run time, exactly as a checkout does.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/luckyseoul/yaccc"
+Source = "https://github.com/luckyseoul/yaccc"
+Changelog = "https://github.com/luckyseoul/yaccc/commits/main"
+
+[project.scripts]
+yaccc = "yaccc.driver:main"
+
+[tool.setuptools]
+package-dir = { "" = "lib" }
+packages = ["yaccc"]
+
+[tool.setuptools.package-data]
+yaccc = ["runtime/*.c", "runtime/*.h"]

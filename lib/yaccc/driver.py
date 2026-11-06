@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Command-line driver: parse, generate C, invoke the C compiler."""
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -16,7 +17,28 @@ from .parser import Parser
 
 HERE = os.path.dirname(os.path.abspath(__file__))        # .../lib/yaccc
 PKG_ROOT = os.path.dirname(os.path.dirname(HERE))       # the project root
-RUNTIME_DIR = os.path.join(PKG_ROOT, 'runtime')
+
+
+def find_runtime_dir():
+    """Where the C runtime sources live.
+
+    Three layouts have to work: a checkout (`runtime/` beside `lib/`), an
+    installed package (`runtime/` inside the package, shipped as package data),
+    and a relocated copy, which `YACCC_RUNTIME` names outright. The last is
+    also what a distribution package sets when it puts the sources somewhere
+    of its own rather than inside site-packages.
+    """
+    env = os.environ.get('YACCC_RUNTIME')
+    if env:
+        return env
+    for cand in (os.path.join(HERE, 'runtime'),          # installed package
+                 os.path.join(PKG_ROOT, 'runtime')):     # source checkout
+        if os.path.exists(os.path.join(cand, 'cobrt.h')):
+            return cand
+    return os.path.join(PKG_ROOT, 'runtime')             # for the error message
+
+
+RUNTIME_DIR = find_runtime_dir()
 RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cobrt_dt.c',
                'cobrt_sys.c', 'cobrt_io.c', 'cobrt_rw.c', 'cobrt_json.c', 'cobrt_xml.c',
                'cobrt_call.c', 'cobrt_scr.c', 'cobrt_xmlp.c', 'cobrt_sql.c', 'cobrt_dump.c', 'cobrt_conf.c',
@@ -24,14 +46,48 @@ RUNTIME_SRC = ['cobrt_core.c', 'cobrt_str.c', 'cobrt_fn.c', 'cobrt_math.c', 'cob
 VERSION = '1.0'
 
 
-def runtime_lib_dir():
-    """runtime/ next to the sources, or a per-user cache when that is read-only."""
-    if os.access(RUNTIME_DIR, os.W_OK):
-        return RUNTIME_DIR
+def runtime_fingerprint():
+    """A short digest of the runtime sources as they are on disk.
+
+    The cache is shared by every installed copy on the machine, so it has to be
+    keyed by content: two versions of yaccc with different runtime sources must
+    not read each other's archive, and mtime comparison cannot see that when
+    the older copy happens to have the newer file.
+    """
+    h = hashlib.sha1()
+    for name in RUNTIME_SRC + ['cobrt.h', 'yacccrun.c']:
+        h.update(name.encode())
+        try:
+            with open(os.path.join(RUNTIME_DIR, name), 'rb') as fp:
+                h.update(fp.read())
+        except OSError:
+            h.update(b'?')
+    return h.hexdigest()[:12]
+
+
+def cache_dir():
+    """~/.cache/yaccc/<fingerprint>: one directory per runtime build."""
     cache = os.environ.get('XDG_CACHE_HOME') or os.path.join(os.path.expanduser('~'), '.cache')
-    d = os.path.join(cache, 'yaccc')
+    d = os.path.join(cache, 'yaccc', runtime_fingerprint())
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def runtime_lib_dir():
+    """Where libcobrt.a is built.
+
+    In a checkout that is `runtime/`, beside its sources, which is what the
+    Makefile's `clean` and the provenance checks expect. An installed package
+    must not write into site-packages -- that tree belongs to the package
+    manager, may be read-only, and would leave a stale archive behind on
+    upgrade -- so it builds into the user cache instead. The two cases are told
+    apart by whether the sources sit inside the package (`<pkg>/runtime`) or
+    beside it (a checkout's `runtime/`).
+    """
+    in_package = os.path.abspath(RUNTIME_DIR) == os.path.join(HERE, 'runtime')
+    if not in_package and os.access(RUNTIME_DIR, os.W_OK):
+        return RUNTIME_DIR
+    return cache_dir()
 
 
 def build_runtime(cc, verbose=False, force=False):
