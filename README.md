@@ -154,14 +154,15 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
 - `make test-ref` compiles the reference live and compares against what
   `cobc` actually prints and writes, ignoring the recorded baselines
   altogether (`cobc` must be on `PATH`); see `docs/gnucobol-oracle.md` for
-  building one without root. Against GnuCOBOL 3.1.2, 76 of the 84 run and
-  pass. Fourteen of those are `.noref` cases, where YACCC deliberately differs
-  — mostly things 3.1.2 does not implement — and which are compared with their
-  baselines rather than with `cobc`. Five are skipped because `cobc` rejects
-  the test program itself, and three because the reference build has no ISAM
-  handler: a `--without-db` cobc compiles an indexed-file program happily and
-  then fails every I/O call with status 48, so it has nothing to say about
-  them.
+  building one without root. CI builds GnuCOBOL 3.1.2 and runs this on every
+  push, so the comparison is enforced rather than optional. Against GnuCOBOL
+  3.1.2, 76 of the 84 run and pass. Fourteen of those are `.noref` cases,
+  where YACCC deliberately differs — mostly things 3.1.2 does not implement —
+  and which are compared with their baselines rather than with `cobc`. Five
+  are skipped because `cobc` rejects the test program itself, and three
+  because the reference build has no ISAM handler: a `--without-db` cobc
+  compiles an indexed-file program happily and then fails every I/O call with
+  status 48, so it has nothing to say about them.
 
 All 84 pass, built with gcc.
 
