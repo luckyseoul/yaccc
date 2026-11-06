@@ -1,7 +1,8 @@
 # Conformance history
 
-How the last GnuCOBOL 3.1.2 testsuite failures were fixed (items 1-5), a defect
-no suite covered (item 6), and the measurements the fixes were built on.
+How the last GnuCOBOL 3.1.2 testsuite failures were fixed (items 1-5 and 7), a
+defect no suite covered (item 6), and the measurements the fixes were built
+on.
 
 ## 1. Report Writer page breaks *(fixed)*
 
@@ -43,7 +44,7 @@ Measured after the change: GnuCOBOL testsuite 506 pass / 0 fail, all 527
 oracle shapes identical to `cobc`, NIST 9,390 pass / 0 fail.
 `docs/report-writer-page-model.md` lists every rule.
 
-![A page as the Report Writer counts it: page heading, first detail, last detail, footing and page limit, beside the group tables the compiler builds](docs/img/page-model.svg)
+![A page as the Report Writer counts it: page heading, first detail, last detail, footing and page limit, beside the group tables the compiler builds](img/page-model.svg)
 
 ## 2. FLOAT-DECIMAL-16 / FLOAT-DECIMAL-34 *(fixed)*
 
@@ -155,6 +156,49 @@ more than 19 digits left fewer than 18 digits in the quotient.
 digits is rounded to 19 first, which keeps 18 or more digits in the quotient.
 `tests/cases/divirr.cbl` checks eight such divisions against `cobc`; a COMP-2
 receiver can still differ from `cobc` in its 16th digit.
+
+## 7. The last five between YACCC and `cobc` *(fixed)*
+
+Five programs passed under `cobc` and were skipped here, which made the suite
+look complete when it was not. Four were dialect strictness and one was a
+feature.
+
+`-std=` chose settings but rejected nothing, so a program that is not valid
+COBOL 85 compiled under `-std=cobol85`. Each rule below was measured against
+`cobc` 3.1.2 with `-fsyntax-only`:
+
+- level-01 items cannot have `OCCURS` under `cobol85`, `cobol2002` or
+  `cobol2014`;
+- `PERFORM VARYING` requires `BY` under `cobol85`; `BY` became optional in
+  2002;
+- `TERMINAL`, `SEND`, `DEBUGGING`, `SEGMENT` and `SUB-QUEUE-1..3` are reserved
+  in 85 and 2002 and unrestricted in 2014 — the seven words `cobc` rejects as
+  data names in the first two and accepts in the third, found by trying
+  candidate words rather than by reading its reserved-word table;
+- a data item cannot take a special register's name under `ibm`, `mvs` and
+  their `-strict` forms. ACUCOBOL allows `tally` to be redefined and so does
+  GnuCOBOL's `cobol85`, so those dialects are left alone. `cobc`'s own matrix
+  is not consistent here — it rejects `tally` under `-std=default` but accepts
+  it under `-std=cobol85` — so the rule follows the vendor distinction rather
+  than any one of its settings.
+
+The fifth was `ENTRY FOR GO TO` / `GO TO ENTRY`, the vendor extension that
+marks a point inside the procedure and jumps to it by name or by number. It
+compiles to the computed goto the generator already uses for `GO TO`, which is
+why the mechanism was most of the work already done. Accepted under `default`,
+`mf`, `ibm` and `acu`, rejected under every ISO dialect, `gnu` and every
+`-strict` dialect — measured, not assumed. On the testsuite's own program,
+which jumps into the middle of an active `PERFORM`, the output matches `cobc`
+line for line.
+
+A real defect fell out of the fifth. `ENTRY` was the one verb missing from the
+reserved-word table, so `DISPLAY 'X'` followed by `ENTRY FOR GO TO 'Y'` parsed
+the marker as a `DISPLAY` operand; `cobc` rejects `01 ENTRY PIC XX` as well, so
+the word is reserved now.
+
+None of the five were three-way disagreements. `tests/three_way.py` had already
+shown YACCC never being the odd one out against two references; this was the
+testsuite still not running programs it could have.
 
 ## Things in this area that are *not* worth "fixing"
 

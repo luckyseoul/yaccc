@@ -191,7 +191,11 @@ Tests  Pass  Fail  Compile error  Skipped
 
 The same harness can run `cobc` instead (`run_gc.py --cobc`), which is the
 quickest way to tell a YACCC defect from a test that depends on how the
-compiler was built or on the environment.
+compiler was built or on the environment. Run that way against GnuCOBOL
+3.1.2, **no test passes under `cobc` and fails under YACCC**. The comparison is
+not symmetric: 62 tests are recorded as passing here that this `cobc` does not
+pass, mostly indexed-file tests it cannot run at all because it was built
+without an ISAM handler, and a few where its own behaviour differs.
 
 The run fails if a test recorded as passing in `tests/gnucobol/results.txt` no
 longer passes. `make gctest-update` records a new baseline.
@@ -1657,8 +1661,10 @@ MIT. See [LICENSE](LICENSE).
 
 ## Open conformance work
 
-None open: no test in the GnuCOBOL 3.1.2 testsuite fails. How the last
-failures were fixed, the measurements each fix was built on, and the GnuCOBOL
+None open. No test in the GnuCOBOL 3.1.2 testsuite fails, none that `cobc`
+passes is skipped here, and the three-way differential finds no case where
+YACCC disagrees with both GnuCOBOL and GCC's COBOL front end. How the last
+failures were closed, the measurements each fix was built on, and the GnuCOBOL
 quirks reproduced on purpose are in
 [docs/conformance-history.md](docs/conformance-history.md).
 
