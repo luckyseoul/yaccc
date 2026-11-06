@@ -151,13 +151,22 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
 - Each case may add sidecars: `.in` (stdin), `.args` (the program's own
   arguments), `.flags` (compile flags), `.env` (environment), `.nocmp` (files
   not compared) and `.outfiles/` (files the program writes).
-- `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
-  `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 79 of the 84 run and all 79 pass (the `.noref` ones against their
-  baselines); the five whose *test program* `cobc` itself rejects are
-  skipped.
+- `make test-ref` compiles the reference live instead of trusting the
+  recorded baselines (`cobc` must be on `PATH`); see
+  `docs/gnucobol-oracle.md` for building one without root. It compares the
+  *files each program writes* against `cobc`; standard output is still
+  compared with the recorded baseline, and the 13 `.noref` cases — where
+  YACCC deliberately differs — are compared with their baselines only. Five
+  more are skipped because `cobc` rejects the test program itself.
 
 All 84 pass, built with gcc.
+
+Because GnuCOBOL is both the reference and the thing YACCC aims to match,
+agreeing with it cannot by itself show that the *standard* was implemented
+rather than a GnuCOBOL quirk reproduced. `make three-way` compiles the same
+programs with a second independent implementation, GCC's COBOL front end, and
+reports where the three disagree; no case yet has YACCC differing from both.
+See [docs/three-way.md](docs/three-way.md).
 
 ### GnuCOBOL 3.1.2 testsuite
 
@@ -1594,13 +1603,14 @@ tests/screen_test.py runs them in a pseudo-terminal through a small terminal emu
 tests/files_test.py  files shared between programs and processes: sharing, locks, journal
 tests/sql/           embedded SQL programs and their expected output
 tests/sql_test.py    runs them on SQLite and on PostgreSQL
+tests/three_way.py   the same programs through YACCC and two independent compilers
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      file carries SPDX, README credits GnuCOBOL (make
                      provenance; provenance-deep measures token overlap)
 docs/                the reference oracle, the Report Writer page model,
-                     provenance, conformance history
+                     provenance, the three-way differential, conformance history
 docs/img/            the figures in this README and in docs/provenance.md
-Makefile             make test | cli-test | screen-test | files-test | sql-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | install | clean
+Makefile             make test | cli-test | screen-test | files-test | sql-test | provenance | provenance-deep | test-ref | three-way | nist | nist-all | gctest | examples | install | clean
 pyproject.toml       package metadata: the `yaccc` entry point, and the runtime as data
 setup.py             build hook that copies runtime/ into the package for a wheel
 MANIFEST.in          what a source distribution carries

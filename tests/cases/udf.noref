@@ -1,0 +1,3 @@
+YACCC returns the user-defined function's value; GnuCOBOL 3.1.2 returns an
+uninitialised one here (ADDONE(1) is 02 against 79), so this case has no
+GnuCOBOL reference. Found by tests/three_way.py.

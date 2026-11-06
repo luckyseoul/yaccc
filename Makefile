@@ -18,7 +18,7 @@ DESTDIR ?=
 INSTDIR = $(DESTDIR)$(PREFIX)/lib/yaccc
 BINDIR  = $(DESTDIR)$(PREFIX)/bin
 
-.PHONY: all runtime test cli-test screen-test files-test sql-test provenance provenance-deep test-ref nist nist-all gctest gctest-update examples install uninstall clean
+.PHONY: all runtime test cli-test screen-test files-test sql-test provenance provenance-deep test-ref nist nist-all gctest gctest-update three-way examples install uninstall clean
 
 all: runtime
 
@@ -54,6 +54,12 @@ provenance:
 # that renamed every identifier. Needs the libcob sources (fetched by $(GCSUITE))
 provenance-deep:
 	$(PYTHON) tests/provenance_test.py --gnucobol $(GNUSRC)
+
+# the same programs through YACCC and two independent compilers, to tell a
+# matched standard from a matched GnuCOBOL quirk (needs cobc and gcobol on PATH;
+# see docs/three-way.md). A survey, not a gate: it never fails the build.
+three-way: runtime
+	$(PYTHON) tests/three_way.py
 
 # the same tests compared live against GnuCOBOL (needs cobc on PATH)
 test-ref: runtime
