@@ -1636,7 +1636,9 @@ failures were fixed, the measurements each fix was built on, and the GnuCOBOL
 quirks reproduced on purpose are in
 [docs/conformance-history.md](docs/conformance-history.md).
 
-To see any test side by side with `cobc`:
+To see any test side by side with `cobc`, build one as
+[docs/gnucobol-oracle.md](docs/gnucobol-oracle.md) describes and put it on the
+path (that note installs to `/tmp/gcinst`, which is what this assumes):
 
 ```
 export PATH=/tmp/gcinst/bin:$PATH LD_LIBRARY_PATH=/tmp/gcinst/lib
