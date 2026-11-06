@@ -9,7 +9,7 @@ COBOL 85 in, C out, a native executable at the end — written in standard-libra
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab.svg">
   <img alt="NIST CCVS85: 9,390 checks pass, 0 fail" src="https://img.shields.io/badge/NIST%20CCVS85-9%2C390%20pass%20%C2%B7%200%20fail-brightgreen.svg">
-  <img alt="GnuCOBOL 3.1.2 testsuite: 571 pass, 0 fail" src="https://img.shields.io/badge/GnuCOBOL%20testsuite-571%20pass%20%C2%B7%200%20fail-brightgreen.svg">
+  <img alt="GnuCOBOL 3.1.2 testsuite: 576 pass, 0 fail" src="https://img.shields.io/badge/GnuCOBOL%20testsuite-576%20pass%20%C2%B7%200%20fail-brightgreen.svg">
 </p>
 
 YACCC compiles COBOL. It reads COBOL 85 source — with the extensions from the
@@ -53,12 +53,12 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
 - **0.46 s** to compile `examples/mandelbrot.cbl` into a 443 KB executable,
   which then runs in 40 ms.
 - **18,378** lines of Python in the compiler, standard library only.
-- **571** of GnuCOBOL 3.1.2's own runtime tests pass, and none fail — a
-  compatibility check, not a conformance one. The 122 that are skipped need a
+- **576** of GnuCOBOL 3.1.2's own runtime tests pass, and none fail — a
+  compatibility check, not a conformance one. The 117 that are skipped need a
   terminal, GnuCOBOL's C API, shell scripting, or a `cobc` option YACCC does
   not imitate.
-- **84** differential programs of its own, comparing output and files byte for
-  byte against recorded GnuCOBOL 3.1.2 results; 79 also run live against `cobc`.
+- **85** differential programs of its own, comparing output and files byte for
+  byte against recorded GnuCOBOL 3.1.2 results; 77 also run live against `cobc`.
 - **1** NIST test that cannot pass unattended: OBNC1M prints
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
 
@@ -126,7 +126,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 84 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 85 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), OCCURS DEPENDING ON layouts (with and without
@@ -156,7 +156,7 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   altogether (`cobc` must be on `PATH`); see `docs/gnucobol-oracle.md` for
   building one without root. CI builds GnuCOBOL 3.1.2 and runs this on every
   push, so the comparison is enforced rather than optional. Against GnuCOBOL
-  3.1.2, 76 of the 84 run and pass. Fourteen of those are `.noref` cases,
+  3.1.2, 77 of the 85 run and pass. Fourteen of those are `.noref` cases,
   where YACCC deliberately differs — mostly things 3.1.2 does not implement —
   and which are compared with their baselines rather than with `cobc`. Five
   are skipped because `cobc` rejects the test program itself, and three
@@ -164,7 +164,7 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   compiles an indexed-file program happily and then fails every I/O call with
   status 48, so it has nothing to say about them.
 
-All 84 pass, built with gcc.
+All 85 pass, built with gcc.
 
 Because GnuCOBOL is both the reference and the thing YACCC aims to match,
 agreeing with it cannot by itself show that the *standard* was implemented
@@ -186,7 +186,7 @@ compile as modules (`$COMPILE_MODULE`) are built as real loadable modules with
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   571     0              0      122
+  693   576     0              0      117
 ```
 
 The same harness can run `cobc` instead (`run_gc.py --cobc`), which is the
@@ -201,10 +201,9 @@ longer passes. `make gctest-update` records a new baseline.
   instead; see *Screen I/O*), GnuCOBOL's own C
   API (`cob_get_field_str`, `cob_global` and the like, 6 tests), shell
   scripting, or a cobc option YACCC has no equivalent for (`-fcallfh` and
-  a few more). Four check what a
-  strict dialect rejects, which YACCC accepts in every dialect, and one Micro
-  Focus's ENTRY FOR GO TO. One is a deliberate difference: a COBOL program called from a C `main` starts the
-  runtime itself instead of failing with *cob_init() has not been called*.
+  a few more). One is a deliberate difference: a COBOL program called from a C
+  `main` starts the runtime itself instead of failing with *cob_init() has not
+  been called*.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
 - **Failures**: none. The last two, *Sample Payroll Report* and *Sample
   Inventory Report*, were Report Writer page placement and PRESENT WHEN; see item 1
@@ -418,8 +417,19 @@ conformance to a vendor's implementation: it sets the settings below, and
 | `acu` (ACUCOBOL) | 1-2-4-8 | on | yes | no | no | yes | on | no | no | no | no | dynamic | yes |
 
 cobc's `-strict` names (`ibm-strict`, `mvs-strict`, `mf-strict`,
-`acu-strict`) select the same settings, with a note that the extensions a
-strict dialect would reject are still accepted.
+`acu-strict`) select the same settings, with a note that YACCC does not
+implement every restriction a strict dialect would impose.
+
+The named ISO standards also *reject* what the standard rejects, rather than
+only choosing settings. Measured against `cobc` 3.1.2, and applied here:
+
+| Rule | Enforced by |
+|---|---|
+| a level-01 item cannot have `OCCURS` | `cobol85`, `cobol2002`, `cobol2014` |
+| `PERFORM VARYING` requires a `BY` phrase | `cobol85` (optional from 2002) |
+| `TERMINAL`, `SEND`, `DEBUGGING`, `SEGMENT`, `SUB-QUEUE-1..3` are reserved | `cobol85`, `cobol2002` (unreserved in 2014) |
+| `ENTRY FOR GO TO` / `GO TO ENTRY` are not available | every ISO dialect, `gnu`, and every `-strict` dialect |
+| a data item cannot take a special register's name | `ibm`, `mvs`, `ibm-strict`, `mvs-strict` (ACUCOBOL allows `tally` to be redefined, and GnuCOBOL's `cobol85` and `acu-strict` follow suit) |
 
 - **`binary-size`** — the byte widths `PIC 9(n) COMP` uses. Under `2-4-8`
   (IBM and the default here) a 2-digit COMP item occupies 2 bytes; under
@@ -1161,9 +1171,10 @@ and the Micro Focus forms `$IF` / `$ELSE` / `$END` / `$DISPLAY` / `$SET`.
 - Control flow: IF, EVALUATE (ALSO, THRU, ANY, TRUE/FALSE), all PERFORM formats
   (THRU, TIMES, UNTIL, UNTIL EXIT, FOREVER, VARYING/AFTER with BY defaulting
   to 1, WITH TEST AFTER, inline), GO TO /
-  DEPENDING ON, ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH / SECTION /
-  PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH ERROR or
-  NORMAL STATUS], STOP literal, GOBACK [RETURNING].
+  DEPENDING ON, ENTRY FOR GO TO / GO TO ENTRY (the vendor extension, under the
+  dialects that have it), ALTER, NEXT SENTENCE, CONTINUE, EXIT [PARAGRAPH /
+  SECTION / PERFORM [CYCLE] / PROGRAM [RETURNING]], STOP RUN [RETURNING / WITH
+  ERROR or NORMAL STATUS], STOP literal, GOBACK [RETURNING].
 - JSON: JSON GENERATE with NAME OF ... IS, SUPPRESS, COUNT IN, ON EXCEPTION /
   NOT ON EXCEPTION, OCCURS as arrays (of objects for a group table, as many
   elements as DEPENDING ON says), REDEFINES resolved to the first item,

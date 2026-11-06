@@ -835,8 +835,13 @@ def main(argv=None):
                  + ', '.join(dialect.accepted_names()))
     d = opts.dialect
     if (args.std or '').lower().strip() in dialect.STRICT:
-        print(f"yaccc: note: -std={args.std}: the choices of {d.name}; extensions a strict "
-              f"dialect rejects are still accepted", file=sys.stderr)
+        print(f"yaccc: note: -std={args.std}: the settings of {d.name}, with the "
+              f"rejection rules listed under -std in the README", file=sys.stderr)
+    if d.reserved_words:
+        # a word the standard reserved is not available as a data name; the
+        # set is the parser's, as -freserved/-fnot-reserved already mutate it
+        from .words import RESERVED
+        RESERVED.update(d.reserved_words)
     opts.binary_size = args.binary_size or d.binary_size
     opts.binary_byteorder = args.binary_byteorder
     opts.binary_comp1 = args.binary_comp1

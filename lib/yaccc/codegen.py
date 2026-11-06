@@ -1297,6 +1297,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
         self.alter_paras = {}
         self.alter_vars = []
         self.seg_alters = {}
+        self.goto_entries = {}       # ENTRY FOR GO TO name -> C label
 
         def walk(x):
             if isinstance(x, Stmt):
@@ -4775,6 +4776,36 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
         cause = self.dbg_cause('GOTO')
         for i, t in enumerate(s.targets):
             em(f"case {i + 1}: {cause + ' ' if cause else ''}goto {self.proc_label(t)};")
+        em("default: break;")
+        em("}")
+
+    def _entry_label(self, name):
+        """The C label for one ENTRY FOR GO TO name, created on first use so
+        a forward reference and its definition agree."""
+        key = name.upper()
+        if key not in self.goto_entries:
+            self.goto_entries[key] = f"L_gentry_{len(self.goto_entries)}"
+        return self.goto_entries[key]
+
+    def g_EntryForGoTo(self, s):
+        """ENTRY FOR GO TO 'name': the label a GO TO ENTRY jumps to."""
+        self.em(f"{self._entry_label(s.name)}: ;")
+
+    def g_GoToEntry(self, s):
+        """GO TO ENTRY: a computed jump to one of the named entry points.
+
+        With no DEPENDING, the single name is the target. With one, the value
+        selects it -- 1 for the first -- and a value out of range falls
+        through, as GO TO ... DEPENDING ON does.
+        """
+        em = self.em
+        self.dbg_emit_cause('GOTO')
+        if s.depending is None:
+            em(f"goto {self._entry_label(s.names[0])};")
+            return
+        em(f"switch ({self.int_expr(s.depending)}) {{")
+        for i, name in enumerate(s.names):
+            em(f"case {i + 1}: goto {self._entry_label(name)};")
         em("default: break;")
         em("}")
 

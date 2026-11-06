@@ -47,11 +47,6 @@ DELIBERATE = {
 # theirs that it implements, and accept the extensions a strict one refuses
 STRICTNESS = 'a dialect that rejects this; YACCC accepts it in every dialect'
 NOT_ENFORCED = {
-    'Obsolete 2002 keywords with COBOL2014': STRICTNESS,
-    'Level 01 subscripts': STRICTNESS,
-    'PERFORM VARYING BY phrase omitted': STRICTNESS,
-    'Redefining TALLY': STRICTNESS,
-    'ENTRY FOR GO TO / GO TO ENTRY': "Micro Focus's ENTRY FOR GO TO, not implemented",
 }
 
 IGNORED_FLAGS = {'-x', '-w', '-g', '-v', '-debug', '-d', '-O', '-O2', '-Os', '-Wall', '-Wextra',

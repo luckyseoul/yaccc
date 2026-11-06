@@ -981,7 +981,7 @@ def static_calls(work):
     res = subprocess.run([os.path.join(work, 'smain3')], capture_output=True, text=True, cwd=work)
     check('... and the CALL fails when it runs', res, 1, 'SSUB-ONE')
     r = run(['-std=ibm-strict', 'cliarg.cbl', '-o', 'strict'], work)
-    check('-std=ibm-strict: ibm, with a note', r, 0, 'the choices of ibm')
+    check('-std=ibm-strict: ibm, with a note', r, 0, 'the settings of ibm')
     r = run(['-std=mvs', 'cliarg.cbl', '-o', 'mvs'], work)
     check('-std=mvs: ibm', r, 0)
 

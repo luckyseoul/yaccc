@@ -447,6 +447,22 @@ class GoBack(Stmt):
 
 
 @dataclass(eq=False)
+class EntryForGoTo(Stmt):
+    """ENTRY FOR GO TO 'name': a point a GO TO ENTRY can jump to. A Micro
+    Focus extension, and the only way to reach a statement that is not the
+    first of a paragraph or section."""
+    name: str
+
+
+@dataclass(eq=False)
+class GoToEntry(Stmt):
+    """GO TO ENTRY 'a' 'b' ... [DEPENDING ON n]: jump to the nth named
+    entry point, or fall through when n is out of range."""
+    names: List[str]
+    depending: Any = None
+
+
+@dataclass(eq=False)
 class Exit(Stmt):
     kind: str                       # '' PROGRAM PERFORM CYCLE PARAGRAPH SECTION
 

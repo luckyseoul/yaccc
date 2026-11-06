@@ -171,6 +171,7 @@ ROUNDING_MODES = ('AWAY-FROM-ZERO', 'NEAREST-AWAY-FROM-ZERO', 'NEAREST-EVEN', 'N
 class Parser(SqlParser):
     def __init__(self, toks, compile_vars=None):
         self.toks = toks
+        self.dialect = None      # set by the driver; None means no dialect rules
         self.compile_vars = compile_vars if compile_vars is not None else {}
         self.pos = 0
         self.udfs = set()
@@ -1282,6 +1283,11 @@ class Parser(SqlParser):
             nt = self.next()
             name = nt.up
             src_name = nt.val          # as written: JSON GENERATE uses this case
+            if (name in SPECIAL_REGISTERS and self.dialect is not None
+                    and self.dialect.protects_registers):
+                raise CompileError(
+                    f"'{name}' is a special register and cannot be defined "
+                    f"in {self.dialect.requested}", nt.loc)
         item = DataItem(level, name, loc)
         item.src_name = src_name
         prog = self.prog
@@ -1356,6 +1362,11 @@ class Parser(SqlParser):
                 self._sign(item)
             elif w == 'OCCURS':
                 self.next()
+                if item.level == 1 and self.dialect is not None \
+                        and not self.dialect.level01_occurs_ok:
+                    raise CompileError(
+                        f"level 01 item '{item.name}' cannot have an OCCURS clause "
+                        f"in {self.dialect.requested}", item.loc)
                 self._occurs(item)
             elif w in ('SYNC', 'SYNCHRONIZED'):
                 self.next()
@@ -2305,7 +2316,24 @@ class Parser(SqlParser):
 
     def p_ENTRY(self, loc):
         """ENTRY "name" [USING item...]: another entry point into this
-        program, optionally with its own parameters."""
+        program, optionally with its own parameters. ENTRY FOR GO TO 'name'
+        is the Micro Focus marker a GO TO ENTRY jumps to."""
+        if self.is_word('FOR'):
+            if self.dialect is not None and not self.dialect.entry_for_goto_ok:
+                raise CompileError(
+                    f"ENTRY FOR GO TO does not conform to {self.dialect.requested}",
+                    loc)
+            self.next()
+            self.expect('GO')
+            self.expect('TO')
+            t = self.peek()
+            if t.kind == 'STR':
+                self.next()
+                return EntryForGoTo(loc, t.val.decode('latin-1'))
+            if t.kind == 'WORD':
+                self.next()
+                return EntryForGoTo(loc, t.up)
+            raise self.err("ENTRY FOR GO TO needs a name")
         t = self.peek()
         st = EntryStmt(loc, None)
         if t.kind == 'STR':
@@ -2933,6 +2961,10 @@ class Parser(SqlParser):
                     frm = self.parse_expr()
                     if self.accept('BY'):
                         by = self.parse_expr()
+                    elif self.dialect is not None and not self.dialect.varying_by_optional:
+                        raise CompileError(
+                            "PERFORM VARYING without a BY phrase does not conform to "
+                            f"{self.dialect.requested}", self.peek().loc)
                     else:
                         by = make_numlit('1')       # COBOL 2014: BY 1 when omitted
                     self.expect('UNTIL')
@@ -2973,9 +3005,31 @@ class Parser(SqlParser):
             qual = self.next().up
         return ProcRef(name, qual, t.loc)
 
+    def _go_to_entry(self, loc):
+        """GO TO ENTRY 'a' 'b' ... [DEPENDING ON n] -- Micro Focus."""
+        if self.dialect is not None and not self.dialect.entry_for_goto_ok:
+            raise CompileError(
+                f"GO TO ENTRY does not conform to {self.dialect.requested}", loc)
+        self.next()                                   # ENTRY
+        names = []
+        while self.peek().kind in ('STR', 'WORD') and not self.is_word('DEPENDING'):
+            t = self.next()
+            names.append(t.val.decode('latin-1') if t.kind == 'STR' else t.up)
+        if not names:
+            raise self.err("GO TO ENTRY needs at least one entry name")
+        dep = None
+        if self.accept('DEPENDING'):
+            self.accept('ON')
+            dep = self.parse_identifier()
+        if len(names) > 1 and dep is None:
+            raise self.err("GO TO ENTRY with several names requires DEPENDING ON")
+        return GoToEntry(loc, names, dep)
+
     # ---- control flow
     def p_GO(self, loc):
         self.accept('TO')
+        if self.is_word('ENTRY'):
+            return self._go_to_entry(loc)
         targets = []
         while self.is_user_word() or (self.peek().kind == 'NUM' and not self.is_word('DEPENDING', k=0)):
             targets.append(self._procref())
