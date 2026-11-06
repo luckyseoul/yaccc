@@ -55,13 +55,13 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
   `cobc` byte for byte.
 - **1** NIST test that cannot pass unattended. OBNC1M prints
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
-- **0.42 s** to compile `examples/mandelbrot.cbl` into a 310 KB binary, which
-  then runs in 40 ms where GnuCOBOL takes 133 ms.
+- **0.46 s** to compile `examples/mandelbrot.cbl` into a 443 KB binary, which
+  then runs in 40 ms where GnuCOBOL 3.1.2 takes about 130 ms at `-O2`.
 - **18,314** lines of Python in the compiler, standard library only — no parser
   generator, no code generator, no build step.
 - **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
-  occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.4–1.5% every runtime
-  file shows, against 10.7% for the port that was removed. The build fails
+  occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.75–2.5% the runtime
+  files span, against 10.7% for the port that was removed. The build fails
   above 3%, so that number is a gate, not a boast.
 
 COBOL's standards, for orientation: CODASYL started the work in 1959, COBOL-60

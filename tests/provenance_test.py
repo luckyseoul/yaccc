@@ -33,6 +33,14 @@ SELF = 'tests/provenance_test.py'
 # (the 2026-10-30 Report Writer port scored 2.1%).
 OVERLAP_LIMIT = 1.5     # per cent of a file's 12-token runs
 OVERLAP_RUN = 12
+# A percentage alone misfires on small files: the '#include' prologue every C
+# file must carry is ~10 twelve-token runs, which is 1.5% of a 700-token file
+# and nothing at all in a 20,000-token one. Measured on this tree, idiom -- a
+# table of strings, a printf format, a character scan loop -- tops out at 18
+# matched runs (cobrt_conf.c), while the removed Report Writer port matched
+# 124. Requiring both the percentage and this many runs separates the two:
+# sharing scaffolding is not sharing code.
+OVERLAP_MIN_RUNS = 40
 # The same measure with every identifier and number replaced by a placeholder,
 # so that renaming cannot move it: a mechanical rename of the removed Report
 # Writer port (47 local names, 73 struct members, no logic changed) took the
@@ -105,6 +113,32 @@ def shapes(tokens):
     return out
 
 
+def strip_pp(tokens):
+    """Drop preprocessor lines: '# include <...>', '# include STR', '# define'.
+
+    Every C file opens with the same includes, so matching them says nothing
+    about where the code came from. They are removed from the corpus and from
+    the files being measured alike, so the comparison stays symmetric.
+    """
+    out = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] == '#':
+            i += 1
+            if i < len(tokens):
+                i += 1                      # the directive word
+            if i < len(tokens) and tokens[i] == '<':
+                while i < len(tokens) and tokens[i] != '>':
+                    i += 1
+                i += 1
+            elif i < len(tokens) and tokens[i] == 'STR':
+                i += 1
+            continue
+        out.append(tokens[i])
+        i += 1
+    return out
+
+
 def shingles(tokens, n):
     return {tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)}
 
@@ -140,7 +174,7 @@ def check_overlap(src):
         for f in sorted(os.listdir(d)):
             if f.endswith(('.c', '.h')):
                 try:
-                    toks = c_tokens(open(os.path.join(d, f), encoding='latin-1').read())
+                    toks = strip_pp(c_tokens(open(os.path.join(d, f), encoding='latin-1').read()))
                 except OSError:
                     continue
                 corpus |= shingles(toks, OVERLAP_RUN)
@@ -160,26 +194,30 @@ def check_overlap(src):
             text = open(os.path.join(ROOT, f), encoding='latin-1').read()
         except OSError:
             continue
-        toks = c_tokens(text)
+        toks = strip_pp(c_tokens(text))
         runs = shingles(toks, OVERLAP_RUN)
         shaped = shingles(shapes(toks), SHAPE_RUN)
         if runs and shaped:
             rows.append((100.0 * len(runs & corpus) / len(runs),
-                         100.0 * len(shaped & shape_corpus) / len(shaped), f))
+                         100.0 * len(shaped & shape_corpus) / len(shaped), f,
+                         len(runs & corpus)))
     if not rows:
         check('the tree has source files to measure', False, 'none tracked')
         return
-    over = [f"{f} {p:.2f}%" for p, _, f in sorted(rows, reverse=True) if p > OVERLAP_LIMIT]
+    over = [f"{f} {p:.2f}% ({n} runs)"
+            for p, _, f, n in sorted(rows, reverse=True)
+            if p > OVERLAP_LIMIT and n >= OVERLAP_MIN_RUNS]
     check(f'no source file shares more than {OVERLAP_LIMIT}% of its '
-          f'{OVERLAP_RUN}-token runs with GnuCOBOL', not over, '; '.join(over))
+          f'{OVERLAP_RUN}-token runs with GnuCOBOL (at least '
+          f'{OVERLAP_MIN_RUNS} of them)', not over, '; '.join(over))
     rows.sort(key=lambda r: r[1], reverse=True)
-    over = [f"{f} {q:.2f}%" for _, q, f in rows if q > SHAPE_LIMIT]
+    over = [f"{f} {q:.2f}%" for _, q, f, _n in rows if q > SHAPE_LIMIT]
     check(f'no source file is a renamed GnuCOBOL C file (> {SHAPE_LIMIT}% of '
           f'its {SHAPE_RUN}-token runs, names ignored)', not over, '; '.join(over))
     if verbose:
         print(f"       {'verbatim':>8}  {'shape':>6}  file")
-        for p, q, f in rows[:12]:
-            print(f"       {p:7.2f}%  {q:5.2f}%  {f}")
+        for p, q, f, n in rows[:12]:
+            print(f"       {p:7.2f}%  {q:5.2f}%  {f}  ({n} runs)")
 
 
 def main():
