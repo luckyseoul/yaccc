@@ -536,6 +536,7 @@ void cob_module_settings(int pretty, int host_sign, int sign_ebcdic, const char 
 int cob_cmp_float(const cob_field *a, const cob_field *b);
 int cob_cmp_dbl(double x, double y);
 double cob_dbl_div(double a, double b);
+double cob_dbl_pow(double a, double b);
 int cob_put_float(cob_field *f, double v);
 int cob_is_alpha(const cob_field *f);
 int cob_is_lower(const cob_field *f);

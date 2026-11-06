@@ -3610,7 +3610,7 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
                 return f"cob_dbl_div({a}, {b})"
             if e.op in ('+', '-', '*', '**'):
                 if e.op == '**':
-                    return f"pow({a}, {b})"
+                    return f"cob_dbl_pow({a}, {b})"
                 return f"({a} {e.op} {b})"
             return None
         return None

@@ -47,7 +47,7 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
 - **571** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 122
   are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
   or a cobc option YACCC doesn't have.
-- **83** differential test programs, compared with GnuCOBOL byte for byte:
+- **84** differential test programs, compared with GnuCOBOL byte for byte:
   standard output, and every file each program writes (the few GnuCOBOL can't
   run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
   baselines checked by hand).
@@ -127,7 +127,7 @@ fetches them into `third_party/` with a sparse clone (about 65 MB).
 
 ### Differential tests against GnuCOBOL
 
-`tests/cases/` holds 83 programs covering moves, editing, arithmetic and
+`tests/cases/` holds 84 programs covering moves, editing, arithmetic and
 rounding modes (including division by full-precision intrinsic results), PERFORM, EVALUATE, STRING/UNSTRING/INSPECT, tables and SEARCH,
 intrinsic functions (including the COBOL 2014 date functions and the
 high-precision math), OCCURS DEPENDING ON layouts (with and without
@@ -154,11 +154,11 @@ COLUMN clause, and JSON and XML GENERATE and PARSE.
   not compared) and `.outfiles/` (files the program writes).
 - `make test-ref` runs GnuCOBOL live instead (`cobc` must be on `PATH`); see
   `docs/gnucobol-oracle.md` for building one without root. Against GnuCOBOL
-  3.1.2, 78 of the 83 run and all 78 pass (the `.noref` ones against their
+  3.1.2, 79 of the 84 run and all 79 pass (the `.noref` ones against their
   baselines); the five whose *test program* `cobc` itself rejects are
   skipped.
 
-All 83 pass, built with gcc.
+All 84 pass, built with gcc.
 
 ### GnuCOBOL 3.1.2 testsuite
 

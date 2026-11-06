@@ -2410,6 +2410,23 @@ double cob_dbl_div(double a, double b)
 	return a / b;
 }
 
+/* COMPUTE x ** y with a floating-point receiver. The generated C cannot call
+ * pow() itself: cobrt.h deliberately keeps <math.h> out of every program, and
+ * without a declaration the build fails with -Wimplicit-function-declaration.
+ * The decimal path (cob_d_pow) answers 0 ** 0 = 1 and 0 ** -n = 0 without
+ * touching libm, and GnuCOBOL 3.1.2 agrees on both, so this mirrors that. */
+double cob_dbl_pow(double a, double b)
+{
+	if (a == 0.0) {
+		if (b < 0.0) {
+			cob_zero_div_seen = 1;
+			return 0.0;
+		}
+		return b == 0.0 ? 1.0 : 0.0;
+	}
+	return pow(a, b);
+}
+
 int cob_put_float(cob_field *f, double v)
 {
 	if (f->attr->type == COB_NUM_FLOAT) {
