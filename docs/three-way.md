@@ -28,17 +28,16 @@ At the time of writing, over `tests/cases` (84 programs):
 ```
 15  all three agree
 11  YACCC = cobc, gcobol differs
- 1  all three differ
 45  incomplete -- a compiler refused the program or crashed on it
-12  no GnuCOBOL reference: the case is marked .noref
+13  no GnuCOBOL reference: the case is marked .noref
 ```
 
 Most of the incompleteness is gcobol's: **41 programs** are refused outright,
 including every Report Writer program, because `REPORT IS` does not parse in
 GCC 15.2's front end. YACCC compiled everything GnuCOBOL compiled.
 
-The case that matters most is the one where all three differ, because that is
-where a YACCC defect would show. It does not:
+No case is left where YACCC is the odd one out, which is the outcome that
+would point at a YACCC defect. One case was, before it was marked:
 
 ```
 $ ./yaccc tests/cases/udf.cbl -o p && ./p
@@ -49,12 +48,13 @@ ADDONE(1)=79        GnuCOBOL 3.1.2 — an uninitialised return value
 
 `udf` calls a user-defined function. YACCC returns the arithmetically right
 answer and it matches the recorded baseline; GnuCOBOL returns an uninitialised
-value and gcobol crashes. The case now carries a `.noref` marker, since
+value and gcobol crashes. The case carries a `.noref` marker now, since
 YACCC's answer deliberately differs from GnuCOBOL's here and comparing the two
-would only record the difference.
+would only record the difference — which is why it no longer appears among the
+all-differ results above.
 
 Finding this also turned up a gap in `make test-ref`, which the README
-described as running GnuCOBOL live. It does — but it compares the *files a
+described as running GnuCOBOL live. It does, but it compares the *files a
 program writes* against `cobc`, while standard output is still compared against
 the recorded baseline. So a case whose stdout differs from GnuCOBOL passed
 `test-ref` unnoticed, which is how `udf` came to be missing its marker. The
