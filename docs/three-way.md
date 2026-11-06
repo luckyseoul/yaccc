@@ -28,11 +28,11 @@ At the time of writing, over `tests/cases` (84 programs):
 ```
 15  all three agree
 11  YACCC = cobc, gcobol differs
-45  incomplete -- a compiler refused the program or crashed on it
-13  no GnuCOBOL reference: the case is marked .noref
+44  incomplete -- a compiler refused the program or crashed on it
+14  no GnuCOBOL reference: the case is marked .noref
 ```
 
-Most of the incompleteness is gcobol's: **41 programs** are refused outright,
+Most of the incompleteness is gcobol's: **40 programs** are refused outright,
 including every Report Writer program, because `REPORT IS` does not parse in
 GCC 15.2's front end. YACCC compiled everything GnuCOBOL compiled.
 
@@ -54,11 +54,19 @@ would only record the difference — which is why it no longer appears among the
 all-differ results above.
 
 Finding this also turned up a gap in `make test-ref`, which the README
-described as running GnuCOBOL live. It does, but it compares the *files a
-program writes* against `cobc`, while standard output is still compared against
-the recorded baseline. So a case whose stdout differs from GnuCOBOL passed
-`test-ref` unnoticed, which is how `udf` came to be missing its marker. The
-three-way harness compares stdout, which is why it showed up.
+described as running GnuCOBOL live. It did compile the reference live, but what
+it compared was the *files a program writes*; standard output was still
+compared against the recorded baseline. A case whose stdout differed from
+GnuCOBOL therefore passed `test-ref` unnoticed, which is how `udf` came to be
+missing its marker. The three-way harness compares stdout, which is why it
+showed up.
+
+`test-ref` now compares stdout against `cobc` as well, ignoring the recordings
+entirely, and skips indexed and relative file cases when the reference build
+has no ISAM handler rather than reporting them as failures. Checking every
+recorded baseline against live GnuCOBOL found exactly three that disagreed:
+`indexed1` and `fileprev`, both of which need ISAM the reference build did not
+have, and `json1`, which is now marked `.noref` for the reason described below.
 
 So on this corpus the question "did we copy a GnuCOBOL bug rather than
 implement the standard" has not yet had a yes.
@@ -97,6 +105,12 @@ UNSTRING S DELIMITED BY "," OR ALL SPACE
     INTO F DELIMITER IN D
 DISPLAY D        *> if S is "APPLE,BANANA", D is "," — gcobol prints a space
 ```
+
+Checking the recorded baselines against live `cobc` found one more case of the
+same kind, in YACCC's favour: `json1` generates a JSON array from an `OCCURS`
+item, which `cobc` 3.1.2 warns it does not implement (`-Wpending`) and
+flattens to a single value. YACCC follows COBOL 2014 there, so the case now
+carries a `.noref` marker: 3.1.2 has no reference to compare against.
 
 One case diverges without a reduced reproduction: `relative1`, where a record
 rewritten during an `OPEN I-O` session is still read back stale by gcobol

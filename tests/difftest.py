@@ -64,6 +64,58 @@ def compare_files(name, want_dir, mine_dir, names, nocmp):
     return extra
 
 
+# An indexed or relative file needs an ISAM handler, and a cobc built without
+# one compiles the program happily and then fails every I/O call with status
+# 48. Detect that once, so those cases are reported as skipped rather than as
+# YACCC failures.
+ISAM_PROBE = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ISAMPROBE.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT F ASSIGN TO "isamprobe.dat" ORGANIZATION IS INDEXED
+               ACCESS MODE IS RANDOM RECORD KEY IS K.
+       DATA DIVISION.
+       FILE SECTION.
+       FD  F.
+       01  R.
+           05 K PIC 9(4).
+           05 V PIC X(4).
+       WORKING-STORAGE SECTION.
+       01 FS PIC XX.
+       PROCEDURE DIVISION.
+           OPEN OUTPUT F
+           MOVE 1 TO K MOVE "AAAA" TO V
+           WRITE R
+           CLOSE F
+           DISPLAY "STATUS=" FS
+           STOP RUN.
+"""
+
+
+def reference_has_isam(cobc, work):
+    """True when this cobc can open an indexed file."""
+    d = tempfile.mkdtemp(prefix='isam_', dir=work)
+    src = os.path.join(d, 'isamprobe.cbl')
+    open(src, 'w').write(ISAM_PROBE)
+    exe = os.path.join(d, 'p')
+    rc, _out, _err = run([cobc, '-x', '-o', exe, src])
+    if rc != 0:
+        return False
+    _rc, out, _err = run([exe], cwd=d)
+    return b'STATUS=00' in out
+
+
+def uses_isam(path):
+    """True when a program declares an indexed or relative file."""
+    try:
+        text = open(path, encoding='latin-1').read()
+    except OSError:
+        return False
+    return ('ORGANIZATION IS INDEXED' in text or 'ORGANIZATION INDEXED' in text
+            or 'ORGANIZATION IS RELATIVE' in text or 'ORGANIZATION RELATIVE' in text)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Run the test programs with yaccc and compare their output with GnuCOBOL "
@@ -81,6 +133,7 @@ def main():
         print("cobc (GnuCOBOL) not found; --ref/--update need it")
         return 2
     work = tempfile.mkdtemp(prefix='cobtest_')
+    ref_isam = None
     passed = failed = 0
     for t in tests:
         base = os.path.splitext(t)[0]
@@ -119,6 +172,14 @@ def main():
         out_dir = base + '.outfiles'
         expected = open(exp_path, 'rb').read() if os.path.exists(exp_path) else None
         noref = os.path.exists(base + '.noref')   # deliberate deviation from GnuCOBOL
+        if args.ref and ref_isam is None:
+            ref_isam = reference_has_isam('cobc', work)
+            if not ref_isam:
+                print("note: this cobc has no ISAM handler; indexed and "
+                      "relative file cases are skipped")
+        if args.ref and not ref_isam and uses_isam(t):
+            print(f"SKIP {name}: reference build has no ISAM")
+            continue
         if not noref and (args.ref or (args.update and expected is None)):
             rexe = os.path.join(ref_dir, name)
             # copybooks sit next to the test: give cobc the same include path
@@ -139,7 +200,12 @@ def main():
                     for f in cmp_files:
                         shutil.copy(os.path.join(ref_dir, f), os.path.join(out_dir, f))
                 print(f"REC  {name}: baseline recorded")
-            if expected is None:
+            if args.ref:
+                # compare against what cobc just printed, not against a
+                # recording of it: a baseline that drifted from the reference
+                # is a test that cannot fail for the right reason
+                expected = rout
+            elif expected is None:
                 expected = rout
             mout += compare_files(name, ref_dir, mine_dir, written, nocmp)
         elif os.path.isdir(out_dir):

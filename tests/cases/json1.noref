@@ -1,0 +1,4 @@
+GnuCOBOL 3.1.2 does not implement OCCURS items in JSON GENERATE (cobc
+warns -Wpending and emits a single value instead of an array). This case's
+expected text is GnuCOBOL's own testsuite output, where it is implemented;
+3.1.2 cannot reproduce it, so there is no live reference.
