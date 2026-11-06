@@ -8,7 +8,7 @@ COBOL 85 in, C out, a native executable at the end — written in standard-libra
   <a href="https://github.com/luckyseoul/yaccc/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/luckyseoul/yaccc.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab.svg">
-  <img alt="NIST CCVS85: 9,539 checks, 0 failures" src="https://img.shields.io/badge/NIST%20CCVS85-0%20failures-brightgreen.svg">
+  <img alt="NIST CCVS85: 9,390 checks pass, 0 fail" src="https://img.shields.io/badge/NIST%20CCVS85-9%2C390%20pass%20%C2%B7%200%20fail-brightgreen.svg">
   <img alt="GnuCOBOL 3.1.2 testsuite: 571 pass, 0 fail" src="https://img.shields.io/badge/GnuCOBOL%20testsuite-571%20pass%20%C2%B7%200%20fail-brightgreen.svg">
 </p>
 

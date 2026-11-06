@@ -42,11 +42,11 @@ OVERLAP_RUN = 12
 # sharing scaffolding is not sharing code.
 OVERLAP_MIN_RUNS = 40
 # The same measure with every identifier and number replaced by a placeholder,
-# so that renaming cannot move it: a mechanical rename of the removed Report
-# Writer port (47 local names, 73 struct members, no logic changed) took the
-# 12-token figure from 2.06% to 0.24%, and leaves this one at 10.7%. Measured
-# on this tree: no file above 1.6%; the port 10.7%, its restructured version
-# (552f496) 8.7%.
+# so that renaming cannot move it. The removed Report Writer port is the
+# reference case: 10.7% here, against 0.75% for the current engine. Renaming
+# every identifier in it (no logic changed) moved its 12-token figure from
+# 2.06% to 0.24% while leaving this one where it was, which is why both
+# measures are kept. Measured on this tree: no file above 1.6%.
 SHAPE_LIMIT = 3.0       # per cent of a file's normalised 20-token runs
 SHAPE_RUN = 20
 # A corpus that is missing or nearly empty would make every file score 0%,

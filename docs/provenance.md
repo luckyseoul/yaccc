@@ -75,10 +75,17 @@ over generated report shapes with probes printing `PAGE-COUNTER` and
 `LINE-COUNTER` on every line. The model is written up in
 [report-writer-page-model.md](report-writer-page-model.md).
 
-An earlier attempt (commits e846415 to 98835fd) ported the reference's runtime
-instead. It was a translation rather than an implementation — the same
-breakdown into functions, the same branch order, identifiers changed — and it
-was removed rather than kept. It scores 10.7% on the shape measure.
+An earlier attempt ported the reference's runtime instead. It was a
+translation rather than an implementation — the same breakdown into functions,
+the same branch order, identifiers changed — and it was removed rather than
+kept. It scored 10.7% on the shape measure, against 0.75% for what replaced
+it.
+
+That attempt is not in this repository's history, which is a single squashed
+commit rather than the development history. The figures above are recorded
+here because a reader cannot re-derive them from the tree; what a reader *can*
+check is the measure itself, which is `tests/provenance_test.py`, and the
+current score, which anyone can reproduce by running it.
 
 The engine in `runtime/cobrt_rw.c` is YACCC's own group-table design from
 before that port, plus a line cursor whose rules were measured from `cobc`'s
