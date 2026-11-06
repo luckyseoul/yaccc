@@ -68,3 +68,43 @@ jobs:
         run: make gctest
       - name: Token overlap against the GnuCOBOL sources (no transliterated code)
         run: make provenance-deep
+
+  test-ref:
+    name: Differential against live GnuCOBOL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Building GnuCOBOL 3.1.2 takes a minute or two; the tarball is cached on
+      # its URL, so only the first run on a new cache key pays for the download.
+      - name: Cache the GnuCOBOL source
+        id: gc-cache
+        uses: actions/cache@v4
+        with:
+          path: gnucobol-3.1.2.tar.xz
+          key: gnucobol-3.1.2-tar
+      - name: Fetch GnuCOBOL 3.1.2
+        if: steps.gc-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSLo gnucobol-3.1.2.tar.xz \
+            https://downloads.sourceforge.net/project/gnucobol/gnucobol/3.1/gnucobol-3.1.2.tar.xz
+      # The same flags docs/gnucobol-oracle.md documents: no ncurses (not
+      # needed), gnu89 for 3.1.2's dispatch table, and no Berkeley DB because
+      # it is not installed here -- which also means no ISAM handler, so the
+      # harness skips the indexed and relative file cases rather than failing.
+      - name: Build and install cobc
+        run: |
+          tar xf gnucobol-3.1.2.tar.xz
+          cd gnucobol-3.1.2
+          ./configure --prefix="$HOME/gcinst" --without-ncurses --without-db \
+              CFLAGS="-O2 -std=gnu89 -Wno-incompatible-pointer-types -Wno-error" > /dev/null
+          make -j"$(nproc)" > /dev/null
+          make install > /dev/null
+      - name: Compare against what cobc prints and writes
+        run: |
+          export PATH="$HOME/gcinst/bin:$PATH"
+          export LD_LIBRARY_PATH="$HOME/gcinst/lib"
+          cobc --version | head -1
+          make test-ref
