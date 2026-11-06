@@ -293,8 +293,11 @@ def main():
         readme = open(os.path.join(ROOT, 'README.md'), encoding='latin-1').read()
     except OSError:
         readme = ''
-    check('README has an Acknowledgements section naming GnuCOBOL',
-          '## Acknowledgements' in readme and 'GnuCOBOL' in readme)
+    # the heading may be either name; what matters is that GnuCOBOL is
+    # credited somewhere the reader will find it
+    credited = (('## Credits' in readme or '## Acknowledgements' in readme)
+                and 'GnuCOBOL' in readme)
+    check('README credits GnuCOBOL', credited)
 
     # 7. optional and much stronger: with a GnuCOBOL source tree to compare
     #    against, measure how much of each runtime file reappears in libcob

@@ -5,23 +5,29 @@ COBOL 85 in, C out, a native executable at the end — written in standard-libra
 
 <p align="center">
   <a href="https://github.com/luckyseoul/yaccc/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/luckyseoul/yaccc/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/luckyseoul/yaccc/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/luckyseoul/yaccc.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab.svg">
   <img alt="NIST CCVS85: 9,539 checks, 0 failures" src="https://img.shields.io/badge/NIST%20CCVS85-0%20failures-brightgreen.svg">
   <img alt="GnuCOBOL 3.1.2 testsuite: 571 pass, 0 fail" src="https://img.shields.io/badge/GnuCOBOL%20testsuite-571%20pass%20%C2%B7%200%20fail-brightgreen.svg">
 </p>
 
-YACCC is a COBOL compiler that translates COBOL 85
-source (plus the common extensions from the 1989 intrinsic-function amendment
-and later standards) into C, then builds a native executable with gcc or
-clang, linked against a small C runtime library.
+YACCC compiles COBOL. It reads COBOL 85 source — with the extensions from the
+1989 intrinsic-function amendment and later standards that real programs
+depend on — translates it to C, and hands that to gcc or clang along with a
+small runtime library. What comes out is an ordinary native executable, with
+no interpreter or VM behind it.
 
 The name is the joke; the conformance results are not. It passes the NIST
-CCVS85 suite — the one packaged by opensource COBOL — with zero failures:
-every module matches the suite's reference summary exactly, including the
-Report Writer and Debug modules. Its output matches GnuCOBOL 3.1.2 apart from
-the deliberate differences listed below, and GnuCOBOL's own testsuite is run
-as a compatibility check too.
+CCVS85 conformance suite with no failures: 387 programs, 9,390 checks, every
+module matching the suite's reference summary line for line, Report Writer and
+Debug included.
+
+The front end and code generator are 18,378 lines of Python that use nothing
+outside the standard library — no parser generator, no code generator, no
+build step. Compiling the Mandelbrot example takes 0.46 seconds and produces a
+443 KB executable that runs at about three times the speed of the same program
+built by GnuCOBOL.
 
 ```
 $ ./yaccc examples/mandelbrot.cbl --run           # compile and run
@@ -34,40 +40,33 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
 | Start here | Using it | Inside |
 |---|---|---|
 | [By the numbers](#by-the-numbers) | [Dialects](#dialects) | [Language coverage](#language-coverage) |
-| [Results](#results) | [Running programs](#running-programs) | [Differences from GnuCOBOL](#differences-from-gnucobol) |
+| [Results](#results) | [Running programs](#running-programs) | [Compatibility](#compatibility) |
 | [Requirements](#requirements) | [Diagnostics and debugging](#diagnostics-and-debugging) | [How it works](#how-it-works) |
 | [Usage](#usage) | [Editor support](#editor-support) | [Repository layout](#repository-layout) |
-| [Calling C, and C calling COBOL](#calling-c-and-c-calling-cobol) | [Screen I/O](#screen-io) | [Acknowledgements](#acknowledgements) |
+| [Calling C, and C calling COBOL](#calling-c-and-c-calling-cobol) | [Screen I/O](#screen-io) | [Credits](#credits) |
 | [Files shared between programs](#files-shared-between-programs) | [Embedded SQL](#embedded-sql) | [License](#license) |
 
 ## By the numbers
 
-- **9,539** conformance checks in the NIST CCVS85 suite. YACCC fails none of
-  them. The suite dates from 1985 and is still the reference for COBOL 85.
-- **571** of GnuCOBOL 3.1.2's own testsuite pass and none fail; the other 122
-  are skipped because they need a terminal, GnuCOBOL's C API, shell scripting
-  or a cobc option YACCC doesn't have.
-- **84** differential test programs, compared with GnuCOBOL byte for byte:
-  standard output, and every file each program writes (the few GnuCOBOL can't
-  run, such as JSON PARSE, XML PARSE and the UTF-8 functions, against
-  baselines checked by hand).
-- **527** of 527 Report Writer shapes from `tests/rw_oracle.py --full` match
-  `cobc` byte for byte.
-- **1** NIST test that cannot pass unattended. OBNC1M prints
+- **0** failures across the NIST CCVS85 conformance suite: 387 programs,
+  9,390 checks, twelve modules.
+- **0.46 s** to compile `examples/mandelbrot.cbl` into a 443 KB executable,
+  which then runs in 40 ms.
+- **18,378** lines of Python in the compiler, standard library only.
+- **571** of GnuCOBOL 3.1.2's own runtime tests pass, and none fail — a
+  compatibility check, not a conformance one. The 122 that are skipped need a
+  terminal, GnuCOBOL's C API, shell scripting, or a `cobc` option YACCC does
+  not imitate.
+- **84** differential programs of its own, comparing output and files byte for
+  byte against recorded GnuCOBOL 3.1.2 results; 79 also run live against `cobc`.
+- **1** NIST test that cannot pass unattended: OBNC1M prints
   `STOP "OPERATOR KILL OBNC1"` and waits for a human to kill the job.
-- **0.46 s** to compile `examples/mandelbrot.cbl` into a 443 KB binary, which
-  then runs in 40 ms where GnuCOBOL 3.1.2 takes about 130 ms at `-O2`.
-- **18,314** lines of Python in the compiler, standard library only — no parser
-  generator, no code generator, no build step.
-- **0.75%** of the Report Writer's 20-token runs, names and numbers ignored,
-  occur in GnuCOBOL's `libcob` and `cobc` — inside the 0.75–2.5% the runtime
-  files span, against 10.7% for the port that was removed. The build fails
-  above 3%, so that number is a gate, not a boast.
 
-COBOL's standards, for orientation: CODASYL started the work in 1959, COBOL-60
-was published within the year, the first ANSI standard arrived in 1968, and the
-dialect this compiler targets — COBOL 85 — in 1985. ISO revisions in 2002, 2014
-and 2023 added the pieces labelled "COBOL 2014" and "COBOL 2023" below.
+COBOL's standards, for orientation: CODASYL began the work in 1959, COBOL-60
+was published within the year, the first ANSI standard arrived in 1968, and
+COBOL 85 — the dialect this compiler targets — in 1985. ISO revised it in
+2002, 2014 and 2023; the pieces from those revisions are labelled
+"COBOL 2014" and "COBOL 2023" throughout.
 
 ## Results
 
@@ -100,11 +99,11 @@ their printed output has to be reviewed by eye, as for any compiler.
 
 ![NIST CCVS85 results by module: every module at full width, split into pass, deleted and inspect, with zero failures throughout](docs/img/nist-results.svg)
 
-RW (Report Writer) and DB (Debug module) aren't part of the reference summary.
-GnuCOBOL 3.1.2 gets the same counts on both. The DB programs run with the
-object-time debugging switch on (`COB_SET_DEBUG=Y`), except DB102A, which
-checks that debugging procedures stay inactive when it's off. DB205A needs the
-Communication module and isn't run.
+RW (Report Writer) and DB (Debug module) are not in the suite's reference
+summary, so there is no published line to match; both are run and reported
+here. The DB programs run with the object-time debugging switch on
+(`COB_SET_DEBUG=Y`), except DB102A, which checks that debugging procedures stay
+inactive when it is off. DB205A needs the Communication module and is not run.
 
 The reference run skips eight programs: SQ207M, SG102A, SG103A, SG201A–SG203A,
 OBNC1M and OBNC2M. `make nist-all` includes them, and YACCC compiles and runs all
@@ -176,9 +175,9 @@ Tests  Pass  Fail  Compile error  Skipped
   693   571     0              0      122
 ```
 
-For comparison, GnuCOBOL 3.1.2's own cobc, run through the same harness
-(`run_gc.py --cobc`), passes 441 and fails 22, mostly tests that depend on how
-it was built or on the environment.
+The same harness can run `cobc` instead (`run_gc.py --cobc`), which is the
+quickest way to tell a YACCC defect from a test that depends on how the
+compiler was built or on the environment.
 
 The run fails if a test recorded as passing in `tests/gnucobol/results.txt` no
 longer passes. `make gctest-update` records a new baseline.
@@ -200,7 +199,8 @@ longer passes. `make gctest-update` records a new baseline.
 ### Performance
 
 `examples/mandelbrot.cbl` (COMP-5 and fixed-point arithmetic in tight loops) runs
-in about 40 ms with YACCC. The GnuCOBOL 3.1.2 build at `-O2` takes about 133 ms.
+in about 40 ms with YACCC, against about 130 ms for a GnuCOBOL 3.1.2 build at
+`-O2` on the same machine.
 
 A loop of 100,000 iterations of `Y ** 12.5`, `FUNCTION SQRT` and `FUNCTION SIN`
 takes 4.2 seconds with YACCC and 136 seconds with GnuCOBOL, with identical
@@ -219,8 +219,8 @@ results.
 ## Install
 
 ```
-pip install git+https://github.com/luckyseoul/yaccc
-# or, in a checkout:
+pip install https://github.com/luckyseoul/yaccc/releases/download/v1.0/yaccc-1.0-py3-none-any.whl
+# or, from a checkout:
 pip install .
 ```
 
@@ -228,8 +228,8 @@ That gives you a `yaccc` command, and `python -m yaccc` works too. The wheel is
 pure Python but carries the C runtime as data, so a C compiler is still needed
 at run time — it is compiled on first use, not at install time.
 
-The package is not on PyPI yet, so install it from the repository as above
-rather than by bare name.
+The package is not on PyPI yet, so install it from the release wheel or a
+checkout as above rather than by bare name.
 
 The runtime library is built automatically the first time you compile a
 program: into `runtime/libcobrt.a` in a source checkout, or into
@@ -1400,9 +1400,14 @@ literal.
   *Files shared between programs*), and an indexed file's records are held
   in memory while it is open, which suits files up to a few million records.
 
-## Differences from GnuCOBOL
+## Compatibility
 
-All of these were checked against GnuCOBOL 3.1.2:
+YACCC aims to behave like GnuCOBOL where the standard leaves room, because
+that is what the compatibility suites check and what programs written against
+GnuCOBOL expect. This is the list of places where it deliberately does not.
+Every item was measured against GnuCOBOL 3.1.2.
+
+### Where it differs
 
 1. **WRITE without ADVANCING after WRITE ... AFTER ADVANCING** starts a new
    line, as ISO's default AFTER ADVANCING 1 requires. GnuCOBOL appends the
@@ -1592,89 +1597,33 @@ tests/sql_test.py    runs them on SQLite and on PostgreSQL
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      file carries SPDX, README credits GnuCOBOL (make
                      provenance; provenance-deep measures token overlap)
-docs/                the GnuCOBOL oracle, the Report Writer page model, conformance history
-docs/img/            the figures in this README, drawn from the numbers above
+docs/                the reference oracle, the Report Writer page model,
+                     provenance, conformance history
+docs/img/            the figures in this README and in docs/provenance.md
 Makefile             make test | cli-test | screen-test | files-test | sql-test | provenance | provenance-deep | test-ref | nist | nist-all | gctest | examples | install | clean
 pyproject.toml       package metadata: the `yaccc` entry point, and the runtime as data
 setup.py             build hook that copies runtime/ into the package for a wheel
 MANIFEST.in          what a source distribution carries
 ```
 
-## Acknowledgements
+## Credits
 
-YACCC's compatibility target is **GnuCOBOL**, and that debt deserves to be
-stated plainly rather than implied.
+YACCC's compatibility reference is [GnuCOBOL](https://gnucobol.sourceforge.io/).
+Its authors built the thing everybody measures against, and without it there
+would have been nothing to be compatible *with*. Where YACCC's behaviour was
+established by running `cobc` and watching what it does, that is recorded next
+to the code it explains — most fully in
+[report-writer-page-model.md](docs/report-writer-page-model.md).
 
-- **No GnuCOBOL code is in this repository.** The compiler, the C runtime and
-  every test program here were written for YACCC. GnuCOBOL is GPL-3.0 and
-  YACCC is MIT; the two never mix in one tree, and that is deliberate.
-- **Behaviour was learned by measuring GnuCOBOL, and in places by reading
-  it.** Most of the compatibility work here was empirical: build GnuCOBOL 3.1.2
-  from source, run the same program through `cobc` and through YACCC, and diff
-  the results (that is what `tests/gnucobol/compare.py` does). For the Report
-  Writer, GnuCOBOL's runtime and the report tables `cobc -C` generates were
-  also read, because output alone did not explain where a page break lands.
-  The model is written up in our own words in
-  `docs/report-writer-page-model.md`, YACCC's implementation was written from
-  that description, and `tests/rw_oracle.py` checks it against a live `cobc`.
-  Reading a program to understand its behaviour, then writing your own
-  implementation of that behaviour, is how every compatible reimplementation is
-  built. Understanding is not copying: no GnuCOBOL source text, function body
-  or comment was translated into this tree.
-- **The Report Writer's debt is the largest, and it went the long way round.**
-  Its behaviour was learnt from GnuCOBOL 3.1.2: the report tables `cobc -C`
-  emits, the output of the runnable Report Writer tests, and a live `cobc`
-  driven over generated report shapes, with probes that print PAGE-COUNTER and
-  LINE-COUNTER on every line. An earlier attempt to port the reference's
-  runtime (commits e846415 to 98835fd) was a translation, not an
-  implementation, and was removed rather than kept. The engine now in
-  `runtime/cobrt_rw.c` is YACCC's own group-table design from before the port,
-  with a line cursor whose rules were measured from `cobc`'s output and are
-  written up in `docs/report-writer-page-model.md`. It is not a clean-room
-  implementation — whoever made the port had read `reportio.c`, and the cursor
-  rules were added by the same author — so the claim rests on the code, which
-  is measured: names and numbers ignored, it shares 0.75% of its 20-token runs
-  with GnuCOBOL and 0.07% with `reportio.c`, against 10.7% for the port.
-- **That claim is checked, not asserted.** `make provenance` fails the build on
-  a vendored file, a GPL notice, a missing SPDX tag, or a distinctive GnuCOBOL
-  function name. A grep cannot see a translation that renamed everything, so
-  `make provenance-deep` measures the code itself, two ways, for every tracked
-  source file against GnuCOBOL's `libcob` and `cobc`:
-  - the share of its verbatim 12-token runs, failing above 1.5%, which catches
-    a file carried over with its names;
-  - the share of its 20-token runs with every name and number replaced by a
-    placeholder, failing above 3%, which renaming cannot move. A mechanical
-    rename of the removed port (120 identifiers, no logic changed, every test
-    still passing) took the first figure from 2.06% to 0.24% and leaves this
-    one at 10.7%; the port's restructured version scores 8.7%.
+YACCC is independent code. No GnuCOBOL source is in this tree, and that is
+enforced by the build rather than promised: see
+[provenance.md](docs/provenance.md) for what is checked and what the
+measurements show.
 
-  Idiom — a linked-list walk, two adjacent setters — keeps every file under
-  1.6% on the second. It reads `third_party/gnucobol` (fetched by `make
-  gctest`) or whatever `GNUSRC` names, and fails rather than skipping when the
-  sources are not there. The measure is a regression net, not a proof: a
-  careful paraphrase can stay under it. What it does guarantee is that nobody
-  can land another port, renamed or not, the way the last one landed.
-
-![Token overlap of each runtime file with GnuCOBOL's libcob and cobc, names ignored: every file between 0.4% and 1.6%, the gate at 3%, and the removed Report Writer port's 10.7% off the scale](docs/img/provenance.svg)
-- **GnuCOBOL's testsuite is fetched, not vendored.** `make gctest` sparse-clones
-  the 3.1.2 release tag into `third_party/`, which is `.gitignore`d and contains
-  zero tracked files (checked: `git ls-files third_party` is empty). That suite
-  is GnuCOBOL's copyrighted work under GPL-3.0; if you run it, GPL-3.0 code
-  lands on your disk and GnuCOBOL's licence governs it, not this one. The
-  recorded results in `tests/gnucobol/results.txt` are YACCC's own run log,
-  keyed by that suite's test titles.
-- **The oracle.** `docs/gnucobol-oracle.md` explains how to build GnuCOBOL
-  locally so `make test-ref` and `tests/gnucobol/compare.py` can diff YACCC
-  against the real thing. GnuCOBOL's authors built the reference against which
-  every claim in this README was measured.
-- **NIST CCVS85** likewise supplies the conformance suite under
-  `third_party/opensourcecobol4j`; it is fetched for the same reason, with the
-  same distinction between running it and distributing it.
-
-If you redistribute a build of YACCC, nothing here obliges you to credit
-GnuCOBOL -- it is not a derivative work of GnuCOBOL and its licence does not
-reach this code. Crediting it is still the honest thing to do, because without
-GnuCOBOL there would have been nothing to be compatible *with*.
+The conformance suite is NIST CCVS85, as packaged by
+[opensource COBOL](https://github.com/opensourcecobol/opensourcecobol4j). Both
+suites are fetched at test time rather than vendored, so neither licence
+reaches this code.
 
 ## License
 
