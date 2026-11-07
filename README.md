@@ -223,6 +223,14 @@ longer passes. `make gctest-update` records a new baseline.
 in about 40 ms with YACCC, against about 130 ms for a GnuCOBOL 3.1.2 build at
 `-O2` on the same machine.
 
+A seven-program suite covers arithmetic, transcendental functions, table SORT,
+STRING handling, sequential files, a software rasteriser and an extended
+Mandelbrot, and is run against both GnuCOBOL and GCC's COBOL front end:
+`./tests/bench/run.py`, results in [docs/benchmarks.md](docs/benchmarks.md).
+YACCC is 1.3–5.6× faster than GnuCOBOL across it, and 13× slower than gcobol on
+transcendental functions, where gcobol uses the hardware libm and YACCC uses its
+own 640-bit fixed point.
+
 A loop of 100,000 iterations of `Y ** 12.5`, `FUNCTION SQRT` and `FUNCTION SIN`
 takes 4.2 seconds with YACCC and 136 seconds with GnuCOBOL, with identical
 results.
@@ -1630,6 +1638,7 @@ tests/files_test.py  files shared between programs and processes: sharing, locks
 tests/sql/           embedded SQL programs and their expected output
 tests/sql_test.py    runs them on SQLite and on PostgreSQL
 tests/three_way.py   the same programs through YACCC and two independent compilers
+tests/bench/         seven benchmarks and the runner that times them
 tests/provenance_test.py  licence checks: nothing GPL is vendored, every source
                      file carries SPDX, README credits GnuCOBOL (make
                      provenance; provenance-deep measures token overlap)

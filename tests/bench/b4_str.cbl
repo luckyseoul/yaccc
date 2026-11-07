@@ -1,0 +1,24 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. B4STR.
+      *> STRING / UNSTRING / INSPECT in a loop
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 SRC PIC X(200).
+       01 OUTB PIC X(400).
+       01 PTR PIC 9(4) COMP.
+       01 T PIC X(20).
+       01 N PIC 9(4) COMP.
+       01 I PIC 9(9) COMP.
+       PROCEDURE DIVISION.
+           MOVE ALL "A" TO SRC
+           MOVE 1 TO PTR
+           PERFORM VARYING I FROM 1 BY 1 UNTIL I > 200000
+               STRING SRC DELIMITED BY SIZE INTO OUTB
+                   WITH POINTER PTR
+               END-STRING
+               IF PTR > 300 MOVE 1 TO PTR
+           END-PERFORM
+           INSPECT OUTB TALLYING N FOR ALL "A"
+           UNSTRING SRC DELIMITED BY "B" INTO T
+           DISPLAY N.
+           STOP RUN.
