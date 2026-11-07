@@ -9,7 +9,7 @@ COBOL 85 in, C out, a native executable at the end — written in standard-libra
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab.svg">
   <img alt="NIST CCVS85: 9,390 checks pass, 0 fail" src="https://img.shields.io/badge/NIST%20CCVS85-9%2C390%20pass%20%C2%B7%200%20fail-brightgreen.svg">
-  <img alt="GnuCOBOL 3.1.2 testsuite: 576 pass, 0 fail" src="https://img.shields.io/badge/GnuCOBOL%20testsuite-576%20pass%20%C2%B7%200%20fail-brightgreen.svg">
+  <img alt="GnuCOBOL 3.1.2 testsuite: 559 pass, 0 fail" src="https://img.shields.io/badge/GnuCOBOL%20testsuite-559%20pass%20%C2%B7%200%20fail-brightgreen.svg">
 </p>
 
 YACCC compiles COBOL. It reads COBOL 85 source — with the extensions from the
@@ -53,8 +53,8 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
 - **0.46 s** to compile `examples/mandelbrot.cbl` into a 443 KB executable,
   which then runs in 40 ms.
 - **18,378** lines of Python in the compiler, standard library only.
-- **576** of GnuCOBOL 3.1.2's own runtime tests pass, and none fail — a
-  compatibility check, not a conformance one. The 117 that are skipped need a
+- **559** of GnuCOBOL 3.1.2's own runtime tests pass, and none fail — a
+  compatibility check, not a conformance one. The 134 that are skipped need a
   terminal, GnuCOBOL's C API, shell scripting, or a `cobc` option YACCC does
   not imitate.
 - **85** differential programs of its own, comparing output and files byte for
@@ -186,7 +186,7 @@ compile as modules (`$COMPILE_MODULE`) are built as real loadable modules with
 
 ```
 Tests  Pass  Fail  Compile error  Skipped
-  693   576     0              0      117
+  693   559     0              0      134
 ```
 
 The same harness can run `cobc` instead (`run_gc.py --cobc`), which is the
@@ -205,9 +205,13 @@ longer passes. `make gctest-update` records a new baseline.
   instead; see *Screen I/O*), GnuCOBOL's own C
   API (`cob_get_field_str`, `cob_global` and the like, 6 tests), shell
   scripting, or a cobc option YACCC has no equivalent for (`-fcallfh` and
-  a few more). One is a deliberate difference: a COBOL program called from a C
-  `main` starts the runtime itself instead of failing with *cob_init() has not
-  been called*.
+  a few more). Twenty-three `#include <libcob.h>` — GnuCOBOL's own C header —
+  and YACCC no longer ships a header by that name: it used to, so those tests
+  would build, and that file was one thing too close to shipping GnuCOBOL's
+  interface as its own. They are skipped rather than passed now, which is the
+  honest cost of not carrying it. One is a deliberate difference: a COBOL
+  program called from a C `main` starts the runtime itself instead of failing
+  with *cob_init() has not been called*.
 - **Compile errors**: none. Every program the harness can build, YACCC builds.
 - **Failures**: none. The last two, *Sample Payroll Report* and *Sample
   Inventory Report*, were Report Writer page placement and PRESENT WHEN; see item 1
@@ -803,8 +807,10 @@ initialise:
   it: `PROGRAM-ID. GREET-SUB` with `USING L-NAME BY VALUE L-NUM` is
   `int GREET__SUB(void *l_name, intptr_t l_num)`. The first call starts the
   runtime, and files the program left open are closed at exit, so a C `main`
-  needs nothing else. `runtime/libcob.h` declares `cob_init`, `cob_stop_run`,
-  `cob_tidy`, `cob_call` and `cob_call_params` for C code written for GnuCOBOL.
+  needs nothing else. `runtime/yaccc_c.h` declares the five C entry points a
+  C main and a COBOL program share. Their names are GnuCOBOL's published
+  interface, used so that C code written against it links here unchanged; the
+  implementations are YACCC's.
 - **Callbacks.** `SET ptr TO ENTRY "prog"` gives that program's C entry
   point, so a C function handed the pointer can call the program, and CALL
   of a PROGRAM-POINTER calls whatever it holds, COBOL or C.

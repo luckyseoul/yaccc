@@ -1,9 +1,9 @@
-PASS  data_binary.at:23            BINARY: 2-4-8 big-endian
-PASS  data_binary.at:205           BINARY: 2-4-8 native
-PASS  data_binary.at:393           BINARY: 1-2-4-8 big-endian
-PASS  data_binary.at:575           BINARY: 1-2-4-8 native
-PASS  data_binary.at:763           BINARY: 1--8 big-endian
-PASS  data_binary.at:945           BINARY: 1--8 native
+SKIP  data_binary.at:23            BINARY: 2-4-8 big-endian
+SKIP  data_binary.at:205           BINARY: 2-4-8 native
+SKIP  data_binary.at:393           BINARY: 1-2-4-8 big-endian
+SKIP  data_binary.at:575           BINARY: 1-2-4-8 native
+SKIP  data_binary.at:763           BINARY: 1--8 big-endian
+SKIP  data_binary.at:945           BINARY: 1--8 native
 PASS  data_binary.at:1133          BINARY: full-print
 PASS  data_binary.at:1185          BINARY: 64bit unsigned compare
 PASS  data_binary.at:1210          BINARY: 64bit unsigned arithmetic notrunc
@@ -14,7 +14,7 @@ PASS  data_display.at:21           DISPLAY: Sign ASCII
 PASS  data_display.at:80           DISPLAY: Sign ASCII (2)
 PASS  data_display.at:126          DISPLAY: Sign EBCDIC
 PASS  data_display.at:171          DISPLAY: unsigned
-PASS  data_packed.at:25            PACKED-DECIMAL dump
+SKIP  data_packed.at:25            PACKED-DECIMAL dump
 PASS  data_packed.at:161           PACKED-DECIMAL used with DISPLAY
 PASS  data_packed.at:216           PACKED-DECIMAL used with MOVE
 PASS  data_packed.at:273           PACKED-DECIMAL used with INITIALIZE
@@ -32,7 +32,7 @@ PASS  run_accept.at:117            ACCEPT FROM TIME / DATE / DAY / DAY-OF-WEEK (
 PASS  run_accept.at:200            ACCEPT DATE / DAY and intrinsic functions (1)
 PASS  run_accept.at:237            ACCEPT DATE / DAY and intrinsic functions (2)
 SKIP  run_accept.at:284            ACCEPT OMITTED (SCREEN)
-PASS  run_extensions.at:25         CALL BY CONTENT binary and literal
+SKIP  run_extensions.at:25         CALL BY CONTENT binary and literal
 PASS  run_extensions.at:72         Numeric Boolean literals
 PASS  run_extensions.at:101        ACUCOBOL literals
 SKIP  run_extensions.at:127        HP COBOL octal literals
@@ -105,7 +105,7 @@ PASS  run_extensions.at:3668       System routine CBL_EQ
 PASS  run_extensions.at:3695       System routine CBL_GC_GETOPT
 PASS  run_extensions.at:4132       System routine CBL_GC_FORK
 PASS  run_extensions.at:4200       System routine CBL_GC_WAITPID
-PASS  run_extensions.at:4252       System routine CBL_GC_HOSTED
+SKIP  run_extensions.at:4252       System routine CBL_GC_HOSTED
 PASS  run_extensions.at:4382       System routine SYSTEM, parameter handling
 SKIP  run_extensions.at:4493       System routine CBL_ERROR_PROC (1)
 PASS  run_extensions.at:4592       System routine CBL_ERROR_PROC (2)
@@ -328,7 +328,7 @@ PASS  run_functions.at:4220        UDF replacing intrinsic function
 SKIP  run_functions.at:4263        UDF with recursion
 PASS  run_fundamental.at:24        DISPLAY literals
 PASS  run_fundamental.at:86        DISPLAY literals, DECIMAL-POINT is COMMA
-PASS  run_fundamental.at:125       Hexadecimal literal
+SKIP  run_fundamental.at:125       Hexadecimal literal
 PASS  run_fundamental.at:166       DISPLAY data items with VALUE clause
 PASS  run_fundamental.at:213       DISPLAY data items with MOVE statement
 PASS  run_fundamental.at:267       MOVE to edited item (1)
@@ -350,7 +350,7 @@ PASS  run_fundamental.at:1022      GLOBAL CONSTANT
 PASS  run_fundamental.at:1106      GLOBAL identifiers from ENVIRONMENT DIVISION
 SKIP  run_fundamental.at:1187      function with variable-length RETURNING item
 PASS  run_fundamental.at:1270      Entry point visibility (1)
-PASS  run_fundamental.at:1302      Entry point visibility (2)
+SKIP  run_fundamental.at:1302      Entry point visibility (2)
 PASS  run_fundamental.at:1336      Contained program visibility (1)
 PASS  run_fundamental.at:1391      Contained program visibility (2)
 PASS  run_fundamental.at:1444      Contained program visibility (3)
@@ -385,7 +385,7 @@ PASS  run_fundamental.at:2670      Numeric operations (2)
 PASS  run_fundamental.at:2976      Numeric operations (3)
 PASS  run_fundamental.at:3282      Numeric operations (4)
 PASS  run_fundamental.at:3588      Numeric operations (5)
-PASS  run_fundamental.at:3894      Numeric operations (6)
+SKIP  run_fundamental.at:3894      Numeric operations (6)
 PASS  run_fundamental.at:3963      Numeric operations (7)
 PASS  run_fundamental.at:4255      Numeric operations (8)
 PASS  run_fundamental.at:4305      ADD CORRESPONDING
@@ -491,7 +491,7 @@ PASS  run_misc.at:554              MOVE with refmod
 PASS  run_misc.at:578              MOVE with refmod (variable)
 PASS  run_misc.at:604              MOVE with group refmod
 PASS  run_misc.at:629              MOVE indexes
-PASS  run_misc.at:655              MOVE X'00'
+SKIP  run_misc.at:655              MOVE X'00'
 PASS  run_misc.at:690              MOVE Z'literal'
 PASS  run_misc.at:732              Floating continuation indicator
 PASS  run_misc.at:754              Fixed continuation indicator
@@ -513,7 +513,7 @@ PASS  run_misc.at:1311             Recursive CALL of INITIAL program
 PASS  run_misc.at:1362             Recursive CALL with RECURSIVE assumed
 PASS  run_misc.at:1408             Recursive CALL with ON EXCEPTION
 PASS  run_misc.at:1465             Multiple calls of INITIAL program
-PASS  run_misc.at:1522             CALL binary literal parameter/LENGTH OF
+SKIP  run_misc.at:1522             CALL binary literal parameter/LENGTH OF
 PASS  run_misc.at:1576             INSPECT REPLACING LEADING ZEROS BY SPACES
 PASS  run_misc.at:1598             INSPECT No repeat conversion check
 PASS  run_misc.at:1624             INSPECT CONVERTING alphabet
@@ -562,9 +562,9 @@ PASS  run_misc.at:3422             ALLOCATE CHARACTERS INITIALIZED TO
 PASS  run_misc.at:3463             Initialized value with defaultbyte
 PASS  run_misc.at:3488             CALL with OMITTED parameter
 SKIP  run_misc.at:3527             CALL in from C, cob_call_params explicitly set
-PASS  run_misc.at:3588             CALL in from C, cob_call_params unknown
-PASS  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTERN
-PASS  run_misc.at:3713             CALL C with callback, ENTRY-CONVENTION EXTERN
+SKIP  run_misc.at:3588             CALL in from C, cob_call_params unknown
+SKIP  run_misc.at:3646             CALL C with callback, PROCEDURE DIVISION EXTERN
+SKIP  run_misc.at:3713             CALL C with callback, ENTRY-CONVENTION EXTERN
 SKIP  run_misc.at:3864             CALL in from C with init missing / implicit
 PASS  run_misc.at:3916             CALL STATIC C from COBOL
 PASS  run_misc.at:3972             ANY LENGTH (1)
@@ -692,4 +692,4 @@ SKIP  run_subscripts.at:396        BOUND and NOBOUND directives
 PASS  run_subscripts.at:465        SSRANGE and NOSSRANGE directives
 PASS  run_subscripts.at:501        CALL with OCCURS DEPENDING ON
 
-PASS 576  FAIL 0  CERR 0  XERR 0  SKIP 117
+PASS 559  FAIL 0  CERR 0  XERR 0  SKIP 134
