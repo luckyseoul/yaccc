@@ -23,7 +23,7 @@ CCVS85 conformance suite with no failures: 387 programs, 9,390 checks, every
 module matching the suite's reference summary line for line, Report Writer and
 Debug included.
 
-The front end and code generator are 18,378 lines of Python that use nothing
+The front end and code generator are 18,527 lines of Python that use nothing
 outside the standard library — no parser generator, no code generator, no
 build step. Compiling the Mandelbrot example takes 0.46 seconds and produces a
 443 KB executable that runs at about three times the speed of the same program
@@ -39,12 +39,33 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
 
 | Start here | Using it | Inside |
 |---|---|---|
-| [By the numbers](#by-the-numbers) | [Dialects](#dialects) | [Language coverage](#language-coverage) |
-| [Results](#results) | [Running programs](#running-programs) | [Compatibility](#compatibility) |
+| [Status](#status) | [Dialects](#dialects) | [Language coverage](#language-coverage) |
+| [By the numbers](#by-the-numbers) | [Running programs](#running-programs) | [Compatibility](#compatibility) |
 | [Requirements](#requirements) | [Diagnostics and debugging](#diagnostics-and-debugging) | [How it works](#how-it-works) |
 | [Usage](#usage) | [Editor support](#editor-support) | [Repository layout](#repository-layout) |
 | [Calling C, and C calling COBOL](#calling-c-and-c-calling-cobol) | [Screen I/O](#screen-io) | [Credits](#credits) |
 | [Files shared between programs](#files-shared-between-programs) | [Embedded SQL](#embedded-sql) | [License](#license) |
+
+## Status
+
+Complete and stable at 1.2, and expected to stay that way: changes from here
+are meant to be small, and driven by what someone actually asks for. Two
+things are worth knowing before depending on it.
+
+**It is not battle-tested.** The conformance evidence is strong — 9,390 NIST
+checks and 559 of GnuCOBOL's own tests with no failures — but it comes from
+suites and from deliberate testing, not from years of other people's programs.
+A program it has never seen is a program it has never seen.
+
+**It is not a certified toolchain.** For anything where a wrong answer is
+unacceptable rather than inconvenient, a from-scratch compiler with an MIT
+licence and no independent verification of its own correctness is not the
+right instrument. What it does offer for that kind of work is readability: the
+generated C is plain and inspectable, which makes it useful for *analysing*
+COBOL even where it would not be trusted to build it.
+
+Forking is expected and the licence permits it: keep the copyright notice and
+you can do what you like with it.
 
 ## By the numbers
 
@@ -52,7 +73,7 @@ $ ./yaccc -t payroll.lst -Xref examples/payroll.cbl # with a listing and cross-r
   9,390 checks, twelve modules.
 - **0.46 s** to compile `examples/mandelbrot.cbl` into a 443 KB executable,
   which then runs in 40 ms.
-- **18,378** lines of Python in the compiler, standard library only.
+- **18,527** lines of Python in the compiler, standard library only.
 - **559** of GnuCOBOL 3.1.2's own runtime tests pass, and none fail — a
   compatibility check, not a conformance one. The 134 that are skipped need a
   terminal, GnuCOBOL's C API, shell scripting, or a `cobc` option YACCC does
@@ -1605,17 +1626,18 @@ The figure at the top is the whole design: five stages of Python, then a C
 compiler. Nothing is generated twice and there is no intermediate language —
 `codegen.py` writes C, and `cc` finishes the job.
 
-The compiler is 17,660 lines of Python across twenty-two files; the runtime it
-links against is 18,997 lines of C.
+The compiler is 18,527 lines of Python across twenty-three files; the runtime
+it links against is 17,887 lines of C in eighteen files, plus 1,304 lines of
+header.
 
 | File | Lines | Role |
 |---|---|---|
 | `lib/yaccc/source.py` | 384 | reference formats, continuations, directives, comment-entries, debugging lines |
 | `lib/yaccc/lexer.py` | 753 | tokens, PICTURE strings, literals, COPY/REPLACE expansion |
 | `lib/yaccc/directives.py` | 497 | `>>DEFINE`, `>>IF` / `>>EVALUATE`, `>>SET`; one object shared by a file and its copybooks |
-| `lib/yaccc/parser.py` | 4,256 | recursive-descent parser to the AST (`nodes.py`, 852) |
+| `lib/yaccc/parser.py` | 4,310 | recursive-descent parser to the AST (`nodes.py`, 852) |
 | `lib/yaccc/data.py` | 705 | PICTURE analysis, USAGE resolution, storage layout |
-| `lib/yaccc/codegen.py` | 5,976 | name resolution, C generation, typed fast paths, C entry points |
+| `lib/yaccc/codegen.py` | 6,007 | name resolution, C generation, typed fast paths, C entry points |
 | `lib/yaccc/rwgen.py` | 725 | REPORT SECTION analysis: groups and their print lines, report items, controls and SUM counters as tables, plus callbacks |
 | `lib/yaccc/scrgen.py` | 382 | SCREEN SECTION: screen items to the runtime's field descriptions, DISPLAY and ACCEPT of screens |
 | `lib/yaccc/esql.py` | 567 | EXEC SQL statements read: host variables, the statement's kind, the text the database runs; SQLCA, cursors, WHENEVER |
@@ -1626,7 +1648,7 @@ links against is 18,997 lines of C.
 | `lib/yaccc/profgen.py` | 71 | `-fprof`: each program's table of sections and paragraphs, and the switches between them |
 | `lib/yaccc/odogen.py` | 197 | OCCURS DEPENDING ON at run time: the current size of a variable group, the place of the items after a variable table |
 | `lib/yaccc/listing.py` | 220 | `-t` / `-Xref`: the listing, its data map and cross-reference |
-| `runtime/cobrt_core.c` | 3,643 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
+| `runtime/cobrt_core.c` | 3,660 | fields, moves, editing, decimal arithmetic, compare, DISPLAY/ACCEPT, exceptions, DEBUG-ITEM |
 | `runtime/cobrt_call.c` | 430 | CALL by name: the run unit's programs, C functions, loadable modules; C entry points |
 | `runtime/cobrt_io.c` | 3,219 | sequential, line sequential, relative, indexed, LINAGE, SORT/MERGE |
 | `runtime/cobrt_scr.c` | 1,265 | screen I/O: positioning, attributes and colours, input fields and the keys that end them |
@@ -1644,7 +1666,7 @@ links against is 18,997 lines of C.
 | `runtime/cobrt_dump.c` | 392 | `-fdump`: the active programs' data written out after a runtime error or a crash |
 | `runtime/cobrt_conf.c` | 394 | runtime configuration files (`COB_RUNTIME_CONFIG`), GnuCOBOL's `runtime.cfg` format |
 | `runtime/yacccrun.c` | 30 | the `yacccrun` program: a module's program run as the main program |
-| `runtime/cobrt.h` | 1,260 | runtime interface and inline fast paths |
+| `runtime/cobrt.h` | 1,261 | runtime interface and inline fast paths |
 
 Design choices:
 
