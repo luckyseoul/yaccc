@@ -250,7 +250,7 @@ results.
 ## Install
 
 ```
-pip install https://github.com/luckyseoul/yaccc/releases/download/v1.0/yaccc-1.0-py3-none-any.whl
+pip install https://github.com/luckyseoul/yaccc/releases/download/v1.2/yaccc-1.2-py3-none-any.whl
 # or, from a checkout:
 pip install .
 ```
