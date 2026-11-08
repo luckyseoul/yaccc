@@ -274,6 +274,56 @@ From a source checkout, `make install` puts the compiler and its runtime under
 `/usr/local` unless you set it; `make install PREFIX=$HOME/.local` installs for
 one user, and `make uninstall` with the same `PREFIX` removes it).
 
+## Worked examples
+
+A file in, an executable out:
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. HELLO.
+       PROCEDURE DIVISION.
+           DISPLAY "HELLO, WORLD".
+           STOP RUN.
+```
+
+![yaccc hello.cbl --run prints HELLO, WORLD](docs/img/term-hello.svg)
+
+A complete program — a table, a `PERFORM VARYING` filling it, and edited
+output — built and run in one step:
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. FIB.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 T.
+          05 E PIC 9(10) OCCURS 15 TIMES.
+       01 I PIC 99.
+       01 L PIC Z(9)9.
+       PROCEDURE DIVISION.
+           MOVE 0 TO E(1)
+           MOVE 1 TO E(2)
+           PERFORM VARYING I FROM 3 BY 1 UNTIL I > 15
+               COMPUTE E(I) = E(I - 1) + E(I - 2)
+           END-PERFORM
+           PERFORM VARYING I FROM 1 BY 1 UNTIL I > 15
+               MOVE E(I) TO L
+               DISPLAY "F(" I ") = " FUNCTION TRIM(L)
+           END-PERFORM
+           STOP RUN.
+```
+
+![yaccc fib.cbl --run prints the first fifteen Fibonacci numbers](docs/img/term-fib.svg)
+
+A mistake is reported against the line it is on:
+
+![A compile error, with the offending source line quoted](docs/img/term-error.svg)
+
+Several sources on one command line become one executable, with `CALL`
+resolving each program by `PROGRAM-ID`:
+
+![Two programs linked by PROGRAM-ID and run](docs/img/term-link.svg)
+
 ## Usage
 
 ```

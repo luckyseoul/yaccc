@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="143" viewBox="0 0 520 143" role="img">
+<rect width="520" height="143" rx="7" fill="#1c1b19"/>
+<path d="M0 7a7 7 0 0 1 7-7h506a7 7 0 0 1 7 7v25H0z" fill="#2a2825"/>
+<circle cx="17" cy="16" r="4.5" fill="#e0605c"/>
+<circle cx="34" cy="16" r="4.5" fill="#d9a441"/>
+<circle cx="51" cy="16" r="4.5" fill="#6aa84f"/>
+<text x="260.0" y="20" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7d766b" text-anchor="middle">two programs on one command line</text>
+<text x="14" y="52" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#7d766b">$</text>
+<text x="28.0" y="52" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4">yaccc dayname.cbl datefmt.cbl --run</text>
+<text x="30" y="69" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">19690720 was a Sunday    (day 201 of the year)</text>
+<text x="30" y="86" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">19860128 was a Tuesday   (day 028 of the year)</text>
+<text x="30" y="103" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">20000101 was a Saturday  (day 001 of the year)</text>
+<text x="30" y="120" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">20261027 was a Tuesday   (day 300 of the year)</text>
+</svg>

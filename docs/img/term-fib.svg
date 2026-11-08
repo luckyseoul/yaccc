@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="330" viewBox="0 0 520 330" role="img">
+<rect width="520" height="330" rx="7" fill="#1c1b19"/>
+<path d="M0 7a7 7 0 0 1 7-7h506a7 7 0 0 1 7 7v25H0z" fill="#2a2825"/>
+<circle cx="17" cy="16" r="4.5" fill="#e0605c"/>
+<circle cx="34" cy="16" r="4.5" fill="#d9a441"/>
+<circle cx="51" cy="16" r="4.5" fill="#6aa84f"/>
+<text x="260.0" y="20" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7d766b" text-anchor="middle">fib.cbl — a table and a PERFORM</text>
+<text x="14" y="52" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#7d766b">$</text>
+<text x="28.0" y="52" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4">yaccc fib.cbl --run</text>
+<text x="30" y="69" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(01) = 0</text>
+<text x="30" y="86" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(02) = 1</text>
+<text x="30" y="103" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(03) = 1</text>
+<text x="30" y="120" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(04) = 2</text>
+<text x="30" y="137" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(05) = 3</text>
+<text x="30" y="154" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(06) = 5</text>
+<text x="30" y="171" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(07) = 8</text>
+<text x="30" y="188" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(08) = 13</text>
+<text x="30" y="205" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(09) = 21</text>
+<text x="30" y="222" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(10) = 34</text>
+<text x="30" y="239" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(11) = 55</text>
+<text x="30" y="256" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(12) = 89</text>
+<text x="30" y="273" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(13) = 144</text>
+<text x="30" y="290" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(14) = 233</text>
+<text x="30" y="307" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#e8e2d4" xml:space="preserve">F(15) = 377</text>
+</svg>
