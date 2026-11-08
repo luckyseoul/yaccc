@@ -23,12 +23,17 @@ nothing shares an SMT sibling. Lower is better; bold is the fastest.
 | `b6_gfx` | 200 frames of a software rasteriser: 24 rotated triangles, scanline-filled into 320×224 | **185** | 244 | 941 |
 | `b7_mandel` | Mandelbrot, 640×480, up to 2,000 iterations, 28-bit fixed point | **91,803** | 122,607 | 264,224 |
 
-Relative to GnuCOBOL: **1.3× to 1.8×** faster on arithmetic, strings, files,
+![Runtime for seven benchmarks across three compilers, on a log scale](img/bench-time.svg)
+
+Relative to GnuCOBOL: **1.2× to 1.8×** faster on arithmetic, strings, files,
 graphics and the Mandelbrot; **5.6×** on transcendental functions; a dead heat
 on `qsort`.
 
-The one place YACCC loses badly is `b2_func`: gcobol is **13× faster** on
-SQRT/SIN/EXP. That is a design difference, not a defect. gcobol lowers those to
+![The same data as a ratio to GnuCOBOL](img/bench-ratio.svg)
+
+The one place YACCC loses badly is `b2_func`: gcobol is **12.8× faster** than
+YACCC there, and 71.7× faster than GnuCOBOL, which is the bar the chart
+shows. That is a design difference, not a defect. gcobol lowers those to
 native `double` and the hardware libm; YACCC runs them through its own 640-bit
 software fixed-point, which carries more significant digits and exact scaling
 but costs an order of magnitude. All three agree to about 1e-11 relative on the
