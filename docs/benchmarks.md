@@ -13,15 +13,16 @@ were taken.
 Milliseconds, best of `--reps` runs, each pinned to its own physical core so
 nothing shares an SMT sibling. Lower is better; bold is the fastest.
 
-The chart uses dots rather than bars on purpose. The values span 14 ms to
-264 s, so the axis has to be logarithmic, and a bar on a log axis is a lie: its
-length reads as proportional to the value when it is really `log(value)`, which
-would draw 1,229 and 2,242 ms a few percent apart in order to show a 1.8×
-difference. A dot has no length to misread.
-
-Each benchmark is a shaded row with its three dots on one line and the values
-in a column beside them, so a row can be traced across without the dots of one
-benchmark being mistaken for another's.
+The chart gives each benchmark its own scale. The values span 14 ms to 264 s,
+about five decades, and no shared axis is honest across that range. On a log
+axis a 2.9× difference such as 91,803 against 264,224 ms takes up 9% of the
+chart width and reads as "about the same"; on a linear axis the four smallest
+benchmarks collapse into the left edge. So every row runs from zero to its own
+slowest compiler: the longest bar in a row is that row's slowest, and bar
+length is the ratio within the benchmark. Absolute milliseconds sit in the
+column at right, so each row's scale is stated. Bar lengths are not comparable
+between rows and are not meant to be — compare within a row, read the column
+for magnitude.
 
 | Benchmark | What it does | YACCC | GnuCOBOL | gcobol |
 |---|---|---:|---:|---:|
@@ -33,7 +34,7 @@ benchmark being mistaken for another's.
 | `b6_gfx` | 200 frames of a software rasteriser: 24 rotated triangles, scanline-filled into 320×224 | **185** | 244 | 941 |
 | `b7_mandel` | Mandelbrot, 640×480, up to 2,000 iterations, 28-bit fixed point | **91,803** | 122,607 | 264,224 |
 
-![Runtime for seven benchmarks across three compilers, as dots on a log axis](img/bench-time.svg)
+![Runtime for seven benchmarks across three compilers, each row scaled to its own slowest](img/bench-time.svg)
 
 Relative to GnuCOBOL: **1.2× to 1.8×** faster on arithmetic, strings, files,
 graphics and the Mandelbrot; **5.6×** on transcendental functions; a dead heat

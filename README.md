@@ -248,7 +248,7 @@ A seven-program suite covers arithmetic, transcendental functions, table SORT,
 STRING handling, sequential files, a software rasteriser and an extended
 Mandelbrot, and is run against both GnuCOBOL and GCC's COBOL front end:
 `./tests/bench/run.py`, results in [docs/benchmarks.md](docs/benchmarks.md).
-![Runtime of seven benchmarks across three compilers](docs/img/bench-time.svg)
+![Runtime of seven benchmarks across three compilers, each benchmark scaled to its own slowest](docs/img/bench-time.svg)
 
 YACCC is 1.2–5.6× faster than GnuCOBOL across it, and **12.8× slower** than
 gcobol on transcendental functions, where gcobol calls the hardware libm and
