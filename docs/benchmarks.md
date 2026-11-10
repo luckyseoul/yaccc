@@ -13,6 +13,12 @@ were taken.
 Milliseconds, best of `--reps` runs, each pinned to its own physical core so
 nothing shares an SMT sibling. Lower is better; bold is the fastest.
 
+The chart uses dots rather than bars on purpose. The values span 14 ms to
+264 s, so the axis has to be logarithmic, and a bar on a log axis is a lie: its
+length reads as proportional to the value when it is really `log(value)`, which
+would draw 1,229 and 2,242 ms a few percent apart in order to show a 1.8×
+difference. A dot has no length to misread.
+
 | Benchmark | What it does | YACCC | GnuCOBOL | gcobol |
 |---|---|---:|---:|---:|
 | `b1_arith` | 3,000,000 fixed-point COMPUTE/ADD | **1,229** | 2,242 | 3,395 |
@@ -23,7 +29,7 @@ nothing shares an SMT sibling. Lower is better; bold is the fastest.
 | `b6_gfx` | 200 frames of a software rasteriser: 24 rotated triangles, scanline-filled into 320×224 | **185** | 244 | 941 |
 | `b7_mandel` | Mandelbrot, 640×480, up to 2,000 iterations, 28-bit fixed point | **91,803** | 122,607 | 264,224 |
 
-![Runtime for seven benchmarks across three compilers, on a log scale](img/bench-time.svg)
+![Runtime for seven benchmarks across three compilers, as dots on a log axis](img/bench-time.svg)
 
 Relative to GnuCOBOL: **1.2× to 1.8×** faster on arithmetic, strings, files,
 graphics and the Mandelbrot; **5.6×** on transcendental functions; a dead heat
@@ -32,8 +38,8 @@ on `qsort`.
 ![The same data as a ratio to GnuCOBOL](img/bench-ratio.svg)
 
 The one place YACCC loses badly is `b2_func`: gcobol is **12.8× faster** than
-YACCC there, and 71.7× faster than GnuCOBOL, which is the bar the chart
-shows. That is a design difference, not a defect. gcobol lowers those to
+YACCC there, and 71.7× faster than GnuCOBOL, which is the far dot in the
+chart. That is a design difference, not a defect. gcobol lowers those to
 native `double` and the hardware libm; YACCC runs them through its own 640-bit
 software fixed-point, which carries more significant digits and exact scaling
 but costs an order of magnitude. All three agree to about 1e-11 relative on the
