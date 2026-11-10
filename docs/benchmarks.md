@@ -19,6 +19,10 @@ length reads as proportional to the value when it is really `log(value)`, which
 would draw 1,229 and 2,242 ms a few percent apart in order to show a 1.8×
 difference. A dot has no length to misread.
 
+Each benchmark is a shaded row with its three dots on one line and the values
+in a column beside them, so a row can be traced across without the dots of one
+benchmark being mistaken for another's.
+
 | Benchmark | What it does | YACCC | GnuCOBOL | gcobol |
 |---|---|---:|---:|---:|
 | `b1_arith` | 3,000,000 fixed-point COMPUTE/ADD | **1,229** | 2,242 | 3,395 |
