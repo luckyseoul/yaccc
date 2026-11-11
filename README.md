@@ -246,13 +246,20 @@ in about 40 ms with YACCC, against about 130 ms for a GnuCOBOL 3.1.2 build at
 
 A seven-program suite covers arithmetic, transcendental functions, table SORT,
 STRING handling, sequential files, a software rasteriser and an extended
-Mandelbrot, and is run against both GnuCOBOL and GCC's COBOL front end:
+Mandelbrot. It is run against every other COBOL compiler that could be
+obtained: GnuCOBOL 3.1.2, 3.2 and 4.0-early, and gcobol 15.2 and 16.
 `./tests/bench/run.py`, results in [docs/benchmarks.md](docs/benchmarks.md).
-![Runtime of seven benchmarks across three compilers, each benchmark scaled to its own slowest](docs/img/bench-time.svg)
+![Runtime of seven benchmarks across six compilers, each benchmark scaled to its own slowest](docs/img/bench-time.svg)
 
-YACCC is 1.2–5.6× faster than GnuCOBOL across it, and **12.8× slower** than
-gcobol on transcendental functions, where gcobol calls the hardware libm and
-YACCC computes in its own 640-bit software fixed point.
+Of the six, YACCC is fastest on **five of the seven** programs: 1.06× to 1.75×
+ahead of GnuCOBOL 3.2 and up to 68× ahead of gcobol. It loses two. On
+transcendental functions gcobol 16 is **16.3× faster**, because gcobol calls
+the hardware libm while YACCC computes in its own 640-bit software fixed point.
+On the `SORT` verb GnuCOBOL 3.2 is **16% faster**, because YACCC sorts through
+an array of record pointers and copies the table twice.
+
+No commercial compiler was tested. The claim the data supports is "fastest of
+the six open-source COBOL compilers measured, on these seven programs".
 
 A loop of 100,000 iterations of `Y ** 12.5`, `FUNCTION SQRT` and `FUNCTION SIN`
 takes 4.2 seconds with YACCC and 136 seconds with GnuCOBOL, with identical

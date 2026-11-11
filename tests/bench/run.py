@@ -11,12 +11,28 @@ and `gcobol` are on `PATH` (or named by $COBC and $GCOBOL). Each program is
 built at -O2, run once to check that the compilers agree on its output, and
 then timed; a program whose outputs disagree is reported and not timed.
 
-Builds run in parallel. Timings run in parallel too, but each one is pinned to
-its own physical core, so two runs never share a core and never contend for
-one -- timing many things at once on a machine with spare cores gives the same
-answer as timing them one at a time, in a fraction of the wall clock. If the
-machine has fewer free cores than there are measurements, the excess is run in
-waves; the results are all single-core measurements either way.
+`BENCH_COMPILERS` adds more, as a comma-separated list of `label=/path/to/cc`.
+Each label is used as a column heading, and the command line is chosen from the
+file name: a name containing `gcobol` is driven like gcobol, one containing
+`cobc` like GnuCOBOL, `yaccc` like this repository's compiler. So a wrapper
+script is enough to put a second GnuCOBOL release in the same table:
+
+    BENCH_COMPILERS='gnucobol-3.2=/opt/gc32/cobc,cobc=/usr/bin/cobc' \
+        ./tests/bench/run.py
+
+Builds run in parallel. Timings run in parallel too, each pinned to its own
+physical core, so two runs never share a core. That is not the same as
+independence: they still share memory bandwidth, cache and memory controller,
+and measurement showed the effect is large. Timing all forty-two
+(benchmark, compiler) pairs at once raised arithmetic from 0.99s to 1.25s
+(+26%) and the Mandelbrot from 83.2s to 92.8s (+12%), and it compressed the
+gaps between close rows, so differences that are real serially can vanish.
+Pinning keeps a run off its twin's core; it does not give it a private
+machine.
+
+So the default is one measurement per physical core, which is fast and fine for
+a rough look, and `--jobs 1` is for numbers worth publishing. The results are
+single-core measurements either way; only the contention differs.
 
 This is a development tool. It writes nothing outside a temporary directory
 except the file `b5_file` creates, which it removes.
@@ -60,7 +76,17 @@ def compilers():
     found = {'yaccc': YACCC if os.path.exists(YACCC) else None}
     found['cobc'] = os.environ.get('COBC') or shutil.which('cobc')
     found['gcobol'] = os.environ.get('GCOBOL') or shutil.which('gcobol')
-    return {k: v for k, v in found.items() if v}
+    found = {k: v for k, v in found.items() if v}
+    for spec in os.environ.get('BENCH_COMPILERS', '').split(','):
+        label, _, path = spec.partition('=')
+        label, path = label.strip(), path.strip()
+        if not label or not path:
+            continue
+        if not os.path.exists(path):
+            print(f'ignoring {label}: no such file {path}', file=sys.stderr)
+            continue
+        found[label] = path
+    return found
 
 
 def build(cc, name, workdir):
@@ -149,6 +175,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--reps', type=int, default=5)
     ap.add_argument('--only', nargs='*', default=None)
+    ap.add_argument('--jobs', type=int, default=0,
+                    help='max concurrent measurements (default: one per '
+                         'physical core). Lower it when comparing many '
+                         'compilers: pinning stops two runs sharing an SMT '
+                         'sibling, but not sharing memory bandwidth, so '
+                         'timing everything at once inflates every number '
+                         'by about a quarter.')
     a = ap.parse_args()
 
     ccs = compilers()
@@ -162,6 +195,8 @@ def main():
     names = a.only or BENCH
     work = tempfile.mkdtemp(prefix='bench_')
     cores = physical_cores()
+    if a.jobs:
+        cores = cores[:max(1, a.jobs)]
     jobs = [(n, cc) for n in names for cc in ccs]
 
     print(f"reps={a.reps}  compilers: {', '.join(ccs)}  "
@@ -170,7 +205,7 @@ def main():
     # 1. build everything at once
     built, refused = {}, {}
     keys = [(n, c) for n in names for c in ccs]
-    with ThreadPoolExecutor(max_workers=min(len(keys), len(cores))) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, min(len(keys), len(cores)))) as pool:
         futs = {k: pool.submit(build, ccs[k[1]], k[0], work) for k in keys}
         for key, fut in futs.items():
             exe, err = fut.result()
@@ -181,7 +216,7 @@ def main():
 
     # 2. one unchecked run per (benchmark, compiler) to confirm they agree
     outs = {}
-    with ThreadPoolExecutor(max_workers=min(len(built), len(cores))) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, min(len(built), len(cores)))) as pool:
         futs = {k: pool.submit(run_pinned, exe, work, cores[i % len(cores)])
                 for i, (k, exe) in enumerate(sorted(built.items()))}
         for key, fut in futs.items():
@@ -196,13 +231,14 @@ def main():
         present = [v for v in present if v is not None]
         if present and all(same_output(present[0], v) for v in present[1:]):
             comparable.update((name, c) for c in ccs)
-    print(f"{'benchmark':10s} " + ' '.join(f'{n:>9s}' for n in ccs))
+    cw = max([9] + [len(n) for n in ccs])
+    print(f"{'benchmark':10s} " + ' '.join(f'{n:>{cw}s}' for n in ccs))
     timings = {}
     tasks = []
     for i, (key, exe) in enumerate(sorted(built.items())):
         if key in comparable:
             tasks.append((key, exe, cores[i % len(cores)]))
-    with ThreadPoolExecutor(max_workers=min(len(tasks), len(cores))) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), len(cores)))) as pool:
         futs = {key: pool.submit(timeit, exe, work, cpu, a.reps)
                 for key, exe, cpu in tasks}
         for key, fut in futs.items():
@@ -212,13 +248,20 @@ def main():
         for name in names:
             present = [outs.get((name, c)) for c in ccs]
             present = [v for v in present if v is not None]
-            if present and not all(same_output(present[0], v) for v in present[1:]):
+            if not present:
+                why = sorted({refused[(name, c)].split(':')[0]
+                              for c in ccs if (name, c) in refused})
+                print(f"{name:10s} no compiler produced it"
+                      + (f" ({'; '.join(why)[:70]})" if why else ''))
+                continue
+            if not all(same_output(present[0], v) for v in present[1:]):
                 print(f"{name:10s} outputs disagree between compilers; not timed")
                 continue
             row = []
             for c in ccs:
                 t = timings.get((name, c))
-                row.append(f'{t:8.3f}s' if t is not None else f'{"refused":>9s}')
+                row.append(f'{t:>{cw - 1}.3f}s' if t is not None
+                           else f'{"refused":>{cw}s}')
             print(f"{name:10s} " + ' '.join(row))
             for c in ccs:
                 if (name, c) in refused:

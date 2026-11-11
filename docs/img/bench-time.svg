@@ -1,73 +1,121 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="540" viewBox="0 0 880 540" role="img">
-<rect width="880" height="540" fill="#faf7ef"/>
-<text x="24.0" y="32.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6d655a" text-anchor="start" font-weight="600" letter-spacing="1.9">RUNTIME: SEVEN BENCHMARKS, THREE COMPILERS</text>
-<text x="24.0" y="52.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" fill="#9a9184" text-anchor="start" font-weight="normal">Every benchmark is scaled to its own slowest compiler, so bar length is the ratio within the row. Absolute times at right.</text>
-<rect x="16" y="93" width="848" height="49" fill="#f2ede1" rx="4"/>
-<rect x="16" y="201" width="848" height="49" fill="#f2ede1" rx="4"/>
-<rect x="16" y="309" width="848" height="49" fill="#f2ede1" rx="4"/>
-<rect x="16" y="417" width="848" height="49" fill="#f2ede1" rx="4"/>
-<text x="700.0" y="81.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="end" font-weight="normal">ms</text>
-<text x="194.0" y="114.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">fixed-point arithmetic</text>
-<text x="194.0" y="127.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b1_arith</text>
-<rect x="210" y="106" width="133.9" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="112.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">1,229</text>
-<rect x="210" y="119" width="244.3" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="125.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">2,242</text>
-<rect x="210" y="132" width="370.0" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="138.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">3,395</text>
-<text x="194.0" y="168.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">SQRT/SIN/EXP</text>
-<text x="194.0" y="181.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b2_func</text>
-<rect x="210" y="160" width="66.3" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="166.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">13,933</text>
-<rect x="210" y="173" width="370.0" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="179.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">77,740</text>
-<rect x="210" y="186" width="5.2" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="192.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">1,085</text>
-<text x="194.0" y="222.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">table SORT</text>
-<text x="194.0" y="235.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b3_sort</text>
-<rect x="210" y="214" width="142.9" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="220.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">287</text>
-<rect x="210" y="227" width="142.4" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="233.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">286</text>
-<rect x="210" y="240" width="370.0" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="246.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">743</text>
-<text x="194.0" y="276.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">STRING/UNSTRING</text>
-<text x="194.0" y="289.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b4_str</text>
-<rect x="210" y="268" width="80.9" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="274.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">14</text>
-<rect x="210" y="281" width="98.3" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="287.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">17</text>
-<rect x="210" y="294" width="370.0" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="300.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">64</text>
-<text x="194.0" y="330.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">500k records to file</text>
-<text x="194.0" y="343.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b5_file</text>
-<rect x="210" y="322" width="52.4" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="328.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">120</text>
-<rect x="210" y="335" width="67.3" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="341.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">154</text>
-<rect x="210" y="348" width="370.0" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="354.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">847</text>
-<text x="194.0" y="384.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">software rasteriser</text>
-<text x="194.0" y="397.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b6_gfx</text>
-<rect x="210" y="376" width="72.7" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="382.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">185</text>
-<rect x="210" y="389" width="95.9" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="395.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">244</text>
-<rect x="210" y="402" width="370.0" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="408.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">941</text>
-<text x="194.0" y="438.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">Mandelbrot 640×480</text>
-<text x="194.0" y="451.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b7_mandel</text>
-<rect x="210" y="430" width="128.6" height="7" fill="#1f6f4a" rx="2"/>
-<text x="700.0" y="436.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">91,803</text>
-<rect x="210" y="443" width="171.7" height="7" fill="#b0701f" rx="2"/>
-<text x="700.0" y="449.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">122,607</text>
-<rect x="210" y="456" width="370.0" height="7" fill="#4a6fa5" rx="2"/>
-<text x="700.0" y="462.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.6" fill="#6d655a" text-anchor="end" font-weight="normal">264,224</text>
-<circle cx="215.0" cy="492.5" r="4.5" fill="#1f6f4a"/>
-<text x="226.0" y="496.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">YACCC</text>
-<circle cx="273.0" cy="492.5" r="4.5" fill="#b0701f"/>
-<text x="284.0" y="496.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">GnuCOBOL 3.1.2</text>
-<circle cx="381.4" cy="492.5" r="4.5" fill="#4a6fa5"/>
-<text x="392.4" y="496.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">gcobol (GCC 15.2)</text>
-<text x="24.0" y="524.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" fill="#9a9184" text-anchor="start" font-weight="normal">Best of five runs, each pinned to its own physical core. Lower is better; a full bar is that row's slowest.</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="784" viewBox="0 0 880 784" role="img">
+<rect width="880" height="784" fill="#faf7ef"/>
+<text x="24.0" y="32.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6d655a" text-anchor="start" font-weight="600" letter-spacing="1.9">RUNTIME: EVERY BENCHMARK, EVERY COMPILER MEASURED</text>
+<text x="24.0" y="52.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10" fill="#9a9184" text-anchor="start" font-weight="normal">Each row is scaled to its own slowest compiler, so bar length is the ratio within the row. Absolute times at right.</text>
+<rect x="16" y="92" width="848" height="80" fill="#f2ede1" rx="4"/>
+<rect x="16" y="264" width="848" height="80" fill="#f2ede1" rx="4"/>
+<rect x="16" y="436" width="848" height="80" fill="#f2ede1" rx="4"/>
+<rect x="16" y="608" width="848" height="80" fill="#f2ede1" rx="4"/>
+<text x="712.0" y="80.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.8" fill="#9a9184" text-anchor="end" font-weight="normal">ms</text>
+<text x="194.0" y="113.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">fixed-point arithmetic</text>
+<text x="194.0" y="125.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b1_arith</text>
+<rect x="210" y="106" width="112.7" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="112.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">965</text>
+<rect x="210" y="117" width="207.0" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="123.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">1,772</text>
+<rect x="210" y="128" width="119.3" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="134.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">1,021</text>
+<rect x="210" y="139" width="205.4" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="145.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">1,759</text>
+<rect x="210" y="150" width="340.0" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="156.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">2,911</text>
+<rect x="210" y="161" width="328.1" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="167.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">2,809</text>
+<text x="194.0" y="199.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">SQRT/SIN/EXP</text>
+<text x="194.0" y="211.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b2_func</text>
+<rect x="210" y="192" width="62.9" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="198.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">12,849</text>
+<rect x="210" y="203" width="340.0" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="209.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">69,473</text>
+<rect x="210" y="214" width="336.1" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="220.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">68,677</text>
+<rect x="210" y="225" width="338.0" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="231.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">69,063</text>
+<rect x="210" y="236" width="4.1" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="242.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">837</text>
+<rect x="210" y="247" width="3.9" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="253.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">787</text>
+<text x="194.0" y="285.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">table SORT</text>
+<text x="194.0" y="297.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b3_sort</text>
+<rect x="210" y="278" width="56.3" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="284.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">226</text>
+<rect x="210" y="289" width="55.0" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="295.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">221</text>
+<rect x="210" y="300" width="48.6" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="306.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">195</text>
+<rect x="210" y="311" width="53.8" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="317.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">216</text>
+<rect x="210" y="322" width="152.4" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="328.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">612</text>
+<rect x="210" y="333" width="340.0" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="339.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">1,365</text>
+<text x="194.0" y="371.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">STRING/UNSTRING</text>
+<text x="194.0" y="383.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b4_str</text>
+<rect x="210" y="364" width="5.0" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="370.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">12</text>
+<rect x="210" y="375" width="6.2" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="381.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">15</text>
+<rect x="210" y="386" width="6.2" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="392.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">15</text>
+<rect x="210" y="397" width="5.8" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="403.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">14</text>
+<rect x="210" y="408" width="20.8" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="414.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">50</text>
+<rect x="210" y="419" width="340.0" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="425.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">816</text>
+<text x="194.0" y="457.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">500k records to file</text>
+<text x="194.0" y="469.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b5_file</text>
+<rect x="210" y="450" width="32.3" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="456.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">93</text>
+<rect x="210" y="461" width="41.3" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="467.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">119</text>
+<rect x="210" y="472" width="56.6" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="478.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">163</text>
+<rect x="210" y="483" width="192.6" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="489.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">555</text>
+<rect x="210" y="494" width="226.9" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="500.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">654</text>
+<rect x="210" y="505" width="340.0" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="511.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">980</text>
+<text x="194.0" y="543.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">software rasteriser</text>
+<text x="194.0" y="555.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b6_gfx</text>
+<rect x="210" y="536" width="55.3" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="542.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">145</text>
+<rect x="210" y="547" width="72.4" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="553.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">190</text>
+<rect x="210" y="558" width="68.6" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="564.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">180</text>
+<rect x="210" y="569" width="75.1" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="575.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">197</text>
+<rect x="210" y="580" width="275.2" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="586.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">722</text>
+<rect x="210" y="591" width="340.0" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="597.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">892</text>
+<text x="194.0" y="629.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.8" fill="#1b1916" text-anchor="end" font-weight="600">Mandelbrot 640×480</text>
+<text x="194.0" y="641.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8" fill="#9a9184" text-anchor="end" font-weight="normal">b7_mandel</text>
+<rect x="210" y="622" width="101.0" height="6" fill="#1f6f4a" rx="2"/>
+<text x="712.0" y="628.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">79,936</text>
+<rect x="210" y="633" width="140.5" height="6" fill="#7d4a12" rx="2"/>
+<text x="712.0" y="639.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">111,210</text>
+<rect x="210" y="644" width="112.8" height="6" fill="#b0701f" rx="2"/>
+<text x="712.0" y="650.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">89,289</text>
+<rect x="210" y="655" width="138.5" height="6" fill="#d9a45c" rx="2"/>
+<text x="712.0" y="661.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">109,646</text>
+<rect x="210" y="666" width="334.7" height="6" fill="#2b4a75" rx="2"/>
+<text x="712.0" y="672.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">264,904</text>
+<rect x="210" y="677" width="340.0" height="6" fill="#6d92c4" rx="2"/>
+<text x="712.0" y="683.2" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="8.4" fill="#6d655a" text-anchor="end" font-weight="normal">269,127</text>
+<circle cx="215.0" cy="738.5" r="4.5" fill="#1f6f4a"/>
+<text x="226.0" y="742.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">yaccc</text>
+<circle cx="276.5" cy="738.5" r="4.5" fill="#7d4a12"/>
+<text x="287.5" y="742.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">gnucobol-3.1.2</text>
+<circle cx="387.5" cy="738.5" r="4.5" fill="#b0701f"/>
+<text x="398.5" y="742.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">gnucobol-3.2</text>
+<circle cx="487.5" cy="738.5" r="4.5" fill="#d9a45c"/>
+<text x="498.5" y="742.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">gnucobol-4.0</text>
+<circle cx="587.5" cy="738.5" r="4.5" fill="#2b4a75"/>
+<text x="598.5" y="742.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">gcobol-15.2</text>
+<circle cx="682.0" cy="738.5" r="4.5" fill="#6d92c4"/>
+<text x="693.0" y="742.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="9.4" fill="#6d655a" text-anchor="start" font-weight="normal">gcobol-16</text>
+<text x="24.0" y="768.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" fill="#9a9184" text-anchor="start" font-weight="normal">Best of 15 runs, each pinned to its own physical core and run one at a time. Lower is better; a full bar is that row's slowest.</text>
 </svg>
