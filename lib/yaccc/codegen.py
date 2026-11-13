@@ -3614,6 +3614,18 @@ class CodeGen(ReportWriterGen, DebugGen, ScreenGen, SqlGen, DumpGen, OdoLayout, 
                     return f"cob_dbl_pow({a}, {b})"
                 return f"({a} {e.op} {b})"
             return None
+        if isinstance(e, FuncCall) and e.name not in self.udf_names and len(e.args) == 1:
+            # a floating-point intrinsic evaluates in double when its receiver
+            # is COMP-1/COMP-2: the decimal engine's extra precision is thrown
+            # away at the store, and the hardware route is what GnuCOBOL does
+            arg = self.dbl(e.args[0])
+            if arg is not None:
+                if e.name == 'SQRT':
+                    return f"cob_dbl_sqrt({arg})"
+                if e.name == 'ABS':
+                    return f"cob_dbl_abs({arg})"
+                if e.name in MATH_FN:
+                    return f"cob_dbl_math({MATH_FN[e.name]}, {arg})"
         return None
 
     def float_target_kind(self, t):

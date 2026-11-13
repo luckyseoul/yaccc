@@ -2427,6 +2427,53 @@ double cob_dbl_pow(double a, double b)
 	return pow(a, b);
 }
 
+/* FUNCTION SQRT with a floating-point receiver. The decimal engine
+ * (cob_fn_sqrt) evaluates to high precision and rounds to the receiver; when
+ * that receiver is COMP-1/COMP-2 the stored value is a double either way, so
+ * this takes the hardware route, as GnuCOBOL and gcobol do. A negative
+ * argument is outside the domain: EC-ARGUMENT-FUNCTION and a zero result,
+ * matching the decimal path's arg_error(). */
+double cob_dbl_sqrt(double a)
+{
+	if (a < 0.0) {
+		cob_set_exception("EC-ARGUMENT-FUNCTION");
+		return 0.0;
+	}
+	return sqrt(a);
+}
+
+/* The transcendental intrinsics in double, same which-codes as cob_fn_math:
+ * 0 EXP, 1 EXP10, 2 LOG, 3 LOG10, 4 SIN, 5 COS, 6 TAN, 7 ASIN, 8 ACOS, 9 ATAN.
+ * Domain errors match the decimal path: LOG and LOG10 need a positive
+ * argument, ASIN and ACOS need |a| <= 1; both answer EC-ARGUMENT-FUNCTION with
+ * a zero result. */
+double cob_dbl_math(int which, double a)
+{
+	switch (which) {
+	case 0: return exp(a);
+	case 1: return pow(10.0, a);
+	case 2:
+		if (a <= 0.0) break;
+		return log(a);
+	case 3:
+		if (a <= 0.0) break;
+		return log10(a);
+	case 4: return sin(a);
+	case 5: return cos(a);
+	case 6: return tan(a);
+	case 7:
+		if (a < -1.0 || a > 1.0) break;
+		return asin(a);
+	case 8:
+		if (a < -1.0 || a > 1.0) break;
+		return acos(a);
+	case 9: return atan(a);
+	default: break;
+	}
+	cob_set_exception("EC-ARGUMENT-FUNCTION");
+	return 0.0;
+}
+
 int cob_put_float(cob_field *f, double v)
 {
 	if (f->attr->type == COB_NUM_FLOAT) {
